@@ -296,6 +296,28 @@ class AmselFPTASelector:
                         }
                     )
             report["ngt_outlets"] = outlet_reports
+            ok_outlets = [item for item in outlet_reports if item["ok"]]
+            if len(ok_outlets) == len(outlet_reports):
+                mfpts = [float(item["mfpt"]) for item in ok_outlets]
+                mfpt_mean = float(np.mean(mfpts))
+                if mfpt_mean > 0.0:
+                    mfpt_rel_spread = float((max(mfpts) - min(mfpts)) / mfpt_mean)
+                else:
+                    mfpt_rel_spread = 0.0
+                report["ngt_summary"] = {
+                    "ok": True,
+                    "committor_sum": float(
+                        sum(float(item["committor"]) for item in ok_outlets)
+                    ),
+                    "rate_sum": float(sum(float(item["rate"]) for item in ok_outlets)),
+                    "mfpt_mean": mfpt_mean,
+                    "mfpt_rel_spread": mfpt_rel_spread,
+                }
+            else:
+                report["ngt_summary"] = {
+                    "ok": False,
+                    "failed_outlets": len(outlet_reports) - len(ok_outlets),
+                }
 
         self.last_diagnostics = report
         return report
