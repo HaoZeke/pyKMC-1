@@ -91,3 +91,26 @@ def test_selector_uses_injected_rng():
     assert result.is_ok()
     assert result.ok_value().t_exit > 0.0
     assert result.ok_value().exit_state == 10
+
+
+def test_selector_exposes_independent_amsel_diagnostics():
+    selector = AmselFPTASelector()
+    table = _connectivity(
+        pd.DataFrame(
+            {
+                "state": [0],
+                "state_connexion": [10],
+                "k_forward": [2.0],
+            }
+        )
+    )
+
+    report = selector.diagnose_connectivity(table)
+
+    assert report["ok"] is True
+    assert report["mrm_moments"]["ok"] is True
+    assert report["reduced_kinetics"]["ok"] is True
+    assert report["ngt_outlets"][0]["ok"] is True
+    assert report["ngt_outlets"][0]["committor"] == pytest.approx(1.0)
+    assert report["reduced_kinetics"]["slow_subspace_rank"] == 1
+    assert selector.last_diagnostics == report
