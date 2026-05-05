@@ -114,78 +114,8 @@ def run_selector(
 
 
 def amsel_feature_report(table: StatesConnectivity, entry: int = 0) -> dict[str, object]:
-    try:
-        import amsel
-    except ImportError as exc:
-        return {"ok": False, "error": f"amsel import failed: {exc}"}
-
-    transient, absorbing, rates = AmselFPTASelector._extract_graph(table)
-    if not transient or not absorbing:
-        return {
-            "ok": False,
-            "error": "connectivity table needs transient and absorbing states",
-        }
-    problem = amsel.AmcProblem(transient=transient, absorbing=absorbing, rates=rates)
-    out: dict[str, object] = {
-        "ok": True,
-        "n_transient": len(transient),
-        "n_absorbing": len(absorbing),
-        "n_rates": len(rates),
-    }
-    try:
-        mean, variance, cv, second_moment, residual_inf = amsel.mrm_moments(
-            transient=transient,
-            absorbing=absorbing,
-            rates=rates,
-            entry=int(entry),
-        )
-        out["mrm_moments"] = {
-            "ok": True,
-            "mean": float(mean),
-            "variance": float(variance),
-            "cv": float(cv),
-            "second_moment": float(second_moment),
-            "residual_inf": float(residual_inf),
-        }
-    except Exception as exc:  # noqa: BLE001 - report feature-level evidence.
-        out["mrm_moments"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-    try:
-        reduced = problem.reduced_kinetics(entry=int(entry))
-        out["reduced_kinetics"] = {
-            "ok": True,
-            "slow_subspace_rank": int(reduced.slow_subspace_rank),
-            "effective_mode_count": float(reduced.effective_mode_count),
-            "rank1_invalidity": float(reduced.rank1_invalidity),
-            "initial_hazard": float(reduced.initial_hazard),
-            "effective_rate": float(reduced.effective_rate),
-            "tail_rate": float(reduced.tail_rate),
-        }
-    except Exception as exc:  # noqa: BLE001 - report feature-level evidence.
-        out["reduced_kinetics"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-
-    outlet_reports = []
-    for outlet in absorbing:
-        try:
-            ngt = problem.ngt(source=[int(entry)], target=[int(outlet)])
-            outlet_reports.append(
-                {
-                    "ok": True,
-                    "absorbing_state": int(outlet),
-                    "rate": float(ngt.rate),
-                    "mfpt": float(ngt.mfpt),
-                    "committor": float(ngt.committor),
-                }
-            )
-        except Exception as exc:  # noqa: BLE001 - report feature-level evidence.
-            outlet_reports.append(
-                {
-                    "ok": False,
-                    "absorbing_state": int(outlet),
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            )
-    out["ngt_outlets"] = outlet_reports
-    return out
+    selector = AmselFPTASelector()
+    return selector.diagnose_connectivity(table, entry=int(entry), include_outlets=True)
 
 
 def _parse_draws(raw: str) -> list[float]:
