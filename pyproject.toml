@@ -40,6 +40,9 @@ verify-ira = "python -c \"import ira_mod; print('IRA OK')\""
 [tool.pixi.feature.pykmc.dependencies]
 python = "3.11.*"
 pip = "*"
+cmake = "*"
+fortran-compiler = "*"
+make = "*"
 ase = ">=3.24.0"
 executorlib = "==0.0.8"
 lammps = ">=2024.08.29"
@@ -53,12 +56,14 @@ pydantic = "==2.11.7"
 
 [tool.pixi.feature.pykmc.tasks]
 install-editable = "python -m pip install --no-build-isolation --no-deps -e ."
+install-pypartn = "python scripts/install_pypartn.py --build"
+verify-pypartn = { cmd = "python -c \"import pypARTn; artn = pypARTn.artn(engine='other'); print('pypARTn OK', artn.version()); artn.destroy()\"", depends-on = ["install-pypartn"] }
 
 [tool.pixi.feature.test.dependencies]
 pytest = "*"
 
 [tool.pixi.feature.test.tasks]
-test-amsel-selector = { cmd = "pytest tests/basins/test_amsel_selector.py -q", depends-on = ["install-editable"] }
+test-amsel-selector = { cmd = "pytest tests/basins/test_amsel_selector.py -q", depends-on = ["install-editable", "install-pypartn"] }
 
 [tool.pixi.environments]
 ira = { features = ["ira"], solve-group = "ira" }
