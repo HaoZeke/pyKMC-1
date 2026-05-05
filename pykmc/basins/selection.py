@@ -103,8 +103,8 @@ class FPTASelector():
         #Non diagonal elements : M_ij = -k_ji
         for _, row in connectivity_table.df.iterrows() : 
             #for each row we find 
-            i = row['state'] 
-            j = row['state_connexion']
+            i = int(row['state'])
+            j = int(row['state_connexion'])
 
             self.M_abs[j,i] -=  row["k_forward"]
         #Absorbing columns will always be O since we initialize M as a Null matrix and absorbing state are never in ['state']
