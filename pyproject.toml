@@ -60,12 +60,9 @@ pytest = "*"
 [tool.pixi.feature.test.tasks]
 test-amsel-selector = { cmd = "pytest tests/basins/test_amsel_selector.py -q", depends-on = ["install-editable"] }
 
-[tool.pixi.feature.amsel.pypi-dependencies]
-amsel = "*"
-
 [tool.pixi.environments]
 ira = { features = ["ira"], solve-group = "ira" }
-amsel-test = { features = ["pykmc", "ira", "amsel", "test"], solve-group = "py311" }
+amsel-test = { features = ["pykmc", "ira", "test"], solve-group = "py311" }
 
 
 [build-system] 
