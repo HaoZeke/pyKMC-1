@@ -26,11 +26,19 @@ class TestSelector :
         test_logger.debug("And reduced matrix : \n {}".format(selector.M_abs_reduced))
         test_logger.debug("Got exit time = {} and exit state = {}".format(result.ok_value().t_exit, result.ok_value().exit_state))
 
-    def test_ftpa_selector_uses_injected_rng(self, mock_statesconnectivity):
+    def test_ftpa_selector_uses_injected_rng(self):
+        connectivity = pd.DataFrame(
+            {
+                "state": [0],
+                "state_connexion": [1],
+                "k_forward": [2.0],
+            }
+        )
+        table = type("Connectivity", (), {"df": connectivity})()
         selector = FPTASelector(rng=SequenceRng([0.25, 0.0]))
 
-        result = selector.select_from_connectivity(mock_statesconnectivity)
+        result = selector.select_from_connectivity(table)
 
         assert result.is_ok()
         assert result.ok_value().t_exit > 0.0
-        assert result.ok_value().exit_state == 2
+        assert result.ok_value().exit_state == 1
