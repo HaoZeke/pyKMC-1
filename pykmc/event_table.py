@@ -502,6 +502,7 @@ class ReferenceEventTable:
         """
         if self.config.control.reference_table is not None:
             self.table = pd.read_pickle(self.config.control.reference_table)
+            self._ensure_table_schema()
         else:
             self.table = pd.DataFrame({
                     "idx_ref": pd.Series(dtype="int64"),
@@ -518,6 +519,17 @@ class ReferenceEventTable:
                     "sym_perm": pd.Series(dtype="object"),
                     "idx_backward": pd.Series(dtype="int64"),
                     "dra" : pd.Series(dtype="float64")})
+
+    def _ensure_table_schema(self) -> None:
+        """Normalize persisted reference tables to the in-memory schema."""
+        if "idx_ref" not in self.table.columns:
+            self.table["idx_ref"] = range(len(self.table))
+        if "idx_backward" not in self.table.columns:
+            self.table["idx_backward"] = self.table["idx_ref"]
+        if "dra" not in self.table.columns:
+            self.table["dra"] = 0.0
+        self.table["idx_ref"] = self.table["idx_ref"].astype("int64")
+        self.table["idx_backward"] = self.table["idx_backward"].astype("int64")
 
     def remove(self, idx_refs: list[int]) -> None : 
         """Remove events with ind == idx_ref as well as its backward event
