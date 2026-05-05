@@ -114,3 +114,32 @@ def test_selector_exposes_independent_amsel_diagnostics():
     assert report["ngt_outlets"][0]["committor"] == pytest.approx(1.0)
     assert report["reduced_kinetics"]["slow_subspace_rank"] == 1
     assert selector.last_diagnostics == report
+
+
+def test_adaptive_selector_samples_when_diagnostics_reject_mean_clock():
+    selector = AmselFPTASelector(clock_mode="adaptive", rng=SequenceRng([0.5, 0.0]))
+    table = _connectivity(
+        pd.DataFrame(
+            {
+                "state": [0],
+                "state_connexion": [10],
+                "k_forward": [2.0],
+            }
+        )
+    )
+
+    selector.diagnose_connectivity = lambda *_args, **_kwargs: {
+        "ok": True,
+        "mrm_moments": {"ok": False, "error": "near singular"},
+        "reduced_kinetics": {
+            "ok": True,
+            "slow_subspace_rank": 1,
+            "rank1_invalidity": 0.0,
+        },
+    }
+
+    result = selector.select_from_connectivity(table)
+
+    assert result.is_ok()
+    assert selector.last_clock_mode == "sampled"
+    assert result.ok_value().exit_state == 10
