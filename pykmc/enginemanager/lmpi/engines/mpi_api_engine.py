@@ -63,10 +63,10 @@ class MpiApiEngine() :
     def start(self) -> None : 
         """Start Lammps"""
         self.start_engine() 
-        if self.rank == 0 and isinstance(self.messenger, QueueMessenger):
-            # TODO: this only with engine_use_rank_0=True so can probably cut without that option
-            t = threading.Thread(target=self.run_engine_loop, daemon=True)
-            t.start()
+        if self.local_rank == 0 and isinstance(self.local_messenger, QueueMessenger):
+            # Rank 0 can own a local queue engine while active mode is global MPI.
+            self.message_reader_thread = threading.Thread(target=self.run_engine_loop, daemon=True)
+            self.message_reader_thread.start()
         else:
             self.run_engine_loop()
 
