@@ -68,3 +68,41 @@ class TestBasin :
         assert basin.is_new_state(candidate) == -1
         assert basin.is_new_state(candidate) == -1
         assert builds == 1
+
+    def test_state_equivalence_rebuilds_tree_after_position_mutation(self, monkeypatch):
+        real_tree = basin_module.cKDTree
+        builds = 0
+
+        def counting_tree(*args, **kwargs):
+            nonlocal builds
+            builds += 1
+            return real_tree(*args, **kwargs)
+
+        monkeypatch.setattr(basin_module, "cKDTree", counting_tree)
+
+        cell = np.diag([10.0, 10.0, 10.0])
+        stored = System(
+            positions=np.array(
+                [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]]
+            ),
+            types=["X", "X", "X"],
+            cell=cell,
+            pbc=np.array([True, True, True]),
+            index=np.arange(3),
+        )
+        candidate = System(
+            positions=np.array(
+                [[0.0, 0.0, 0.0], [6.0, 6.0, 6.0], [0.0, 2.0, 0.0]]
+            ),
+            types=["X", "X", "X"],
+            cell=cell,
+            pbc=np.array([True, True, True]),
+            index=np.arange(3),
+        )
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.states = {0: StateData(system=stored, environment=None, neighbors_list=None)}
+
+        assert basin.is_new_state(candidate) == -1
+        stored.positions[1] = [3.0, 0.0, 0.0]
+        assert basin.is_new_state(candidate) == -1
+        assert builds == 2
