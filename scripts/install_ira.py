@@ -97,9 +97,11 @@ def _install(work: Path) -> None:
 def _smoke_test() -> None:
     code = (
         "import ira_mod, numpy as np; "
-        "coords=np.zeros((1, 3), dtype=float); "
+        "coords=np.array([[0., 0., 0.], [1., 0., 0.], "
+        "[0., 1., 0.], [0., 0., 1.]], dtype=float); "
+        "coords2=coords + np.array([0.1, 0.2, 0.3]); "
         "rmat, tr, perm, dh = ira_mod.IRA().match("
-        "1, ['X'], coords, 1, ['X'], coords, 2.0"
+        "4, ['X'] * 4, coords, 4, ['X'] * 4, coords2, 2.0"
         "); "
         "print('IRA OK', float(dh))"
     )
