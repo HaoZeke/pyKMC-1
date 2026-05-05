@@ -8,6 +8,14 @@ amsel = pytest.importorskip("amsel")
 from pykmc.basins import AmselFPTASelector, StatesConnectivity
 
 
+class SequenceRng:
+    def __init__(self, draws):
+        self.draws = iter(draws)
+
+    def random(self):
+        return next(self.draws)
+
+
 def _connectivity(df: pd.DataFrame) -> StatesConnectivity:
     table = StatesConnectivity()
     table.df = df
@@ -61,3 +69,25 @@ def test_adaptive_selector_uses_sampled_clock_on_rankk(monkeypatch):
     assert selector.last_reduced_kinetics.rank1_invalidity > 0.0
     assert result.ok_value().t_exit > 0.0
     assert result.ok_value().exit_state in (10, 20)
+
+
+def test_selector_uses_injected_rng():
+    selector = AmselFPTASelector(
+        clock_mode="sampled",
+        rng=SequenceRng([0.5, 0.0]),
+    )
+    table = _connectivity(
+        pd.DataFrame(
+            {
+                "state": [0, 1, 0, 1],
+                "state_connexion": [1, 0, 10, 20],
+                "k_forward": [1.0e-4, 1.0e-4, 1.0, 1.0e-4],
+            }
+        )
+    )
+
+    result = selector.select_from_connectivity(table)
+
+    assert result.is_ok()
+    assert result.ok_value().t_exit > 0.0
+    assert result.ok_value().exit_state == 10

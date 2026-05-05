@@ -1,6 +1,15 @@
 from pykmc.basins import FPTASelector 
 import pandas as pd
 
+
+class SequenceRng:
+    def __init__(self, draws):
+        self.draws = iter(draws)
+
+    def random(self):
+        return next(self.draws)
+
+
 class TestSelector : 
 
     def test_ftpa(self, test_logger, connectivity_table_Cu) : 
@@ -16,3 +25,12 @@ class TestSelector :
         test_logger.debug("FTPASelector build Generator matrix : \n {}".format(selector.M_abs))
         test_logger.debug("And reduced matrix : \n {}".format(selector.M_abs_reduced))
         test_logger.debug("Got exit time = {} and exit state = {}".format(result.ok_value().t_exit, result.ok_value().exit_state))
+
+    def test_ftpa_selector_uses_injected_rng(self, mock_statesconnectivity):
+        selector = FPTASelector(rng=SequenceRng([0.25, 0.0]))
+
+        result = selector.select_from_connectivity(mock_statesconnectivity)
+
+        assert result.is_ok()
+        assert result.ok_value().t_exit > 0.0
+        assert result.ok_value().exit_state == 2
