@@ -77,6 +77,7 @@ class AmselFPTASelector:
         self.last_weights: np.ndarray | None = None
         self.last_clock_mode: str | None = None
         self.last_reduced_kinetics = None
+        self.last_diagnostics: dict[str, object] | None = None
         self.clock_mode = clock_mode
         self.rank_tol = rank_tol
         self.rng = np.random
@@ -148,7 +149,15 @@ class AmselFPTASelector:
             else:
                 rk = problem.reduced_kinetics(entry=entry)
                 self.last_reduced_kinetics = rk
-                use_mean = self.clock_mode == "mean" or rk.one_rate_clock_is_plausible(self.rank_tol)
+                diagnostics = self.diagnose_connectivity(
+                    connectivity_table,
+                    entry=entry,
+                    include_outlets=False,
+                )
+                use_mean = self.clock_mode == "mean" or (
+                    self._mean_clock_diagnostics_ok(diagnostics)
+                    and rk.one_rate_clock_is_plausible(self.rank_tol)
+                )
                 if use_mean:
                     mrm_res = problem.mrm(entry=entry)
                     t_exit = float(mrm_res.tau_total)
@@ -186,6 +195,120 @@ class AmselFPTASelector:
         self.last_weights = weights_arr
 
         return Ok(BasinSelectorOutput(t_exit=float(t_exit), exit_state=int(exit_state)))
+
+    def diagnose_connectivity(
+        self,
+        connectivity_table: StatesConnectivity,
+        entry: int | None = None,
+        include_outlets: bool = True,
+    ) -> dict[str, object]:
+        """Return AMSEL diagnostics for a PyKMC basin graph.
+
+        Diagnostics are independent: a failed moment solve does not hide
+        reduced-kinetics or NGT outlet information. Adaptive selection uses
+        this report to avoid scalar mean clocks when the moment system is
+        ill-conditioned, while still allowing sampled FPTA exits.
+        """
+        if not _AMSEL_AVAILABLE:
+            report = {
+                "ok": False,
+                "error": f"amsel is not installed ({_AMSEL_IMPORT_ERROR!r})",
+            }
+            self.last_diagnostics = report
+            return report
+
+        transient, absorbing, rates = self._extract_graph(connectivity_table)
+        if not transient or not absorbing:
+            report = {
+                "ok": False,
+                "error": "connectivity table needs transient and absorbing states",
+            }
+            self.last_diagnostics = report
+            return report
+
+        entry = transient[0] if entry is None else int(entry)
+        problem = _amsel.AmcProblem(transient=transient, absorbing=absorbing, rates=rates)
+        report: dict[str, object] = {
+            "ok": True,
+            "entry": int(entry),
+            "n_transient": len(transient),
+            "n_absorbing": len(absorbing),
+            "n_rates": len(rates),
+        }
+        try:
+            mean, variance, cv, second_moment, residual_inf = _amsel.mrm_moments(
+                transient=transient,
+                absorbing=absorbing,
+                rates=rates,
+                entry=int(entry),
+            )
+            report["mrm_moments"] = {
+                "ok": True,
+                "mean": float(mean),
+                "variance": float(variance),
+                "cv": float(cv),
+                "second_moment": float(second_moment),
+                "residual_inf": float(residual_inf),
+            }
+        except Exception as exc:  # noqa: BLE001 - diagnostics should be non-blocking.
+            report["mrm_moments"] = {
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
+        try:
+            reduced = problem.reduced_kinetics(entry=int(entry))
+            report["reduced_kinetics"] = {
+                "ok": True,
+                "slow_subspace_rank": int(reduced.slow_subspace_rank),
+                "effective_mode_count": float(reduced.effective_mode_count),
+                "rank1_invalidity": float(reduced.rank1_invalidity),
+                "initial_hazard": float(reduced.initial_hazard),
+                "effective_rate": float(reduced.effective_rate),
+                "tail_rate": float(reduced.tail_rate),
+            }
+        except Exception as exc:  # noqa: BLE001 - diagnostics should be non-blocking.
+            report["reduced_kinetics"] = {
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
+        if include_outlets:
+            outlet_reports = []
+            for outlet in absorbing:
+                try:
+                    ngt = problem.ngt(source=[int(entry)], target=[int(outlet)])
+                    outlet_reports.append(
+                        {
+                            "ok": True,
+                            "absorbing_state": int(outlet),
+                            "rate": float(ngt.rate),
+                            "mfpt": float(ngt.mfpt),
+                            "committor": float(ngt.committor),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 - report per-outlet failures.
+                    outlet_reports.append(
+                        {
+                            "ok": False,
+                            "absorbing_state": int(outlet),
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+            report["ngt_outlets"] = outlet_reports
+
+        self.last_diagnostics = report
+        return report
+
+    @staticmethod
+    def _mean_clock_diagnostics_ok(diagnostics: dict[str, object]) -> bool:
+        if not diagnostics.get("ok", False):
+            return False
+        moments = diagnostics.get("mrm_moments")
+        reduced = diagnostics.get("reduced_kinetics")
+        if not isinstance(moments, dict) or not isinstance(reduced, dict):
+            return False
+        return bool(moments.get("ok", False)) and bool(reduced.get("ok", False))
 
     @staticmethod
     def _extract_graph(
