@@ -36,6 +36,8 @@ pip = "*"
 setuptools = "*"
 wheel = "*"
 cmake = "*"
+c-compiler = "*"
+cxx-compiler = "*"
 fortran-compiler = "*"
 make = "*"
 numpy = ">=2.0.2"
@@ -65,8 +67,8 @@ pydantic = "==2.11.7"
 
 [tool.pixi.feature.pykmc.tasks]
 install-editable = "python -m pip install --no-build-isolation --no-deps -e ."
-install-pypartn = "python scripts/install_pypartn.py --build"
-verify-pypartn = { cmd = "python -c \"import pypARTn; artn = pypARTn.artn(engine='other'); print('pypARTn OK', artn.version()); artn.destroy()\"", depends-on = ["install-pypartn"] }
+install-pypartn = "python scripts/install_pypartn.py --build --require-lammps"
+verify-pypartn = { cmd = "python -c \"import pypARTn; base = pypARTn.artn(engine='other'); print('pypARTn base OK', base.version()); base.destroy(); lmp = pypARTn.artn(engine='lmp'); print('pypARTn lmp OK', lmp.version()); lmp.destroy()\"", depends-on = ["install-pypartn"] }
 
 [tool.pixi.feature.test.dependencies]
 pytest = "*"
