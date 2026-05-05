@@ -407,11 +407,17 @@ class BasinsGenericEvents() :
         if len(pos1) != len(pos2):
             return False
 
-        box = np.diag(cell).tolist()
-        tree2 = cKDTree(pos2, boxsize=box)
-        distances, _ = tree2.query(pos1, k=1)
+        box = np.diag(cell).astype(float)
+        delta = pos1 - pos2
+        delta -= np.rint(delta / box) * box
+        if np.all(np.linalg.norm(delta, axis=1) < tol):
+            return True
 
-        return np.max(distances) < tol
+        box = box.tolist()
+        tree2 = cKDTree(pos2, boxsize=box)
+        distances, _ = tree2.query(pos1, k=1, distance_upper_bound=tol)
+
+        return np.all(distances < tol)
 
     def is_states_has_unknown_environments(self, state: StateData) : 
         if set(state.environment.atomic_environment_list).difference(self.known_environments) != set() :
