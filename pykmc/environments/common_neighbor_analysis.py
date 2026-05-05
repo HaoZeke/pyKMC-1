@@ -19,14 +19,16 @@ def cna(neighbors_list: list[list[int]]) -> list[str] :
     """
 
     hash = [] 
+    neighbor_sets = [set(neighbors) for neighbors in neighbors_list]
     #Compute signature
     for i, neighbors_i in enumerate(neighbors_list):
         signatures = {} #signature for all i,j pairs
+        neighbors_i_set = neighbor_sets[i]
         for j in neighbors_i : 
-            neighbors_j = neighbors_list[j] 
+            neighbors_j_set = neighbor_sets[j]
 
             #common neighbors between i and j : first signature value
-            common_neighbors = list(set(neighbors_i) & set(neighbors_j)) #intersection
+            common_neighbors = neighbors_i_set & neighbors_j_set #intersection
             n_common = len(common_neighbors)
             if n_common == 0 : 
                 continue 
@@ -34,8 +36,8 @@ def cna(neighbors_list: list[list[int]]) -> list[str] :
             #How many common_neighbors are first neighbors/connected 
             n_bonds = 0 
             for k in common_neighbors : 
-                neighbors_k = neighbors_list[k]
-                n_bonds += len(set(neighbors_k) & set(common_neighbors)) #Check neighbors of k in common neighbors of i and j
+                neighbors_k_set = neighbor_sets[k]
+                n_bonds += len(neighbors_k_set & common_neighbors) #Check neighbors of k in common neighbors of i and j
             n_bonds //=2 
 
             #Signature (n_common, n_bonds)
@@ -68,5 +70,4 @@ def is_crystal(signatures:dict) :
         return True 
     
     return False
-
 
