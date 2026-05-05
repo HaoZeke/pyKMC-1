@@ -9,6 +9,7 @@ from pykmc import System, Config, NeighborsList, AtomicEnvironment, ReferenceEve
 from typing import Optional
 from ..utils import geometry
 from ..rate_constant import compute_rate_Eyring
+import hashlib
 import pandas as pd
 import copy
 import numpy as np
@@ -30,7 +31,9 @@ class StateData:
     transient: bool = False
     visited: bool = False
     _equivalence_tree: object | None = field(default=None, init=False, repr=False)
-    _equivalence_tree_box: tuple[float, float, float] | None = field(default=None, init=False, repr=False)
+    _equivalence_tree_signature: tuple[tuple[float, float, float], tuple[int, ...], bytes] | None = field(
+        default=None, init=False, repr=False
+    )
 
     def release_heavy_objects(self) -> None : 
         """Release heavy objects"""
@@ -44,11 +47,19 @@ class StateData:
             if self.environment is None : 
                 self.environment = AtomicEnvironment(config.atomicenvironment.style, self.neighbors_list.neighbors_list['rnei'], self.neighbors_list.neighbors_list['rcut'], config.atomicenvironment.neighbors_add)
 
-    def equivalence_tree(self, cell):
+    def _equivalence_signature(self, cell):
         box = tuple(np.diag(cell).astype(float))
-        if self._equivalence_tree is None or self._equivalence_tree_box != box:
+        positions = np.ascontiguousarray(self.system.positions, dtype=np.float64)
+        position_bytes = positions.view(np.uint8).reshape(-1)
+        digest = hashlib.blake2b(position_bytes, digest_size=16).digest()
+        return box, positions.shape, digest
+
+    def equivalence_tree(self, cell):
+        signature = self._equivalence_signature(cell)
+        if self._equivalence_tree is None or self._equivalence_tree_signature != signature:
+            box = signature[0]
             self._equivalence_tree = cKDTree(self.system.positions, boxsize=list(box))
-            self._equivalence_tree_box = box
+            self._equivalence_tree_signature = signature
         return self._equivalence_tree
 
 
