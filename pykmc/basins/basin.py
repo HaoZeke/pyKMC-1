@@ -29,6 +29,8 @@ class StateData:
     neighbors_list: Optional[NeighborsList] 
     transient: bool = False
     visited: bool = False
+    _equivalence_tree: object | None = field(default=None, init=False, repr=False)
+    _equivalence_tree_box: tuple[float, float, float] | None = field(default=None, init=False, repr=False)
 
     def release_heavy_objects(self) -> None : 
         """Release heavy objects"""
@@ -41,6 +43,13 @@ class StateData:
                 self.neighbors_list = NeighborsList(self.system, config.atomicenvironment.rnei, config.atomicenvironment.rcut)  
             if self.environment is None : 
                 self.environment = AtomicEnvironment(config.atomicenvironment.style, self.neighbors_list.neighbors_list['rnei'], self.neighbors_list.neighbors_list['rcut'], config.atomicenvironment.neighbors_add)
+
+    def equivalence_tree(self, cell):
+        box = tuple(np.diag(cell).astype(float))
+        if self._equivalence_tree is None or self._equivalence_tree_box != box:
+            self._equivalence_tree = cKDTree(self.system.positions, boxsize=list(box))
+            self._equivalence_tree_box = box
+        return self._equivalence_tree
 
 
 class BasinsGenericEvents() : 
@@ -396,13 +405,18 @@ class BasinsGenericEvents() :
         #Loop over all other system in self.states to see if system is already known
 
         for state_index, state_data in self.states.items():
-            are_equivalent = self.are_structures_equivalent(system.positions, state_data.system.positions, cell = system.cell) 
+            are_equivalent = self.are_structures_equivalent(
+                system.positions,
+                state_data.system.positions,
+                cell=system.cell,
+                tree2=state_data.equivalence_tree(system.cell),
+            )
             if are_equivalent : 
                 return state_index
         return -1 
 
 
-    def are_structures_equivalent(self, pos1, pos2, cell, tol=0.3):
+    def are_structures_equivalent(self, pos1, pos2, cell, tol=0.3, tree2=None):
 
         if len(pos1) != len(pos2):
             return False
@@ -414,7 +428,8 @@ class BasinsGenericEvents() :
             return True
 
         box = box.tolist()
-        tree2 = cKDTree(pos2, boxsize=box)
+        if tree2 is None:
+            tree2 = cKDTree(pos2, boxsize=box)
         distances, _ = tree2.query(pos1, k=1, distance_upper_bound=tol)
 
         return np.all(distances < tol)
