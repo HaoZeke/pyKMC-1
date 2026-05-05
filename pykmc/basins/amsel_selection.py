@@ -65,9 +65,12 @@ class AmselFPTASelector:
         ``reduced_kinetics`` to choose between them.
     rank_tol
         Tolerance passed to ``ReducedKineticsResult.one_rate_clock_is_plausible``.
+    rng
+        Random number provider with a ``random()`` method. Defaults to
+        ``numpy.random`` to preserve the existing selector API.
     """
 
-    def __init__(self, clock_mode: str = "adaptive", rank_tol: float = 1.0e-8) -> None:
+    def __init__(self, clock_mode: str = "adaptive", rank_tol: float = 1.0e-8, rng=None) -> None:
         if clock_mode not in {"sampled", "mean", "adaptive"}:
             raise ValueError("clock_mode must be one of 'sampled', 'mean', or 'adaptive'")
         self.last_t_exit: float | None = None
@@ -76,6 +79,9 @@ class AmselFPTASelector:
         self.last_reduced_kinetics = None
         self.clock_mode = clock_mode
         self.rank_tol = rank_tol
+        self.rng = np.random
+        if rng is not None:
+            self.rng = rng
 
     def select_from_connectivity(
         self, connectivity_table: StatesConnectivity
@@ -135,7 +141,7 @@ class AmselFPTASelector:
 
         try:
             if self.clock_mode == "sampled":
-                fpta_res = problem.fpta(entry=entry, r=float(np.random.random()))
+                fpta_res = problem.fpta(entry=entry, r=float(self.rng.random()))
                 t_exit = float(fpta_res.t_exit)
                 weights_arr = np.asarray(fpta_res.weights, dtype=np.float64)
                 self.last_clock_mode = "sampled"
@@ -149,7 +155,7 @@ class AmselFPTASelector:
                     weights_arr = np.asarray(mrm_res.rate_to_absorbing, dtype=np.float64) * t_exit
                     self.last_clock_mode = "mean"
                 else:
-                    fpta_res = problem.fpta(entry=entry, r=float(np.random.random()))
+                    fpta_res = problem.fpta(entry=entry, r=float(self.rng.random()))
                     t_exit = float(fpta_res.t_exit)
                     weights_arr = np.asarray(fpta_res.weights, dtype=np.float64)
                     self.last_clock_mode = "sampled"
@@ -171,7 +177,7 @@ class AmselFPTASelector:
             )
         weights_arr = weights_arr / weight_sum
         cumul = np.cumsum(weights_arr)
-        r2 = float(np.random.random())
+        r2 = float(self.rng.random())
         idx = int(np.searchsorted(cumul, r2))
         idx = min(idx, len(absorbing) - 1)
         exit_state = absorbing[idx]

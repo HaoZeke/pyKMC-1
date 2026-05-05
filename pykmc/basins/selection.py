@@ -31,10 +31,13 @@ class FPTASelector():
     [2] doi.org/10.1063/5.0015039
     """
 
-    def __init__(self) -> None : 
+    def __init__(self, rng=None) -> None : 
 
         self.M_abs = None #Absorbing Markov chain generator matrix 
         self.M_abs_reduced = None #Reduced absorbing markoc chain generator matrix
+        self.rng = np.random
+        if rng is not None:
+            self.rng = rng
         
     def select_from_connectivity(self, connectivity_table: StatesConnectivity) -> Result[BasinSelectorOutput, ErrorInfo] : 
         """
@@ -153,7 +156,7 @@ class FPTASelector():
         p0[0] = 1 #we are always in state 0 when entering the basin
 
         # Pick random number between [0,1) representing the probability of being in an absorbing states after time t
-        r1 = np.random.random()
+        r1 = float(self.rng.random())
 
         #Use solver : 
         exit_time_solver = BisectionSolver(self.M_abs_reduced, p0, r1)
@@ -192,7 +195,7 @@ class FPTASelector():
 
         #choose exit state 
         p_absorbing_cumul = np.cumsum(p_absorbing)
-        r2 = np.random.random()
+        r2 = float(self.rng.random())
         state_exit = np.searchsorted(p_absorbing_cumul, r2)
 
         return state_exit+len(self.M_abs_reduced) -1 
