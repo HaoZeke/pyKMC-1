@@ -72,7 +72,7 @@ verify-pypartn = { cmd = "python -c \"import pypARTn; artn = pypARTn.artn(engine
 pytest = "*"
 
 [tool.pixi.feature.test.tasks]
-test-amsel-selector = { cmd = "pytest tests/basins/test_amsel_selector.py -q", depends-on = ["install-editable", "install-pypartn"] }
+test-amsel-selector = { cmd = "pytest tests/basins/test_amsel_selector.py -q", depends-on = ["install-editable", "install-pypartn", "install-ira"] }
 test-basin-mpi = { cmd = "mpirun -np 8 pytest tests/basins/test_basin.py::TestBasin::test_connectivity_table_construction -q", depends-on = ["install-editable", "install-pypartn", "install-ira"] }
 
 [tool.pixi.environments]
