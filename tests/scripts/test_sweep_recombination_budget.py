@@ -156,6 +156,8 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
                 "trial": "0",
                 "kinetic_claim_ok": "False",
                 "wall_time_s": "12.5",
+                "event_discovery_status": "not-zero-event",
+                "event_searches": "5",
             }
         ],
     )
@@ -229,6 +231,8 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
             "kinetic_claim_ok": "0",
             "recombined": "0",
             "last_wall_time_s": "12.5",
+            "last_event_discovery_status": "not-zero-event",
+            "last_event_searches": "5",
             "last_frontier_states": "8",
             "last_frontier_committor": "1.0",
             "last_frontier_rate": "0.015",
