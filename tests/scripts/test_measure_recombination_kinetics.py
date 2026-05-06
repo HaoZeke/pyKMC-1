@@ -118,6 +118,35 @@ def test_trial_row_uses_recombination_or_censor_time(tmp_path):
     assert row["kinetic_claim_ok"] is True
 
 
+def test_trial_row_uses_trajectory_all_crystal_when_log_is_censored(
+    tmp_path, monkeypatch
+):
+    script = _load_script()
+    (tmp_path / "pykmc.out").write_text(
+        "1 1.0e-12 1.0e-12 3 0.4 2.0 5.0 -1000.0 0.1 0.2\n"
+    )
+    (tmp_path / "pykmc.log").write_text("Step : 1\n:=> End of simulation\n")
+    (tmp_path / "trajkmc.xyz").write_text("trajectory placeholder\n")
+    monkeypatch.setattr(script, "trajectory_noncrystal_counts", lambda path: [28, 0])
+
+    row = script.trial_row_from_outputs(
+        case="ni-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=11,
+        output_dir=tmp_path,
+    )
+
+    assert row["recombined"] is True
+    assert row["t_recombination_s"] == 1.0e-12
+    assert row["censored_time_s"] is None
+    assert row["detector_reason"] == "trajectory-all-crystal"
+    assert row["final_noncrystal_atoms"] == 0
+    assert row["min_noncrystal_atoms"] == 0
+    assert row["trajectory_recombination_frame"] == 1
+    assert row["kinetic_claim_ok"] is True
+
+
 def test_trial_row_rejects_zero_step_censored_run(tmp_path):
     script = _load_script()
     (tmp_path / "pykmc.out").write_text("")
