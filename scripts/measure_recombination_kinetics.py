@@ -496,6 +496,8 @@ def trial_commands(
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
+    amsel_duplicate_family_penalty: float,
+    amsel_min_guidance: float,
     mpi_ranks: int,
     mpirun: str,
     python: str,
@@ -523,6 +525,8 @@ def trial_commands(
             basin_max_absorbing_refinements=basin_max_absorbing_refinements,
             amsel_selector=amsel_selector,
             amsel_exploration_priority=amsel_exploration_priority,
+            amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
+            amsel_min_guidance=amsel_min_guidance,
         )
         commands.append(
             {
@@ -539,6 +543,8 @@ def trial_commands(
                 "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
                 "amsel_selector": amsel_selector,
                 "amsel_exploration_priority": amsel_exploration_priority,
+                "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
+                "amsel_min_guidance": amsel_min_guidance,
                 "workdir": str(trial_dir),
                 "command": [
                     mpirun,
@@ -574,6 +580,8 @@ def render_trial_input(
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
+    amsel_duplicate_family_penalty: float,
+    amsel_min_guidance: float,
 ) -> str:
     config = configparser.ConfigParser()
     config.optionxform = str
@@ -601,6 +609,10 @@ def render_trial_input(
         priority=priority,
         amsel_exploration_priority=amsel_exploration_priority,
     )
+    config[basin]["exploration_duplicate_family_penalty"] = str(
+        float(amsel_duplicate_family_penalty)
+    )
+    config[basin]["exploration_min_guidance"] = str(float(amsel_min_guidance))
     config[basin]["selector"] = _selector_for_priority(
         priority=priority,
         amsel_selector=amsel_selector,
@@ -644,6 +656,8 @@ def write_trial_input(
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
+    amsel_duplicate_family_penalty: float,
+    amsel_min_guidance: float,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -665,6 +679,8 @@ def write_trial_input(
             basin_max_absorbing_refinements=basin_max_absorbing_refinements,
             amsel_selector=amsel_selector,
             amsel_exploration_priority=amsel_exploration_priority,
+            amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
+            amsel_min_guidance=amsel_min_guidance,
         )
     )
 
@@ -873,6 +889,8 @@ def main(argv: list[str] | None = None) -> int:
         choices=("amsel", "amsel-diverse"),
         default="amsel",
     )
+    parser.add_argument("--amsel-duplicate-family-penalty", type=float, default=1.0)
+    parser.add_argument("--amsel-min-guidance", type=float, default=0.0)
     parser.add_argument("--work-budget")
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
@@ -906,6 +924,8 @@ def main(argv: list[str] | None = None) -> int:
         basin_max_absorbing_refinements=args.basin_max_absorbing_refinements,
         amsel_selector=args.amsel_selector,
         amsel_exploration_priority=args.amsel_exploration_priority,
+        amsel_duplicate_family_penalty=args.amsel_duplicate_family_penalty,
+        amsel_min_guidance=args.amsel_min_guidance,
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
         python=args.python,
@@ -932,6 +952,8 @@ def main(argv: list[str] | None = None) -> int:
         "basin_max_absorbing_refinements": args.basin_max_absorbing_refinements,
         "amsel_selector": args.amsel_selector,
         "amsel_exploration_priority": args.amsel_exploration_priority,
+        "amsel_duplicate_family_penalty": args.amsel_duplicate_family_penalty,
+        "amsel_min_guidance": args.amsel_min_guidance,
         "work_budget": args.work_budget,
         "mpi_ranks": args.mpi_ranks,
         "dry_run": bool(args.dry_run),

@@ -3,7 +3,7 @@ from .exploration import Explorer, BasinGenericEventExplorer
 from .connectivity import BasinStatesConnectivity
 from .selection import FPTASelector
 from .amsel_selection import AmselFPTASelector, _AMSEL_AVAILABLE
-from .amsel_guidance import amsel_state_guidance_scores
+from .amsel_guidance import amsel_rank_basin_frontier, amsel_state_guidance_scores
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from pykmc import System, Config, NeighborsList, AtomicEnvironment, ReferenceEventTable, PointSetRegistration, check_match, Reconstruction
@@ -400,11 +400,36 @@ class BasinsGenericEvents() :
 
         if priority == "amsel-diverse":
             seen_events = self._explored_event_families()
+            ranked = amsel_rank_basin_frontier(
+                candidate_states=candidate_states,
+                guidance=scores,
+                event_families={
+                    int(state): self._incoming_event_family(int(state))
+                    for state in candidate_states
+                },
+                closed_event_families=seen_events,
+                duplicate_family_penalty=float(
+                    getattr(
+                        getattr(self.config, "basin", None),
+                        "exploration_duplicate_family_penalty",
+                        1.0,
+                    )
+                ),
+                min_guidance=float(
+                    getattr(
+                        getattr(self.config, "basin", None),
+                        "exploration_min_guidance",
+                        0.0,
+                    )
+                ),
+            )
+            if ranked is not None:
+                return ranked
             return sorted(
                 candidate_states,
                 key=lambda state: (
-                    self._incoming_event_family(int(state)) in seen_events,
                     -float(scores.get(int(state), 0.0)),
+                    self._incoming_event_family(int(state)) in seen_events,
                     self._incoming_event_family_sort_key(int(state)),
                     int(state),
                 ),

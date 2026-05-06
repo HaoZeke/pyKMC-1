@@ -18,11 +18,13 @@ AGGREGATES = {
 }
 BUDGET_FIELDS = [
     "budget_label",
+    "basin_max_expansions",
     "basin_max_closed_states",
     "basin_max_absorbing_refinements",
 ]
 SUMMARY_FIELDS = [
     "budget_label",
+    "basin_max_expansions",
     "basin_max_closed_states",
     "basin_max_absorbing_refinements",
     "selector",
@@ -53,24 +55,34 @@ def budget_sweep_commands(
     python: str,
     out: Path,
     closed_states: list[int],
+    expansions: list[int | None],
     absorbing_refinements: list[int],
     measure_args: list[str],
 ) -> list[dict[str, Any]]:
     commands: list[dict[str, Any]] = []
-    for closed in closed_states:
-        for absorb in absorbing_refinements:
-            label = f"closed-{int(closed)}_absorb-{int(absorb)}"
-            run_out = out / label
-            commands.append(
-                {
-                    "budget_label": label,
-                    "basin_max_closed_states": int(closed),
-                    "basin_max_absorbing_refinements": int(absorb),
-                    "out": str(run_out),
-                    "command": [
-                        python,
-                        str(measure_script),
-                        *measure_args,
+    for expansion in expansions:
+        for closed in closed_states:
+            for absorb in absorbing_refinements:
+                label = _budget_label(
+                    expansion=expansion,
+                    closed=closed,
+                    absorb=absorb,
+                )
+                run_out = out / label
+                command = [
+                    python,
+                    str(measure_script),
+                    *measure_args,
+                ]
+                if expansion is not None:
+                    command.extend(
+                        [
+                            "--basin-max-expansions",
+                            str(int(expansion)),
+                        ]
+                    )
+                command.extend(
+                    [
                         "--basin-max-closed-states",
                         str(int(closed)),
                         "--basin-max-absorbing-refinements",
@@ -79,10 +91,27 @@ def budget_sweep_commands(
                         label,
                         "--out",
                         str(run_out),
-                    ],
-                }
-            )
+                    ]
+                )
+                commands.append(
+                    {
+                        "budget_label": label,
+                        "basin_max_expansions": (
+                            None if expansion is None else int(expansion)
+                        ),
+                        "basin_max_closed_states": int(closed),
+                        "basin_max_absorbing_refinements": int(absorb),
+                        "out": str(run_out),
+                        "command": command,
+                    }
+                )
     return commands
+
+
+def _budget_label(*, expansion: int | None, closed: int, absorb: int) -> str:
+    if expansion is None:
+        return f"closed-{int(closed)}_absorb-{int(absorb)}"
+    return f"expand-{int(expansion)}_closed-{int(closed)}_absorb-{int(absorb)}"
 
 
 def run_budget_sweep(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -101,6 +130,7 @@ def run_budget_sweep(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
         results.append(
             {
                 "budget_label": command["budget_label"],
+                "basin_max_expansions": command["basin_max_expansions"],
                 "basin_max_closed_states": command["basin_max_closed_states"],
                 "basin_max_absorbing_refinements": command[
                     "basin_max_absorbing_refinements"
@@ -129,6 +159,9 @@ def write_aggregate_outputs(out: Path, commands: list[dict[str, Any]]) -> None:
                     rows.append(
                         {
                             "budget_label": command["budget_label"],
+                            "basin_max_expansions": command[
+                                "basin_max_expansions"
+                            ],
                             "basin_max_closed_states": command[
                                 "basin_max_closed_states"
                             ],
@@ -168,9 +201,10 @@ def write_sweep_summary(out: Path) -> None:
         summary_rows.append(
             {
                 "budget_label": key[0],
-                "basin_max_closed_states": key[1],
-                "basin_max_absorbing_refinements": key[2],
-                "selector": key[3],
+                "basin_max_expansions": key[1],
+                "basin_max_closed_states": key[2],
+                "basin_max_absorbing_refinements": key[3],
+                "selector": key[4],
                 "trials": len(trials),
                 "kinetic_claim_ok": sum(
                     1 for row in trials if _csv_bool(row.get("kinetic_claim_ok"))
@@ -223,9 +257,10 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def _group_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
+def _group_key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
     return (
         str(row.get("budget_label", "")),
+        str(row.get("basin_max_expansions", "")),
         str(row.get("basin_max_closed_states", "")),
         str(row.get("basin_max_absorbing_refinements", "")),
         str(row.get("selector", "")),
@@ -286,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--measure-script", type=Path, required=True)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--closed-states", required=True)
+    parser.add_argument("--expansions")
     parser.add_argument("--absorbing-refinements", required=True)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--out", type=Path, required=True)
@@ -293,12 +329,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     closed_states = _parse_int_list(args.closed_states)
+    expansions = (
+        [None]
+        if args.expansions is None
+        else [int(value) for value in _parse_int_list(args.expansions)]
+    )
     absorbing_refinements = _parse_int_list(args.absorbing_refinements)
     commands = budget_sweep_commands(
         measure_script=args.measure_script,
         python=args.python,
         out=args.out,
         closed_states=closed_states,
+        expansions=expansions,
         absorbing_refinements=absorbing_refinements,
         measure_args=_measure_args(args.measure_args),
     )
@@ -306,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         "measure_script": str(args.measure_script),
         "python": args.python,
         "closed_states": closed_states,
+        "expansions": expansions,
         "absorbing_refinements": absorbing_refinements,
         "dry_run": bool(args.dry_run),
         "measure_args": _measure_args(args.measure_args),

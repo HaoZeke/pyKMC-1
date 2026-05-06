@@ -549,6 +549,17 @@ class BasinConfig(BaseModel):
         default="auto",
         description="Basin graph expansion priority. auto uses AMSEL NGT hitting probabilities when available and legacy queue order otherwise.",
     )
+    exploration_duplicate_family_penalty: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Score multiplier for AMSEL-diverse candidates whose incoming event family has already been closed.",
+    )
+    exploration_min_guidance: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Minimum AMSEL guidance required for AMSEL-diverse candidates to receive nonzero ranking score.",
+    )
     energy_thr: float = Field(
     default = 0.0,
     description="Energy threshold"

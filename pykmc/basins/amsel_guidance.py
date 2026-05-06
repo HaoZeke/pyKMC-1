@@ -63,6 +63,33 @@ def amsel_state_guidance_scores(
     return scores
 
 
+def amsel_rank_basin_frontier(
+    *,
+    candidate_states,
+    guidance: dict[int, float],
+    event_families: dict[int, int | None],
+    closed_event_families: set[int],
+    duplicate_family_penalty: float = 1.0,
+    min_guidance: float = 0.0,
+) -> list[int] | None:
+    """Return AMSEL-ranked candidate states when the frontier API is available."""
+
+    if not _AMSEL_AVAILABLE or not hasattr(_amsel, "rank_basin_frontier"):
+        return None
+    try:
+        candidates = _amsel.rank_basin_frontier(
+            candidate_states=[int(state) for state in candidate_states],
+            guidance={int(state): float(score) for state, score in guidance.items()},
+            event_families=event_families,
+            closed_event_families=closed_event_families,
+            duplicate_family_penalty=float(duplicate_family_penalty),
+            min_guidance=float(min_guidance),
+        )
+    except Exception:  # noqa: BLE001 - basin exploration can fall back to local order.
+        return None
+    return [int(candidate.state) for candidate in candidates]
+
+
 def _connectivity_df(connectivity_table: StatesConnectivity | Any) -> pd.DataFrame:
     df = getattr(connectivity_table, "df", connectivity_table)
     if not isinstance(df, pd.DataFrame):
