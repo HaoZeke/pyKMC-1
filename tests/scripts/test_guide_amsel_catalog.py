@@ -168,3 +168,27 @@ def test_exploration_payload_records_budgeted_queue_state():
         "states_to_explore": [13, 14, 1],
         "guidance_scores": {"1": 0.25, "13": 0.375, "14": 0.375},
     }
+
+
+def test_refinement_failure_keeps_partially_refined_table():
+    script = _load_script()
+    partial_table = object()
+    catalog_table = object()
+    result = SimpleNamespace(
+        is_ok=lambda: False,
+        err_value=lambda: "refinement failed",
+    )
+
+    table, refinement = script._refinement_table_and_report(
+        result,
+        refined_table=partial_table,
+        catalog_table=catalog_table,
+    )
+
+    assert table is partial_table
+    assert refinement == {
+        "ok": False,
+        "stage": "refine_absorbing",
+        "error": "refinement failed",
+        "rate_source": "partial-refined",
+    }
