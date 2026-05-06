@@ -240,9 +240,12 @@ class MpiApiEngine() :
 
         self._is_alive = False
 
-        if self.message_reader_thread is not None :
+        if (
+            self.message_reader_thread is not None
+            and self.message_reader_thread is not threading.current_thread()
+        ):
             self.message_reader_thread.join(timeout=1)
-            self.message_reader_thread = None
+        self.message_reader_thread = None
 
     def is_alive(self) -> bool:
         """Check if the LAMMPS engine is alive."""
