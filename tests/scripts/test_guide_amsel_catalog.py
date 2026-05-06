@@ -1,12 +1,11 @@
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 pytest.importorskip("amsel")
-
-from pykmc.basins import StatesConnectivity
 
 
 def _load_script():
@@ -18,10 +17,8 @@ def _load_script():
     return module
 
 
-def _connectivity(df: pd.DataFrame) -> StatesConnectivity:
-    table = StatesConnectivity()
-    table.df = df
-    return table
+def _connectivity(df: pd.DataFrame):
+    return SimpleNamespace(df=df)
 
 
 def test_catalog_guidance_ranks_exact_absorbing_channels():
