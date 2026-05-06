@@ -299,6 +299,52 @@ class TestBasin :
             "unresolved_rate": pytest.approx(5.0),
         }
 
+    def test_frontier_budget_records_unresolved_committor(self, monkeypatch):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 1,
+                    "central_atom": 10,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 3.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 0,
+                    "state_connexion": 2,
+                    "event_connexion": 2,
+                    "central_atom": 20,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+            ]
+        )
+        monkeypatch.setattr(
+            basin_module,
+            "amsel_state_guidance_scores",
+            lambda connectivity_table, entry=0: {1: 0.8, 2: 0.2},
+        )
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.connectivity_table = table
+
+        basin._record_unresolved_frontier_diagnostics()
+
+        assert basin.unresolved_frontier_diagnostics == {
+            "total": 1,
+            "unresolved_committor": pytest.approx(0.8),
+            "unresolved_rate": pytest.approx(3.0),
+        }
+
     def test_execute_uses_configured_basin_exploration_budgets(self, monkeypatch):
         calls = {}
 

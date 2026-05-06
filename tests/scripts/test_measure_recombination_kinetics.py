@@ -315,6 +315,23 @@ def test_kinetic_guard_rejects_unresolved_absorbing_refinement_budget():
     assert guarded["failed_refinement_committor"] == 0.325
 
 
+def test_kinetic_guard_rejects_unresolved_frontier_budget():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {"selector": "amsel", "kinetic_claim_ok": True},
+        diagnostics=None,
+        log_text=(
+            "Basin exploration budget left 3 frontier states; "
+            "unresolved_committor=8.750000e-01; unresolved_rate=2.0"
+        ),
+    )
+
+    assert guarded["kinetic_claim_ok"] is False
+    assert guarded["failed_refinements"] == 3
+    assert guarded["failed_refinement_committor"] == 0.875
+
+
 def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypatch):
     script = _load_script()
     workdir = tmp_path / "legacy" / "trial-0"
