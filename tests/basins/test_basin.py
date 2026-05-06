@@ -978,6 +978,46 @@ class TestBasin :
         assert not result.is_ok()
         assert calls == {"max_expansions": 3, "max_closed_states": 2}
 
+    def test_execute_drops_states_removed_by_connectivity_reorder(self, monkeypatch):
+        kept_state = object()
+
+        def fake_initialize(self, system):
+            self.states = {0: object(), 13: kept_state}
+            self.connectivity_table = SimpleNamespace(
+                reorder_states_index=lambda: {13: 0},
+            )
+
+        def fake_refine(self, system):
+            assert self.states == {0: kept_state}
+            return Err(ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="stop"))
+
+        monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "construct_connexion_table",
+            lambda self, max_expansions=None, max_closed_states=None: Ok(None),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "_record_unresolved_frontier_diagnostics",
+            lambda self: None,
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "_absorb_unexpanded_frontier",
+            lambda self: None,
+        )
+        monkeypatch.setattr(BasinsGenericEvents, "refine_absorbing", fake_refine)
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(basin=SimpleNamespace())
+        basin.manager = SimpleNamespace(use_local=lambda: None)
+
+        result = basin.execute(system=object())
+
+        assert not result.is_ok()
+        assert result.err_value().type == ErrorType.EVENT_NOT_FOUND
+
     def test_state_equivalence_reuses_cached_neighbor_tree(self, monkeypatch):
         real_tree = basin_module.cKDTree
         builds = 0
