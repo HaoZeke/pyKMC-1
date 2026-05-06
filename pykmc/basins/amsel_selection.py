@@ -61,8 +61,8 @@ class AmselFPTASelector:
     ----------
     clock_mode
         ``"sampled"`` keeps the exact sampled FPTA clock, ``"mean"``
-        forces the scalar MRM clock, and ``"adaptive"`` uses
-        ``reduced_kinetics`` to choose between them.
+        forces the scalar MRM mean clock, and ``"adaptive"`` uses a
+        sampled rank-1 reduced clock when diagnostics support it.
     rank_tol
         Tolerance passed to ``ReducedKineticsResult.one_rate_clock_is_plausible``.
     rng
@@ -154,15 +154,32 @@ class AmselFPTASelector:
                     entry=entry,
                     include_outlets=False,
                 )
-                use_mean = self.clock_mode == "mean" or (
+                use_reduced_clock = self.clock_mode == "mean" or (
                     self._mean_clock_diagnostics_ok(diagnostics)
                     and rk.one_rate_clock_is_plausible(self.rank_tol)
                 )
-                if use_mean:
+                if use_reduced_clock:
                     mrm_res = problem.mrm(entry=entry)
-                    t_exit = float(mrm_res.tau_total)
-                    weights_arr = np.asarray(mrm_res.rate_to_absorbing, dtype=np.float64) * t_exit
-                    self.last_clock_mode = "mean"
+                    effective_rate = float(rk.effective_rate)
+                    if self.clock_mode == "mean":
+                        t_exit = float(mrm_res.tau_total)
+                        weights_arr = (
+                            np.asarray(mrm_res.rate_to_absorbing, dtype=np.float64) * t_exit
+                        )
+                        self.last_clock_mode = "mean"
+                    elif np.isfinite(effective_rate) and effective_rate > 0.0:
+                        r = float(self.rng.random())
+                        t_exit = float(-np.log1p(-r) / effective_rate)
+                        weights_arr = (
+                            np.asarray(mrm_res.rate_to_absorbing, dtype=np.float64)
+                            / effective_rate
+                        )
+                        self.last_clock_mode = "reduced-sampled"
+                    else:
+                        fpta_res = problem.fpta(entry=entry, r=float(self.rng.random()))
+                        t_exit = float(fpta_res.t_exit)
+                        weights_arr = np.asarray(fpta_res.weights, dtype=np.float64)
+                        self.last_clock_mode = "sampled"
                 else:
                     fpta_res = problem.fpta(entry=entry, r=float(self.rng.random()))
                     t_exit = float(fpta_res.t_exit)

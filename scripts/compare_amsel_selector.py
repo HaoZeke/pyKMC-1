@@ -74,7 +74,7 @@ def selector_clock_report(
     clock_mode: str | None,
     consumed_draws: list[float],
 ) -> dict[str, object]:
-    if selector_name == "legacy-fpta" or clock_mode == "sampled":
+    if selector_name == "legacy-fpta" or clock_mode in {"sampled", "reduced-sampled"}:
         semantics = "sampled-quantile"
     elif selector_name == "amsel-mean" or clock_mode == "mean":
         semantics = "deterministic-mfpt"

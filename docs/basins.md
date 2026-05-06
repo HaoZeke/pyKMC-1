@@ -23,7 +23,7 @@ selector = auto
 * `legacy-fpta`: use the original NumPy/SciPy FPTA selector
 * `amsel-sampled`: use AMSEL's sampled FPTA clock
 * `amsel-mean`: use AMSEL's deterministic mean first-passage clock
-* `amsel-adaptive`: use AMSEL diagnostics to choose the clock mode
+* `amsel-adaptive`: use a sampled AMSEL rank-1 reduced clock when diagnostics support it, otherwise use sampled FPTA
 
 ---
 
