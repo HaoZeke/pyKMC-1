@@ -91,6 +91,8 @@ def test_trial_row_uses_recombination_or_censor_time(tmp_path):
     assert row["t_recombination_s"] == 3.0e-12
     assert row["censored_time_s"] is None
     assert row["kmc_steps"] == 2
+    assert row["cpu_time_s"] == 0.2
+    assert row["wall_time_s"] == 0.3
     assert row["failed_refinements"] == 0
     assert row["failed_refinement_committor"] == 0.0
     assert row["usable_resolved_committor"] is None
