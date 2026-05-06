@@ -168,6 +168,59 @@ class TestBasin :
         assert basin.last_exploration_guidance[14] == pytest.approx(0.375)
         assert basin.last_exploration_guidance[1] == pytest.approx(0.25)
 
+    def test_construct_connexion_table_can_stop_after_expansion_budget(self):
+        class FakeState:
+            def ensure_full_state(self, config):
+                pass
+
+            def release_heavy_objects(self):
+                pass
+
+        class FakeExplorer:
+            def __init__(self):
+                self.connectivity_table = BasinStatesConnectivity()
+                self.connectivity_table.df = pd.DataFrame(
+                    [
+                        {
+                            "state": 0,
+                            "state_connexion": 1,
+                            "event_connexion": 1,
+                            "central_atom": 0,
+                            "sym": 0,
+                            "transient": True,
+                            "dE_forward": 0.0,
+                            "k_forward": 3.0,
+                            "dE_backward": 0.0,
+                            "k_backward": 0.0,
+                        }
+                    ]
+                )
+                self.explored = []
+
+            def explore(self, state, state_index, start_index):
+                self.explored.append(state_index)
+
+            def clear(self):
+                pass
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(exploration_priority="legacy")
+        )
+        basin.current_state = 0
+        basin.states_to_explore = [0]
+        basin.explored_states = []
+        basin.states = {0: FakeState()}
+        basin.connectivity_table = BasinStatesConnectivity()
+        basin.explorer = FakeExplorer()
+
+        result = basin.construct_connexion_table(max_expansions=1)
+
+        assert result.is_ok()
+        assert basin.exploration_order == [0]
+        assert basin.explorer.explored == [0]
+        assert basin.states_to_explore == [1]
+
     def test_state_equivalence_reuses_cached_neighbor_tree(self, monkeypatch):
         real_tree = basin_module.cKDTree
         builds = 0
