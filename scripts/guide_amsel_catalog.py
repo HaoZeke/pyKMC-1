@@ -122,8 +122,15 @@ def catalog_guidance_payload(
         reverse=True,
     )
     ok_rows = [row for row in rows if row["ok"]]
+    transient_rows = _transient_state_guidance(
+        problem=problem,
+        df=df,
+        transient=transient,
+        entry=int(entry),
+    )
+    ok_transient_rows = [row for row in transient_rows if row["ok"]]
     return {
-        "ok": len(ok_rows) == len(rows),
+        "ok": len(ok_rows) == len(rows) and len(ok_transient_rows) == len(transient_rows),
         "case": case_name,
         "entry": int(entry),
         "n_transient": len(transient),
@@ -136,6 +143,11 @@ def catalog_guidance_payload(
             "failed_channels": len(rows) - len(ok_rows),
         },
         "channels": rows,
+        "transient_summary": {
+            "ok": len(ok_transient_rows) == len(transient_rows),
+            "failed_states": len(transient_rows) - len(ok_transient_rows),
+        },
+        "transient_states": transient_rows,
     }
 
 
@@ -204,6 +216,72 @@ def _channel_row(channel: ExitChannel) -> dict[str, Any]:
     for column in CATALOG_COLUMNS:
         if column in row.index:
             item[column] = _json_scalar(row[column])
+    return item
+
+
+def _transient_state_guidance(
+    *,
+    problem: Any,
+    df: pd.DataFrame,
+    transient: list[int],
+    entry: int,
+) -> list[dict[str, Any]]:
+    rows = []
+    for state in transient:
+        if state == entry:
+            continue
+        item = _incoming_transient_row(df, state)
+        item["state"] = int(state)
+        try:
+            result = problem.ngt(source=[int(entry)], target=[int(state)])
+        except Exception as exc:  # noqa: BLE001 - diagnostics report per-state failures.
+            item.update(
+                {
+                    "ok": False,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "hit_committor": 0.0,
+                    "rate": 0.0,
+                    "mfpt": None,
+                    "guidance_score": 0.0,
+                }
+            )
+        else:
+            hit_committor = float(result.committor)
+            item.update(
+                {
+                    "ok": True,
+                    "hit_committor": hit_committor,
+                    "rate": float(result.rate),
+                    "mfpt": float(result.mfpt),
+                    "guidance_score": hit_committor,
+                }
+            )
+        rows.append(item)
+
+    rows.sort(
+        key=lambda item: (
+            bool(item.get("ok", False)),
+            float(item.get("guidance_score", 0.0)),
+            float(item.get("rate", 0.0)),
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def _incoming_transient_row(df: pd.DataFrame, state: int) -> dict[str, Any]:
+    incoming = df[df["state_connexion"].astype(int) == int(state)].copy()
+    item: dict[str, Any] = {"incoming_count": int(len(incoming))}
+    if incoming.empty:
+        return item
+
+    incoming = incoming.sort_values("k_forward", ascending=False)
+    row = incoming.iloc[0]
+    item["incoming_state"] = int(row["state"])
+    item["incoming_rate"] = float(row["k_forward"])
+    for column in ("event_connexion", "central_atom", "sym"):
+        if column in row.index:
+            item[f"incoming_{column}"] = _json_scalar(row[column])
     return item
 
 
