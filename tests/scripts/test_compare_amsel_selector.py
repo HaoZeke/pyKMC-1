@@ -2,6 +2,7 @@ import importlib.util
 import math
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 
@@ -44,6 +45,59 @@ def test_run_selector_report_captures_legacy_success():
     assert math.isfinite(report["elapsed_ns"])
     assert report["exit_state"] == 1
     assert report["t_exit"] > 0.0
+
+
+def test_master_equation_report_matches_sympy_two_exit_solution():
+    sp = pytest.importorskip("sympy")
+    script = _load_script()
+    table = script.StatesConnectivity()
+    table.df = pd.DataFrame(
+        {
+            "state": [0, 0],
+            "state_connexion": [1, 2],
+            "k_forward": [1.0, 3.0],
+        }
+    )
+
+    a, b, t = sp.symbols("a b t", positive=True)
+    generator = sp.Matrix(
+        [
+            [a + b, 0, 0],
+            [-a, 0, 0],
+            [-b, 0, 0],
+        ]
+    )
+    p0 = sp.Matrix([1, 0, 0])
+    p_t = sp.simplify((-generator * t).exp() * p0)
+    subs = {a: sp.Integer(1), b: sp.Integer(3), t: sp.log(2) / 4}
+    expected_absorbed = float(sp.simplify((p_t[1] + p_t[2]).subs(subs)))
+    expected_exit_probability = float(
+        sp.simplify((p_t[2] / (p_t[1] + p_t[2])).subs(subs))
+    )
+
+    report = script.master_equation_report(
+        table=table,
+        t_exit=float(math.log(2.0) / 4.0),
+        time_draw=0.5,
+        outlet_draw=0.75,
+        exit_state=2,
+    )
+
+    assert report["master_equation_absorption_probability"] == pytest.approx(
+        expected_absorbed
+    )
+    assert report["reduced_master_equation_absorption_probability"] == pytest.approx(
+        expected_absorbed
+    )
+    assert report["master_reduced_absorption_error"] == pytest.approx(0.0)
+    assert report["time_draw_master_equation_error"] == pytest.approx(0.0)
+    assert report["master_equation_probability_sum"] == pytest.approx(1.0)
+    assert report["master_equation_selected_exit_probability"] == pytest.approx(
+        expected_exit_probability
+    )
+    assert report["master_equation_outlet_cdf_lower"] == pytest.approx(0.25)
+    assert report["master_equation_outlet_cdf_upper"] == pytest.approx(1.0)
+    assert report["master_equation_outlet_quantile_hit"] is True
 
 
 def test_run_selector_report_labels_mean_clock_as_mfpt():
