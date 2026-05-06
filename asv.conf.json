@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "project": "pyKMC",
+  "project_url": "https://github.com/hugomoison/pyKMC",
+  "repo": ".",
+  "benchmark_dir": "benchmarks",
+  "env_dir": ".asv/env",
+  "results_dir": ".asv/results",
+  "html_dir": ".asv/html",
+  "default_benchmark_timeout": 60
+}

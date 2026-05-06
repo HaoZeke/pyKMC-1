@@ -24,6 +24,8 @@ dev = [
     "pymdown-extensions",
     "mkdocstrings[python]",
     "mkdocs-jupyter",
+    "asv",
+    "asv-runner",
 ]
 
 [tool.pixi.workspace]
