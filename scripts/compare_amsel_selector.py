@@ -11,9 +11,11 @@ import warnings
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from pykmc.basins import AmselFPTASelector, FPTASelector, StatesConnectivity
+from pykmc.basins.utils import solve_master_equation_last_value
 
 
 class CycleRng:
@@ -123,6 +125,11 @@ def run_selector(
             )
             if result.is_ok():
                 value = result.ok_value()
+                stable_report = stable_absorption_report(
+                    table=table,
+                    t_exit=float(value.t_exit),
+                    time_draw=clock_report["time_draw"],
+                )
                 return {
                     "case": case_name,
                     "selector": selector_name,
@@ -134,6 +141,7 @@ def run_selector(
                     "warnings": [str(item.message) for item in captured],
                     "clock_mode": clock_mode,
                     **clock_report,
+                    **stable_report,
                 }
             err = result.err_value()
             return {
@@ -166,6 +174,37 @@ def run_selector(
                 "clock_mode": clock_mode,
                 **clock_report,
             }
+
+
+def stable_absorption_report(
+    *,
+    table: StatesConnectivity,
+    t_exit: float,
+    time_draw: float | None,
+) -> dict[str, float | None]:
+    if time_draw is None:
+        return {
+            "stable_absorption_probability": None,
+            "time_draw_absorption_error": None,
+        }
+
+    selector = FPTASelector()
+    selector.build_absorbing_matrix_from_connectivity(table)
+    selector.build_reduced_matrix(len(set(table.df["state"])))
+    p0 = np.zeros(len(selector.M_abs_reduced))
+    p0[0] = 1.0
+    absorbed = float(
+        solve_master_equation_last_value(
+            M=selector.M_abs_reduced,
+            t=float(t_exit),
+            p0=p0,
+            spectral_decomposition=False,
+        )
+    )
+    return {
+        "stable_absorption_probability": absorbed,
+        "time_draw_absorption_error": absorbed - float(time_draw),
+    }
 
 
 def amsel_feature_report(table: StatesConnectivity, entry: int = 0) -> dict[str, object]:
