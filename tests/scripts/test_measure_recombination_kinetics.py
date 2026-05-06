@@ -891,6 +891,8 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "cpu_time_s": None,
             "wall_time_s": None,
             "detector_reason": "timeout-7.5s",
+            "event_discovery_status": "unknown",
+            "event_searches": None,
             "failed_refinements": 0,
             "failed_refinement_committor": 0.0,
             "usable_resolved_committor": None,
