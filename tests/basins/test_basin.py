@@ -214,7 +214,10 @@ class TestBasin :
         basin.connectivity_table = BasinStatesConnectivity()
         basin.explorer = FakeExplorer()
 
-        result = basin.construct_connexion_table(max_expansions=1)
+        result = basin.construct_connexion_table(
+            max_expansions=10,
+            max_closed_states=1,
+        )
 
         assert result.is_ok()
         assert basin.exploration_order == [0]
