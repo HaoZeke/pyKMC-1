@@ -405,6 +405,7 @@ def test_basin_trace_rows_parse_order_queue_and_guidance():
             "\t :=> Basin exploration trace order=0,13; "
             "queue=14,1; guidance=14:3.750000e-01,1:2.500000e-01; "
             "closed_events=0:NA,13:1; "
+            "closed_processes=0:NA,13:1:3330; "
             "closed_guidance=0:0.000000e+00,13:3.750000e-01\n"
         ),
     )
@@ -426,6 +427,10 @@ def test_basin_trace_rows_parse_order_queue_and_guidance():
             "closed_events": "0:NA 13:1",
             "closed_event_families": "1",
             "closed_event_family_count": 1,
+            "closed_processes": "0:NA 13:1:3330",
+            "closed_process_signatures": "1:3330",
+            "closed_process_signature_count": 1,
+            "closed_process_singleton_count": 1,
             "closed_guidance": "0:0.000000e+00 13:3.750000e-01",
             "closed_guidance_sum": 0.375,
             "closed_top_guidance": 0.375,
@@ -473,6 +478,10 @@ def test_collect_basin_trace_rows_reads_trial_logs(tmp_path):
             "closed_events": "0:NA",
             "closed_event_families": "",
             "closed_event_family_count": 0,
+            "closed_processes": "",
+            "closed_process_signatures": "",
+            "closed_process_signature_count": 0,
+            "closed_process_singleton_count": 0,
             "closed_guidance": "0:0.000000e+00",
             "closed_guidance_sum": 0.0,
             "closed_top_guidance": 0.0,

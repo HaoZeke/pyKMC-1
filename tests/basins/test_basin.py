@@ -169,7 +169,7 @@ class TestBasin :
         assert basin.last_exploration_guidance[14] == pytest.approx(0.375)
         assert basin.last_exploration_guidance[1] == pytest.approx(0.25)
 
-    def test_update_to_explore_uses_event_family_novelty_as_tiebreaker(
+    def test_update_to_explore_uses_process_signature_novelty_as_tiebreaker(
         self, monkeypatch
     ):
         table = BasinStatesConnectivity()
@@ -191,7 +191,7 @@ class TestBasin :
                     "state": 0,
                     "state_connexion": 14,
                     "event_connexion": 1,
-                    "central_atom": 3330,
+                    "central_atom": 4444,
                     "sym": 2,
                     "transient": True,
                     "dE_forward": 0.0,
@@ -239,7 +239,7 @@ class TestBasin :
 
         basin.update_to_explore()
 
-        assert basin.states_to_explore == [33, 14, 40]
+        assert basin.states_to_explore == [14, 33, 40]
         assert basin.last_exploration_guidance[14] == pytest.approx(0.9)
 
     def test_update_to_explore_keeps_guidance_before_event_family_novelty(
@@ -331,6 +331,7 @@ class TestBasin :
             {
                 "state": 13,
                 "event_family": 7,
+                "process_signature": "7:3330",
                 "guidance": pytest.approx(0.375),
             }
         ]

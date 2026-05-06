@@ -183,6 +183,9 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
                 "top_queue_guidance": "0.5",
                 "closed_event_families": "1 7",
                 "closed_event_family_count": "2",
+                "closed_process_signatures": "1:3330 7:910",
+                "closed_process_signature_count": "2",
+                "closed_process_singleton_count": "2",
                 "closed_guidance_sum": "0.75",
                 "closed_top_guidance": "0.5",
             }
@@ -234,10 +237,15 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
             "last_top_queue_guidance": "0.5",
             "last_closed_event_families": "1 7",
             "last_closed_event_family_count": "2",
+            "last_closed_process_signatures": "1:3330 7:910",
+            "last_closed_process_signature_count": "2",
+            "last_closed_process_singleton_count": "2",
             "last_closed_guidance_sum": "0.75",
             "last_closed_top_guidance": "0.5",
             "last_frontier_states_per_closed_family": "4.0",
             "last_frontier_rate_per_closed_family": "0.0075",
+            "last_frontier_states_per_closed_process_signature": "4.0",
+            "last_frontier_rate_per_closed_process_signature": "0.0075",
             "last_closed_guidance_per_wall_s": "0.06",
         }
     ]

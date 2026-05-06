@@ -23,8 +23,18 @@ def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
         states_to_explore=[14, 1],
         last_exploration_guidance={14: 0.375, 1: 0.25},
         exploration_decisions=[
-            {"state": 0, "event_family": None, "guidance": 0.0},
-            {"state": 13, "event_family": 1, "guidance": 0.375},
+            {
+                "state": 0,
+                "event_family": None,
+                "process_signature": None,
+                "guidance": 0.0,
+            },
+            {
+                "state": 13,
+                "event_family": 1,
+                "process_signature": "1:3330",
+                "guidance": 0.375,
+            },
         ],
     )
 
@@ -32,6 +42,7 @@ def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
         "\t :=> Basin exploration trace order=0,13; "
         "queue=14,1; guidance=14:3.750000e-01,1:2.500000e-01; "
         "closed_events=0:NA,13:1; "
+        "closed_processes=0:NA,13:1:3330; "
         "closed_guidance=0:0.000000e+00,13:3.750000e-01"
     )
 
