@@ -131,6 +131,7 @@ class BasinsGenericEvents() :
         self.unresolved_frontier_diagnostics: dict[str, object] = {}
         self.last_exploration_guidance: dict[int, float] = {}
         self.exploration_order: list[int] = []
+        self.exploration_decisions: list[dict[str, float | int | None]] = []
 
     def detection(self, params) -> bool : 
         """Utility method."""
@@ -232,6 +233,7 @@ class BasinsGenericEvents() :
         self.explorer = BasinGenericEventExplorer(config=self.config, reference_table=self.reference_table)
         self.selector = self._make_selector()
         self.exploration_order = []
+        self.exploration_decisions = []
         self.absorbing_refinement_diagnostics = {}
         self.unresolved_frontier_diagnostics = {}
         new_system = System(positions=system.positions.copy(), types=system.types.copy(), cell=system.cell.copy(), pbc=system.pbc.copy(), index=np.arange(len(system.types)))
@@ -259,6 +261,8 @@ class BasinsGenericEvents() :
         """
         if not hasattr(self, "exploration_order"):
             self.exploration_order = []
+        if not hasattr(self, "exploration_decisions"):
+            self.exploration_decisions = []
         expanded_states = 0
         closed_states = 0
         #Loop over state to explore 
@@ -329,6 +333,7 @@ class BasinsGenericEvents() :
             self.current_state = to_explore
             last_state_connectivity = self.get_last_state_index()
             self.exploration_order.append(int(to_explore))
+            self._record_exploration_decision(int(to_explore))
 
             #Ensure full state to explore 
             self.states[to_explore].ensure_full_state(self.config)
@@ -432,6 +437,23 @@ class BasinsGenericEvents() :
         if event is None:
             return -1
         return int(event)
+
+    def _record_exploration_decision(self, state: int) -> None:
+        if not hasattr(self, "exploration_decisions"):
+            self.exploration_decisions = []
+        state = int(state)
+        self.exploration_decisions.append(
+            {
+                "state": state,
+                "event_family": self._incoming_event_family(state),
+                "guidance": float(
+                    (getattr(self, "last_exploration_guidance", {}) or {}).get(
+                        state,
+                        0.0,
+                    )
+                ),
+            }
+        )
 
 
     def system_from_state(self, from_state, event_idx, central_atom, sym_idx) : 

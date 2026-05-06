@@ -28,6 +28,8 @@ BASIN_TRACE_RE = re.compile(
     r"Basin exploration trace order=(?P<order>[0-9,]*); "
     r"queue=(?P<queue>[0-9,]*); "
     r"guidance=(?P<guidance>[0-9:.,eE+-]*)"
+    r"(?:; closed_events=(?P<closed_events>[0-9A-Z:,]*); "
+    r"closed_guidance=(?P<closed_guidance>[0-9:.,eE+-]*))?"
 )
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 TRIAL_FIELDS = [
@@ -75,6 +77,12 @@ BASIN_TRACE_FIELDS = [
     "queue_count",
     "top_queue_state",
     "top_queue_guidance",
+    "closed_events",
+    "closed_event_families",
+    "closed_event_family_count",
+    "closed_guidance",
+    "closed_guidance_sum",
+    "closed_top_guidance",
 ]
 
 
@@ -347,6 +355,13 @@ def basin_trace_rows_from_log(
         guidance_items, guidance_by_state = _parse_guidance(
             trace_match.group("guidance")
         )
+        closed_event_items, closed_event_families = _parse_closed_events(
+            trace_match.group("closed_events") or ""
+        )
+        closed_guidance_items, closed_guidance_by_state = _parse_guidance(
+            trace_match.group("closed_guidance") or ""
+        )
+        closed_guidance_values = list(closed_guidance_by_state.values())
         top_queue_state = queue[0] if queue else None
         top_queue_guidance = (
             guidance_by_state.get(top_queue_state)
@@ -367,6 +382,14 @@ def basin_trace_rows_from_log(
                 "queue_count": len(queue),
                 "top_queue_state": top_queue_state,
                 "top_queue_guidance": top_queue_guidance,
+                "closed_events": " ".join(closed_event_items),
+                "closed_event_families": " ".join(
+                    str(event) for event in closed_event_families
+                ),
+                "closed_event_family_count": len(closed_event_families),
+                "closed_guidance": " ".join(closed_guidance_items),
+                "closed_guidance_sum": float(sum(closed_guidance_values)),
+                "closed_top_guidance": float(max(closed_guidance_values, default=0.0)),
             }
         )
     return rows
@@ -403,6 +426,22 @@ def _parse_guidance(text: str) -> tuple[list[str], dict[int, float]]:
             continue
         guidance[int(state_text)] = float(value_text)
     return items, guidance
+
+
+def _parse_closed_events(text: str) -> tuple[list[str], list[int]]:
+    items = [item for item in text.split(",") if item]
+    families: list[int] = []
+    seen: set[int] = set()
+    for item in items:
+        _, _, event_text = item.partition(":")
+        if not event_text or event_text == "NA":
+            continue
+        event = int(event_text)
+        if event in seen:
+            continue
+        seen.add(event)
+        families.append(event)
+    return items, families
 
 
 def _empty_basin_confidence_row(

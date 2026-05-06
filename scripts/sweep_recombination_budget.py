@@ -37,6 +37,13 @@ SUMMARY_FIELDS = [
     "last_queue",
     "last_top_queue_state",
     "last_top_queue_guidance",
+    "last_closed_event_families",
+    "last_closed_event_family_count",
+    "last_closed_guidance_sum",
+    "last_closed_top_guidance",
+    "last_frontier_states_per_closed_family",
+    "last_frontier_rate_per_closed_family",
+    "last_closed_guidance_per_wall_s",
 ]
 
 
@@ -153,6 +160,11 @@ def write_sweep_summary(out: Path) -> None:
         trace = [row for row in trace_rows if _group_key(row) == key]
         last_confidence = _last_step_row(confidence)
         last_trace = _last_step_row(trace)
+        closed_family_count = _csv_int(last_trace.get("closed_event_family_count"))
+        frontier_states = _csv_float(last_confidence.get("frontier_states"))
+        frontier_rate = _csv_float(last_confidence.get("frontier_rate"))
+        closed_guidance_sum = _csv_float(last_trace.get("closed_guidance_sum"))
+        wall_time = _csv_float(_last_step_row(trials).get("wall_time_s"))
         summary_rows.append(
             {
                 "budget_label": key[0],
@@ -174,6 +186,26 @@ def write_sweep_summary(out: Path) -> None:
                 "last_queue": last_trace.get("queue"),
                 "last_top_queue_state": last_trace.get("top_queue_state"),
                 "last_top_queue_guidance": last_trace.get("top_queue_guidance"),
+                "last_closed_event_families": last_trace.get(
+                    "closed_event_families"
+                ),
+                "last_closed_event_family_count": last_trace.get(
+                    "closed_event_family_count"
+                ),
+                "last_closed_guidance_sum": last_trace.get("closed_guidance_sum"),
+                "last_closed_top_guidance": last_trace.get("closed_top_guidance"),
+                "last_frontier_states_per_closed_family": _ratio(
+                    frontier_states,
+                    closed_family_count,
+                ),
+                "last_frontier_rate_per_closed_family": _ratio(
+                    frontier_rate,
+                    closed_family_count,
+                ),
+                "last_closed_guidance_per_wall_s": _ratio(
+                    closed_guidance_sum,
+                    wall_time,
+                ),
             }
         )
     _write_csv(out / "sweep_summary.csv", summary_rows, SUMMARY_FIELDS)
@@ -208,6 +240,24 @@ def _last_step_row(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _csv_bool(value: Any) -> bool:
     return str(value).lower() == "true"
+
+
+def _csv_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
+def _csv_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def _ratio(numerator: float | None, denominator: int | float | None) -> float | None:
+    if numerator is None or denominator is None or float(denominator) == 0.0:
+        return None
+    return float(numerator) / float(denominator)
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:

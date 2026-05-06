@@ -67,11 +67,23 @@ def basin_exploration_trace_line(basin) -> str | None:
         for state in guidance_states
         if int(state) in guidance
     ]
+    decision_items = []
+    decision_guidance_items = []
+    for decision in getattr(basin, "exploration_decisions", []) or []:
+        state = int(decision["state"])
+        event_family = decision.get("event_family")
+        event_text = "NA" if event_family is None else str(int(event_family))
+        decision_items.append(f"{state}:{event_text}")
+        decision_guidance_items.append(
+            f"{state}:{float(decision.get('guidance') or 0.0):.6e}"
+        )
     return (
         "\t :=> Basin exploration trace "
         f"order={','.join(str(state) for state in order)}; "
         f"queue={','.join(str(state) for state in queue)}; "
-        f"guidance={','.join(guidance_items)}"
+        f"guidance={','.join(guidance_items)}; "
+        f"closed_events={','.join(decision_items)}; "
+        f"closed_guidance={','.join(decision_guidance_items)}"
     )
 
 
