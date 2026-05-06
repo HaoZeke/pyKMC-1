@@ -183,6 +183,7 @@ class BasinsGenericEvents() :
 
         from_state, event_idx, central_atom, sym_idx, is_transient = self.connectivity_table.get_transition_to_state(target_state=exit_state)
         if exit_state not in self.states:
+            self.manager.use_global()
             result_state = self.system_from_state(
                 from_state,
                 event_idx,
