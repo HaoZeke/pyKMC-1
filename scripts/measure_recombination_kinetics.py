@@ -199,6 +199,7 @@ def trial_commands(
     reference_table: Path | None,
     visited_environments: Path | None,
     partn_path: Path,
+    event_searches: int | None,
     priorities: list[str],
     trials: int,
     seed: int,
@@ -220,6 +221,7 @@ def trial_commands(
             reference_table=reference_table,
             visited_environments=visited_environments,
             max_steps=max_steps,
+            event_searches=event_searches,
             priority=str(item["priority"]),
             partn_path=partn_path,
             seed=int(item["seed"]),
@@ -256,6 +258,7 @@ def render_trial_input(
     reference_table: Path | None,
     visited_environments: Path | None,
     max_steps: int,
+    event_searches: int | None,
     priority: str,
     partn_path: Path,
     seed: int,
@@ -274,6 +277,9 @@ def render_trial_input(
         config[control]["reference_table"] = str(reference_table)
     if visited_environments is not None:
         config[control]["visited_environments"] = str(visited_environments)
+    if event_searches is not None:
+        event_search = _section(config, "EventSearch")
+        config[event_search]["nsearch"] = str(int(event_searches))
     config[partn]["path_artnso"] = str(partn_path)
     config[partn]["zseed"] = str(int(seed))
     config[basin]["exploration_priority"] = priority
@@ -295,6 +301,7 @@ def write_trial_input(
     reference_table: Path | None,
     visited_environments: Path | None,
     max_steps: int,
+    event_searches: int | None,
     priority: str,
     partn_path: Path,
     seed: int,
@@ -308,6 +315,7 @@ def write_trial_input(
             reference_table=reference_table,
             visited_environments=visited_environments,
             max_steps=max_steps,
+            event_searches=event_searches,
             priority=priority,
             partn_path=partn_path,
             seed=seed,
@@ -427,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trials", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--max-steps", type=int, required=True)
+    parser.add_argument("--event-searches", type=int)
     parser.add_argument("--work-budget")
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
@@ -446,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
         reference_table=args.reference_table,
         visited_environments=args.visited_environments,
         partn_path=args.partn_path,
+        event_searches=args.event_searches,
         priorities=args.priority,
         trials=args.trials,
         seed=args.seed,
@@ -468,6 +478,7 @@ def main(argv: list[str] | None = None) -> int:
         "trials": args.trials,
         "seed": args.seed,
         "max_steps": args.max_steps,
+        "event_searches": args.event_searches,
         "work_budget": args.work_budget,
         "mpi_ranks": args.mpi_ranks,
         "dry_run": bool(args.dry_run),
