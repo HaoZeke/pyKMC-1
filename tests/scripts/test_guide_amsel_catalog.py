@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+from pykmc.result import ErrorInfo, ErrorType
 
 pytest.importorskip("amsel")
 
@@ -191,4 +192,42 @@ def test_refinement_failure_keeps_partially_refined_table():
         "stage": "refine_absorbing",
         "error": "refinement failed",
         "rate_source": "partial-refined",
+    }
+
+
+def test_refinement_failure_serializes_error_context():
+    script = _load_script()
+    result = SimpleNamespace(
+        is_ok=lambda: False,
+        err_value=lambda: ErrorInfo(
+            type=ErrorType.EVENT_NOT_FOUND,
+            message="no event found",
+            details=(0, ""),
+            variables={
+                "refinement_row": {
+                    "row_index": 7,
+                    "state": 0,
+                    "state_connexion": 13,
+                    "event_connexion": 1,
+                }
+            },
+        ),
+    )
+
+    _, refinement = script._refinement_table_and_report(
+        result,
+        refined_table=object(),
+        catalog_table=object(),
+    )
+
+    assert refinement["error_type"] == "EVENT_NOT_FOUND"
+    assert refinement["error_message"] == "no event found"
+    assert refinement["error_details"] == [0, ""]
+    assert refinement["error_variables"] == {
+        "refinement_row": {
+            "row_index": 7,
+            "state": 0,
+            "state_connexion": 13,
+            "event_connexion": 1,
+        }
     }
