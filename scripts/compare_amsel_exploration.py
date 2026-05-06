@@ -74,7 +74,6 @@ def load_payloads(paths: list[Path]) -> list[dict[str, Any]]:
 
 
 def write_csv(payload: dict[str, Any], out) -> None:
-    rows = [_csv_row(row) for row in payload["rows"]]
     fieldnames = [
         "priority",
         "ok",
@@ -90,6 +89,7 @@ def write_csv(payload: dict[str, Any], out) -> None:
         "top_process_event_connexion",
         "queue_head",
     ]
+    rows = [_csv_row(row, fieldnames=fieldnames) for row in payload["rows"]]
     writer = csv.DictWriter(out, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)
@@ -137,12 +137,12 @@ def _gain(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _csv_row(row: dict[str, Any]) -> dict[str, Any]:
+def _csv_row(row: dict[str, Any], *, fieldnames: list[str]) -> dict[str, Any]:
     csv_row = row.copy()
     for key in ("closed_nonentry_states", "queue_head"):
         csv_row[key] = " ".join(str(value) for value in row[key])
     csv_row.pop("processes", None)
-    return csv_row
+    return {key: csv_row.get(key) for key in fieldnames}
 
 
 def _processes(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
