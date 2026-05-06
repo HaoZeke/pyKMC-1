@@ -3,6 +3,7 @@ from .exploration import Explorer, BasinGenericEventExplorer
 from .connectivity import BasinStatesConnectivity
 from .selection import FPTASelector
 from .amsel_selection import AmselFPTASelector, _AMSEL_AVAILABLE
+from .amsel_guidance import amsel_state_guidance_scores
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from pykmc import System, Config, NeighborsList, AtomicEnvironment, ReferenceEventTable, PointSetRegistration, check_match, Reconstruction
@@ -79,6 +80,7 @@ class BasinsGenericEvents() :
         self.states: dict[int, StateData] = {}  #Dictionnary of StateDate
         self.known_environments = known_environments 
         self.absorbing_saddle_positions: dict[int, np.ndarray] = {}
+        self.last_exploration_guidance: dict[int, float] = {}
 
     def detection(self, params) -> bool : 
         """Utility method."""
@@ -262,7 +264,28 @@ class BasinsGenericEvents() :
     def update_to_explore(self) : 
         #Find all state index in the connexion table : 
         unique_states = set(self.connectivity_table.get_table()['state']).union(set(self.connectivity_table.get_table()['state_connexion']))
-        self.states_to_explore =  list(unique_states.difference(set(self.explored_states)))
+        remaining_states = unique_states.difference(set(self.explored_states))
+        self.states_to_explore = self._order_states_to_explore(remaining_states)
+
+    def _order_states_to_explore(self, candidate_states) -> list[int]:
+        priority = getattr(getattr(self.config, "basin", None), "exploration_priority", "auto")
+        self.last_exploration_guidance = {}
+        if priority in {"legacy", "fifo"}:
+            return list(candidate_states)
+        if priority not in {"auto", "amsel"}:
+            return list(candidate_states)
+        if priority == "auto" and not _AMSEL_AVAILABLE:
+            return list(candidate_states)
+
+        scores = amsel_state_guidance_scores(self.connectivity_table, entry=0)
+        self.last_exploration_guidance = scores
+        if not scores:
+            return list(candidate_states)
+
+        return sorted(
+            candidate_states,
+            key=lambda state: (-float(scores.get(int(state), 0.0)), int(state)),
+        )
 
 
     def system_from_state(self, from_state, event_idx, central_atom, sym_idx) : 
