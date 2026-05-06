@@ -118,7 +118,8 @@ def test_selector_payload_marks_live_source_and_table_size():
         "sampled-quantile",
         "sampled-quantile",
         "deterministic-mfpt",
-        "deterministic-mfpt",
+        "sampled-quantile",
     ]
+    assert payload["selectors"][-1]["clock_mode"] == "reduced-sampled"
     assert payload["amsel_features"]["ok"] is True
     assert payload["clock_reference"]["ok"] is True

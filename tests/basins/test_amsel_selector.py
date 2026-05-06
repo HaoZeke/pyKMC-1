@@ -22,8 +22,8 @@ def _connectivity(df: pd.DataFrame) -> StatesConnectivity:
     return table
 
 
-def test_adaptive_selector_uses_mean_clock_on_rank1(monkeypatch):
-    draws = iter([0.25])
+def test_adaptive_selector_uses_reduced_sampled_clock_on_rank1(monkeypatch):
+    draws = iter([0.25, 0.0])
     monkeypatch.setattr("numpy.random.random", lambda: next(draws))
 
     selector = AmselFPTASelector(clock_mode="adaptive", rank_tol=1.0e-6)
@@ -39,9 +39,31 @@ def test_adaptive_selector_uses_mean_clock_on_rank1(monkeypatch):
 
     result = selector.select_from_connectivity(table)
     assert result.is_ok()
-    assert selector.last_clock_mode == "mean"
+    assert selector.last_clock_mode == "reduced-sampled"
     assert selector.last_reduced_kinetics is not None
     assert selector.last_reduced_kinetics.one_rate_clock_is_plausible(1.0e-6)
+    assert result.ok_value().t_exit == pytest.approx(0.2876820724517809 / 42.0)
+    assert result.ok_value().exit_state == 10
+
+
+def test_mean_selector_uses_mfpt_on_rank1(monkeypatch):
+    draws = iter([0.25])
+    monkeypatch.setattr("numpy.random.random", lambda: next(draws))
+
+    selector = AmselFPTASelector(clock_mode="mean", rank_tol=1.0e-6)
+    table = _connectivity(
+        pd.DataFrame(
+            {
+                "state": [0],
+                "state_connexion": [10],
+                "k_forward": [42.0],
+            }
+        )
+    )
+
+    result = selector.select_from_connectivity(table)
+    assert result.is_ok()
+    assert selector.last_clock_mode == "mean"
     assert result.ok_value().t_exit == pytest.approx(1.0 / 42.0)
     assert result.ok_value().exit_state == 10
 
