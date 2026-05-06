@@ -1013,29 +1013,47 @@ def execute_trials(
                     )
                     + "\n"
                 )
-                rows.append(
-                    apply_kinetic_guard(
-                        {
-                            "case": command["case"],
-                            "selector": command["priority"],
-                            "trial": int(command["trial"]),
-                            "seed": int(command["seed"]),
-                            "recombined": False,
-                            "t_recombination_s": None,
-                            "censored_time_s": 0.0,
-                            "kmc_steps": 0,
-                            "cpu_time_s": None,
-                            "wall_time_s": None,
-                            "detector_reason": f"timeout-{trial_timeout_s}s",
-                            "event_discovery_status": "unknown",
-                            "event_searches": command.get("event_searches"),
-                            "kinetic_claim_ok": False,
-                            "output_dir": str(workdir),
-                        },
-                        diagnostics=None,
-                        log_text="",
+                if (workdir / "pykmc.out").exists() and (
+                    workdir / "pykmc.log"
+                ).exists():
+                    row = trial_row_from_outputs(
+                        case=str(command["case"]),
+                        selector=str(command["priority"]),
+                        trial=int(command["trial"]),
+                        seed=int(command["seed"]),
+                        output_dir=workdir,
                     )
-                )
+                    row["detector_reason"] = f"timeout-{trial_timeout_s}s"
+                    row["event_searches"] = command.get("event_searches")
+                    row["kinetic_claim_ok"] = False
+                    rows.append(row)
+                else:
+                    rows.append(
+                        apply_kinetic_guard(
+                            {
+                                "case": command["case"],
+                                "selector": command["priority"],
+                                "trial": int(command["trial"]),
+                                "seed": int(command["seed"]),
+                                "recombined": False,
+                                "t_recombination_s": None,
+                                "censored_time_s": 0.0,
+                                "kmc_steps": 0,
+                                "cpu_time_s": None,
+                                "wall_time_s": None,
+                                "detector_reason": f"timeout-{trial_timeout_s}s",
+                                "event_discovery_status": "unknown",
+                                "event_searches": command.get("event_searches"),
+                                "final_noncrystal_atoms": None,
+                                "min_noncrystal_atoms": None,
+                                "trajectory_recombination_frame": None,
+                                "kinetic_claim_ok": False,
+                                "output_dir": str(workdir),
+                            },
+                            diagnostics=None,
+                            log_text="",
+                        )
+                    )
                 continue
             (workdir / "harness.log").write_text(result.stdout)
             event_handle.write(
