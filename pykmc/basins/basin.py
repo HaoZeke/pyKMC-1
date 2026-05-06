@@ -383,7 +383,7 @@ class BasinsGenericEvents() :
         self.last_exploration_guidance = {}
         if priority in {"legacy", "fifo"}:
             return list(candidate_states)
-        if priority not in {"auto", "amsel"}:
+        if priority not in {"auto", "amsel", "amsel-diverse"}:
             return list(candidate_states)
         if priority == "auto" and not _AMSEL_AVAILABLE:
             return list(candidate_states)
@@ -393,10 +393,45 @@ class BasinsGenericEvents() :
         if not scores:
             return list(candidate_states)
 
+        if priority == "amsel-diverse":
+            seen_events = self._explored_event_families()
+            return sorted(
+                candidate_states,
+                key=lambda state: (
+                    self._incoming_event_family(int(state)) in seen_events,
+                    -float(scores.get(int(state), 0.0)),
+                    self._incoming_event_family_sort_key(int(state)),
+                    int(state),
+                ),
+            )
+
         return sorted(
             candidate_states,
             key=lambda state: (-float(scores.get(int(state), 0.0)), int(state)),
         )
+
+    def _explored_event_families(self) -> set[int]:
+        return {
+            event
+            for state in self.explored_states
+            for event in [self._incoming_event_family(int(state))]
+            if event is not None
+        }
+
+    def _incoming_event_family(self, state: int) -> int | None:
+        df = getattr(self.connectivity_table, "df", None)
+        if not isinstance(df, pd.DataFrame) or "event_connexion" not in df.columns:
+            return None
+        rows = df.loc[df["state_connexion"] == int(state)]
+        if rows.empty:
+            return None
+        return int(rows.iloc[0]["event_connexion"])
+
+    def _incoming_event_family_sort_key(self, state: int) -> int:
+        event = self._incoming_event_family(state)
+        if event is None:
+            return -1
+        return int(event)
 
 
     def system_from_state(self, from_state, event_idx, central_atom, sym_idx) : 

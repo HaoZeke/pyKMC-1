@@ -456,6 +456,7 @@ def trial_commands(
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
+    amsel_exploration_priority: str,
     mpi_ranks: int,
     mpirun: str,
     python: str,
@@ -482,6 +483,7 @@ def trial_commands(
             basin_max_closed_states=basin_max_closed_states,
             basin_max_absorbing_refinements=basin_max_absorbing_refinements,
             amsel_selector=amsel_selector,
+            amsel_exploration_priority=amsel_exploration_priority,
         )
         commands.append(
             {
@@ -497,6 +499,7 @@ def trial_commands(
                 "basin_max_closed_states": basin_max_closed_states,
                 "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
                 "amsel_selector": amsel_selector,
+                "amsel_exploration_priority": amsel_exploration_priority,
                 "workdir": str(trial_dir),
                 "command": [
                     mpirun,
@@ -531,6 +534,7 @@ def render_trial_input(
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
+    amsel_exploration_priority: str,
 ) -> str:
     config = configparser.ConfigParser()
     config.optionxform = str
@@ -554,7 +558,10 @@ def render_trial_input(
         config[event_search]["nsearch"] = str(int(event_searches))
     config[partn]["path_artnso"] = str(partn_path)
     config[partn]["zseed"] = str(int(seed))
-    config[basin]["exploration_priority"] = priority
+    config[basin]["exploration_priority"] = _exploration_priority_for_priority(
+        priority=priority,
+        amsel_exploration_priority=amsel_exploration_priority,
+    )
     config[basin]["selector"] = _selector_for_priority(
         priority=priority,
         amsel_selector=amsel_selector,
@@ -597,6 +604,7 @@ def write_trial_input(
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
+    amsel_exploration_priority: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -617,6 +625,7 @@ def write_trial_input(
             basin_max_closed_states=basin_max_closed_states,
             basin_max_absorbing_refinements=basin_max_absorbing_refinements,
             amsel_selector=amsel_selector,
+            amsel_exploration_priority=amsel_exploration_priority,
         )
     )
 
@@ -626,6 +635,18 @@ def _selector_for_priority(*, priority: str, amsel_selector: str) -> str:
         return "legacy-fpta"
     if priority == "amsel":
         return amsel_selector
+    raise ValueError(f"unknown priority: {priority}")
+
+
+def _exploration_priority_for_priority(
+    *,
+    priority: str,
+    amsel_exploration_priority: str,
+) -> str:
+    if priority == "legacy":
+        return "legacy"
+    if priority == "amsel":
+        return amsel_exploration_priority
     raise ValueError(f"unknown priority: {priority}")
 
 
@@ -808,6 +829,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=("amsel-sampled", "amsel-mean", "amsel-adaptive"),
         default="amsel-adaptive",
     )
+    parser.add_argument(
+        "--amsel-exploration-priority",
+        choices=("amsel", "amsel-diverse"),
+        default="amsel",
+    )
     parser.add_argument("--work-budget")
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
@@ -840,6 +866,7 @@ def main(argv: list[str] | None = None) -> int:
         basin_max_closed_states=args.basin_max_closed_states,
         basin_max_absorbing_refinements=args.basin_max_absorbing_refinements,
         amsel_selector=args.amsel_selector,
+        amsel_exploration_priority=args.amsel_exploration_priority,
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
         python=args.python,
@@ -865,6 +892,7 @@ def main(argv: list[str] | None = None) -> int:
         "basin_max_closed_states": args.basin_max_closed_states,
         "basin_max_absorbing_refinements": args.basin_max_absorbing_refinements,
         "amsel_selector": args.amsel_selector,
+        "amsel_exploration_priority": args.amsel_exploration_priority,
         "work_budget": args.work_budget,
         "mpi_ranks": args.mpi_ranks,
         "dry_run": bool(args.dry_run),

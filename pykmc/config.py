@@ -545,7 +545,7 @@ class BasinConfig(BaseModel):
         default="auto",
         description="Basin exit selector. auto uses AMSEL sampled FPTA when available and legacy FPTA otherwise.",
     )
-    exploration_priority: Literal["auto", "legacy", "amsel"] = Field(
+    exploration_priority: Literal["auto", "legacy", "amsel", "amsel-diverse"] = Field(
         default="auto",
         description="Basin graph expansion priority. auto uses AMSEL NGT hitting probabilities when available and legacy queue order otherwise.",
     )
