@@ -47,6 +47,21 @@ def test_detect_recombination_from_log_marks_censored_run():
     }
 
 
+def test_detect_recombination_from_log_marks_zero_event_discovery():
+    script = _load_script()
+
+    result = script.detect_recombination_from_log(
+        "Step : 1\n"
+        "No events have been found, empty reference events table.\n"
+        ":=> End of simulation\n"
+    )
+
+    assert result == {
+        "recombined": False,
+        "detector_reason": "zero-event-discovery",
+    }
+
+
 def test_parse_pykmc_out_reads_numeric_rows(tmp_path):
     script = _load_script()
     path = tmp_path / "pykmc.out"
@@ -120,7 +135,10 @@ def test_trial_row_rejects_zero_step_censored_run(tmp_path):
     )
 
     assert row["recombined"] is False
+    assert row["detector_reason"] == "zero-event-discovery"
     assert row["kmc_steps"] == 0
+    assert row["event_discovery_status"] == "zero-events"
+    assert row["event_searches"] is None
     assert row["kinetic_claim_ok"] is False
 
 
@@ -267,6 +285,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     commands = json.loads((out / "commands.json").read_text())
     assert len(commands) == 4
     assert commands[0]["priority"] == "legacy"
+    assert commands[0]["event_searches"] == 3
     assert commands[1]["priority"] == "amsel"
 
     config = configparser.ConfigParser()
