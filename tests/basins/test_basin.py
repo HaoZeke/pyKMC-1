@@ -345,6 +345,68 @@ class TestBasin :
             "unresolved_rate": pytest.approx(3.0),
         }
 
+    def test_execute_stops_before_refinement_when_frontier_committor_is_unresolved(
+        self, monkeypatch
+    ):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 1,
+                    "central_atom": 10,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 3.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                }
+            ]
+        )
+
+        def fake_initialize(self, system):
+            self.states = {0: object()}
+            self.connectivity_table = table
+
+        def fail_refine(self, system):
+            raise AssertionError("frontier-incomplete basins must not refine exits")
+
+        monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "construct_connexion_table",
+            lambda self, max_expansions=None, max_closed_states=None: Ok(None),
+        )
+        monkeypatch.setattr(BasinsGenericEvents, "refine_absorbing", fail_refine)
+        monkeypatch.setattr(
+            basin_module,
+            "amsel_state_guidance_scores",
+            lambda connectivity_table, entry=0: {1: 1.0},
+        )
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(
+                max_expansions=None,
+                max_closed_states=None,
+                frontier_committor_tol=0.0,
+            )
+        )
+        basin.manager = SimpleNamespace(use_local=lambda: None)
+
+        result = basin.execute(system=object())
+
+        assert not result.is_ok()
+        assert result.err_value().type == ErrorType.BASIN_TEXIT_NOT_FOUND
+        assert "unresolved frontier" in result.err_value().message
+        assert basin.unresolved_frontier_diagnostics == {
+            "total": 1,
+            "unresolved_committor": pytest.approx(1.0),
+            "unresolved_rate": pytest.approx(3.0),
+        }
+
     def test_execute_uses_configured_basin_exploration_budgets(self, monkeypatch):
         calls = {}
 
