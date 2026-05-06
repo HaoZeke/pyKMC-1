@@ -39,6 +39,22 @@ class BasinAmselSuite:
         amsel_state_guidance_scores(self.table, entry=0)
 
 
+class DefectiveBasinAmselSuite:
+    def setup(self):
+        self.table = make_defective_ni_like_basin_table()
+        self.legacy_selector = FPTASelector(rng=CycleRng([0.5, 0.5]))
+        self.amsel_selector = AmselFPTASelector(
+            clock_mode="sampled",
+            rng=CycleRng([0.5, 0.5]),
+        )
+
+    def time_legacy_defective_selector(self):
+        self.legacy_selector.select_from_connectivity(self.table)
+
+    def time_amsel_sampled_defective_selector(self):
+        self.amsel_selector.select_from_connectivity(self.table)
+
+
 def make_basin_table(n_transient):
     table = StatesConnectivity()
     rows = []
@@ -71,6 +87,22 @@ def make_basin_table(n_transient):
         )
     )
     table.df = pd.DataFrame(rows)
+    return table
+
+
+def make_defective_ni_like_basin_table():
+    table = StatesConnectivity()
+    table.df = pd.DataFrame(
+        [
+            _row(0, 1, True, 0.001906057627456081),
+            _row(0, 2, True, 0.001906057627456081),
+            _row(0, 4, False, 0.011436345764736488),
+            _row(1, 3, True, 0.001906057627456081),
+            _row(1, 5, False, 0.01334240339219257),
+            _row(2, 6, False, 0.015248461019648652),
+            _row(3, 7, False, 0.01524846101964865),
+        ]
+    )
     return table
 
 
