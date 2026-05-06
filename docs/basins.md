@@ -15,6 +15,7 @@ basin = True
 [Basin]
 energy_thr = 0.1
 selector = auto
+exploration_priority = auto
 ```
 
 `selector` controls the basin exit-time implementation:
@@ -24,6 +25,12 @@ selector = auto
 * `amsel-sampled`: use AMSEL's sampled FPTA clock
 * `amsel-mean`: use AMSEL's deterministic mean first-passage clock
 * `amsel-adaptive`: use a sampled AMSEL rank-1 reduced clock when diagnostics support it, otherwise use sampled FPTA
+
+`exploration_priority` controls which basin graph node is expanded next:
+
+* `auto`: use AMSEL NGT hitting probabilities when AMSEL is available, otherwise preserve legacy queue ordering
+* `legacy`: preserve the original queue ordering
+* `amsel`: use AMSEL NGT hitting probabilities when they can be computed
 
 AMSEL also provides catalog-level guidance through
 `scripts/guide_amsel_catalog.py`. This script leaves the KMC loop
