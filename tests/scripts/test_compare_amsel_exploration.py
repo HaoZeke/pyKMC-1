@@ -1,4 +1,5 @@
 import importlib.util
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -108,3 +109,20 @@ def test_comparison_payload_reports_amsel_gain_over_legacy():
     assert payload["gain"]["baseline_top_process_event_connexion"] == 0
     assert payload["gain"]["challenger_top_process_event_connexion"] == 1
     assert payload["gain"]["closed_budget"] == 2
+
+
+def test_write_csv_filters_non_tabular_fields():
+    script = _load_script()
+    payload = script.comparison_payload(
+        [
+            _payload("legacy", closed=[0, 1], resolved=2.5e-9, frontier=[0.125]),
+            _payload("amsel", closed=[0, 13], resolved=0.125, frontier=[0.125]),
+        ]
+    )
+    out = StringIO()
+
+    script.write_csv(payload, out)
+
+    assert "priority,ok,rate_source" in out.getvalue()
+    assert "legacy" in out.getvalue()
+    assert "amsel" in out.getvalue()
