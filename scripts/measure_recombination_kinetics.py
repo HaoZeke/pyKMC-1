@@ -496,8 +496,8 @@ def trial_commands(
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
-    amsel_duplicate_family_penalty: float,
-    amsel_min_guidance: float,
+    amsel_duplicate_family_penalty: float = 1.0,
+    amsel_min_guidance: float = 0.0,
     mpi_ranks: int,
     mpirun: str,
     python: str,
@@ -580,8 +580,8 @@ def render_trial_input(
     basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
-    amsel_duplicate_family_penalty: float,
-    amsel_min_guidance: float,
+    amsel_duplicate_family_penalty: float = 1.0,
+    amsel_min_guidance: float = 0.0,
 ) -> str:
     config = configparser.ConfigParser()
     config.optionxform = str
