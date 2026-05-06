@@ -205,6 +205,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "0.5",
             "--basin-max-closed-states",
             "2",
+            "--basin-max-absorbing-refinements",
+            "1",
             "--amsel-selector",
             "amsel-adaptive",
             "--work-budget",
@@ -252,6 +254,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert config["BASIN"]["exploration_priority"] == "amsel"
     assert config["BASIN"]["energy_thr"] == "0.5"
     assert config["BASIN"]["max_closed_states"] == "2"
+    assert config["BASIN"]["max_absorbing_refinements"] == "1"
 
     legacy = configparser.ConfigParser()
     legacy.optionxform = str
@@ -293,6 +296,23 @@ def test_kinetic_guard_rejects_unresolved_basin_failure():
     assert guarded["kinetic_claim_ok"] is False
     assert guarded["failed_refinements"] == 1
     assert guarded["failed_refinement_committor"] == 0.0
+
+
+def test_kinetic_guard_rejects_unresolved_absorbing_refinement_budget():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {"selector": "amsel", "kinetic_claim_ok": True},
+        diagnostics=None,
+        log_text=(
+            "Basin absorbing refinement skipped 2 exits; "
+            "unresolved_committor=3.250000e-01; unresolved_rate=1.0"
+        ),
+    )
+
+    assert guarded["kinetic_claim_ok"] is False
+    assert guarded["failed_refinements"] == 2
+    assert guarded["failed_refinement_committor"] == 0.325
 
 
 def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypatch):
