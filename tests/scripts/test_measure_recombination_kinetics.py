@@ -1,6 +1,7 @@
 import configparser
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -292,3 +293,68 @@ def test_kinetic_guard_rejects_unresolved_basin_failure():
     assert guarded["kinetic_claim_ok"] is False
     assert guarded["failed_refinements"] == 1
     assert guarded["failed_refinement_committor"] == 0.0
+
+
+def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypatch):
+    script = _load_script()
+    workdir = tmp_path / "legacy" / "trial-0"
+    workdir.mkdir(parents=True)
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd=kwargs.get("args") or args[0],
+            timeout=7.5,
+            output="partial stdout",
+        )
+
+    monkeypatch.setattr(script.subprocess, "run", fake_run)
+
+    rows = script.execute_trials(
+        [
+            {
+                "case": "ni-vac-sia",
+                "priority": "legacy",
+                "trial": 0,
+                "seed": 1000,
+                "workdir": str(workdir),
+                "command": ["python", "-m", "pykmc"],
+            }
+        ],
+        tmp_path / "events.jsonl",
+        trial_timeout_s=7.5,
+    )
+
+    assert rows == [
+        {
+            "case": "ni-vac-sia",
+            "selector": "legacy",
+            "trial": 0,
+            "seed": 1000,
+            "recombined": False,
+            "t_recombination_s": None,
+            "censored_time_s": 0.0,
+            "kmc_steps": 0,
+            "detector_reason": "timeout-7.5s",
+            "failed_refinements": 0,
+            "failed_refinement_committor": 0.0,
+            "usable_resolved_committor": None,
+            "kinetic_claim_ok": False,
+            "output_dir": str(workdir),
+        }
+    ]
+    assert "partial stdout" in (workdir / "harness.log").read_text()
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "events.jsonl").read_text().splitlines()
+    ]
+    assert events == [
+        {
+            "case": "ni-vac-sia",
+            "priority": "legacy",
+            "returncode": None,
+            "seed": 1000,
+            "timed_out": True,
+            "timeout_s": 7.5,
+            "trial": 0,
+        }
+    ]
