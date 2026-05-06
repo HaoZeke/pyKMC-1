@@ -512,6 +512,53 @@ class TestBasin :
             "unresolved_rate": pytest.approx(3.0),
         }
 
+    def test_frontier_boundary_marks_unexpanded_states_absorbing(self, monkeypatch):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 1,
+                    "central_atom": 10,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 3.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 0,
+                    "state_connexion": 2,
+                    "event_connexion": 2,
+                    "central_atom": 20,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+            ]
+        )
+        monkeypatch.setattr(
+            basin_module,
+            "amsel_state_guidance_scores",
+            lambda connectivity_table, entry=0: {1: 0.75, 2: 0.25},
+        )
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.connectivity_table = table
+
+        basin._absorb_unexpanded_frontier()
+
+        assert not bool(basin.connectivity_table.df.loc[0, "transient"])
+        assert basin.frontier_boundary_diagnostics == {
+            "total": 1,
+            "boundary_committor": pytest.approx(0.75),
+            "boundary_rate": pytest.approx(3.0),
+        }
+
     def test_execute_stops_before_refinement_when_frontier_committor_is_unresolved(
         self, monkeypatch
     ):
