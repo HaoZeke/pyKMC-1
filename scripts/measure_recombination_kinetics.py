@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover - exercised in environments without AMSE
     _amsel = None
 
 CRYSTAL_TERMINATION_MARKER = "Only atoms with cristalline environment"
+ZERO_EVENT_DISCOVERY_MARKER = "No events have been found, empty reference events table"
 BASIN_REFINEMENT_BUDGET_RE = re.compile(
     r"Basin absorbing refinement skipped (?P<count>\d+) exits; "
     r"unresolved_committor=(?P<committor>[0-9.eE+-]+); "
@@ -57,6 +58,8 @@ TRIAL_FIELDS = [
     "cpu_time_s",
     "wall_time_s",
     "detector_reason",
+    "event_discovery_status",
+    "event_searches",
     "failed_refinements",
     "failed_refinement_committor",
     "usable_resolved_committor",
@@ -112,10 +115,21 @@ def detect_recombination_from_log(text: str) -> dict[str, object]:
             "recombined": True,
             "detector_reason": "all-crystal-environments",
         }
+    if ZERO_EVENT_DISCOVERY_MARKER in text:
+        return {
+            "recombined": False,
+            "detector_reason": "zero-event-discovery",
+        }
     return {
         "recombined": False,
         "detector_reason": "censored",
     }
+
+
+def event_discovery_status_from_log(text: str) -> str:
+    if ZERO_EVENT_DISCOVERY_MARKER in text:
+        return "zero-events"
+    return "not-zero-event"
 
 
 def seed_schedule(
@@ -187,6 +201,8 @@ def trial_row_from_outputs(
         "cpu_time_s": output_rows[-1]["cpu_time_s"] if output_rows else None,
         "wall_time_s": output_rows[-1]["wall_time_s"] if output_rows else None,
         "detector_reason": detector["detector_reason"],
+        "event_discovery_status": event_discovery_status_from_log(log_text),
+        "event_searches": None,
         "output_dir": str(output_dir),
     }
     return apply_kinetic_guard(row, diagnostics=None, log_text=log_text)
@@ -638,6 +654,7 @@ def trial_commands(
                 "seed": item["seed"],
                 "max_steps": int(max_steps),
                 "work_budget": work_budget,
+                "event_searches": event_searches,
                 "trial_timeout_s": trial_timeout_s,
                 "basin_energy_thr": basin_energy_thr,
                 "basin_max_expansions": basin_max_expansions,
@@ -901,6 +918,8 @@ def execute_trials(
                             "cpu_time_s": None,
                             "wall_time_s": None,
                             "detector_reason": f"timeout-{trial_timeout_s}s",
+                            "event_discovery_status": "unknown",
+                            "event_searches": command.get("event_searches"),
                             "kinetic_claim_ok": False,
                             "output_dir": str(workdir),
                         },
@@ -933,6 +952,7 @@ def execute_trials(
                         output_dir=workdir,
                     )
                 )
+                rows[-1]["event_searches"] = command.get("event_searches")
             else:
                 rows.append(
                     apply_kinetic_guard(
@@ -948,6 +968,8 @@ def execute_trials(
                             "cpu_time_s": None,
                             "wall_time_s": None,
                             "detector_reason": f"returncode-{result.returncode}",
+                            "event_discovery_status": "unknown",
+                            "event_searches": command.get("event_searches"),
                             "kinetic_claim_ok": False,
                             "output_dir": str(workdir),
                         },
