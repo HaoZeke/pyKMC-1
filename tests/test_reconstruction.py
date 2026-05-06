@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from pykmc import Reconstruction
+from pykmc.config import BasinConfig
 
 
 class RecordingManager:
@@ -40,3 +41,7 @@ def test_reconstruction_uses_explicit_minimize_command_without_mutating_config()
         "1.0e-6 1.0e-8 10 10",
     ]
     assert config.lammps.minimize == "1e-10 1e-12 10000 10000"
+
+
+def test_basin_reconstruction_uses_main_minimizer_by_default():
+    assert BasinConfig().reconstruction_minimize is None
