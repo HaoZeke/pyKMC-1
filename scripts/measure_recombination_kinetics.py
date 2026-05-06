@@ -972,6 +972,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--initial-config", type=Path)
     parser.add_argument("--reference-table", type=Path)
     parser.add_argument("--visited-environments", type=Path)
+    parser.add_argument("--allow-preloaded-catalog", action="store_true")
     parser.add_argument("--partn-path", type=Path, required=True)
     parser.add_argument(
         "--priority",
@@ -1009,6 +1010,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
+    if (
+        args.reference_table is not None or args.visited_environments is not None
+    ) and not args.allow_preloaded_catalog:
+        parser.error(
+            "--reference-table and --visited-environments require "
+            "--allow-preloaded-catalog"
+        )
     defaults = case_defaults(args.case)
     template_input = args.template_input or defaults["template_input"]
     initial_config = args.initial_config or defaults["initial_config"]
@@ -1050,6 +1058,7 @@ def main(argv: list[str] | None = None) -> int:
         "visited_environments": (
             str(args.visited_environments) if args.visited_environments else None
         ),
+        "allow_preloaded_catalog": bool(args.allow_preloaded_catalog),
         "partn_path": str(args.partn_path),
         "priorities": args.priority,
         "trials": args.trials,
