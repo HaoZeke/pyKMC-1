@@ -622,6 +622,7 @@ class TestBasin :
         basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
         basin.config = SimpleNamespace()
         basin.states = {0: FakeState(system=object())}
+        basin.known_environments = {"crystal"}
         basin.states_to_explore = [1]
         basin.explored_states = [0]
         basin.current_state = 0
