@@ -154,6 +154,31 @@ class BasinsGenericEvents() :
         mapping = self.connectivity_table.reorder_states_index()
         self.states = {mapping[old]: val for old, val in self.states.items()}
         self._record_unresolved_frontier_diagnostics()
+        frontier_tol = float(
+            getattr(
+                getattr(self.config, "basin", None),
+                "frontier_committor_tol",
+                0.0,
+            )
+        )
+        if (
+            float(
+                self.unresolved_frontier_diagnostics.get(
+                    "unresolved_committor",
+                    0.0,
+                )
+            )
+            > frontier_tol
+        ):
+            return Err(
+                ErrorInfo(
+                    type=ErrorType.BASIN_TEXIT_NOT_FOUND,
+                    message="basin exploration budget left unresolved frontier committor",
+                    variables={
+                        "frontier": self.unresolved_frontier_diagnostics,
+                    },
+                )
+            )
         #Refine absorbing states
         self.manager.use_local()
         result =self.refine_absorbing(system)

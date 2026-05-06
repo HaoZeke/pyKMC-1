@@ -568,6 +568,11 @@ class BasinConfig(BaseModel):
         ge=0,
         description="Maximum number of absorbing basin exits to refine before selecting an exit.",
     )
+    frontier_committor_tol: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Maximum unresolved frontier committor allowed before basin exit selection.",
+    )
     reconstruction_minimize: Optional[str] = Field(
         default=None,
         description="LAMMPS minimize command used when reconstructing catalog states inside a basin graph.",
