@@ -303,8 +303,13 @@ class BasinsGenericEvents() :
 
                 #ENSURE FULL STATE TO EXPLORE 
                 self.states[to_explore].ensure_full_state(self.config)
+                # The basin graph uses the same terminal boundary as the KMC loop.
+                if self.is_state_terminal_environment(self.states[to_explore]):
+                    self.connectivity_table.change_state_to_absorbing(to_explore)
+                    self.states[to_explore].transient = False
+                    is_transient = False
                 #Check if unknown atomic environments
-                if self.is_states_has_unknown_environments(self.states[to_explore]) : 
+                elif self.is_states_has_unknown_environments(self.states[to_explore]) : 
                     #We consider that this state is an absorbing one because we need to search new events (in main KMC loop) 
                     #Need to update the connectivity table 
                     self.connectivity_table.change_state_to_absorbing(to_explore) 
@@ -816,6 +821,9 @@ class BasinsGenericEvents() :
             return True 
         else : 
             return False
+
+    def is_state_terminal_environment(self, state: StateData) -> bool:
+        return set(state.environment.atomic_environment_list) == {"crystal"}
 
     def _add_state(self, state_index, system=None, transient=True, applicable_events=None, visited=False, full=False ) :
         """Add a new state in the `self.states` dictionnary."""
