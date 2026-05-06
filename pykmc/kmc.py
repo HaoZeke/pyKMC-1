@@ -92,6 +92,29 @@ def basin_exploration_trace_line(basin) -> str | None:
     )
 
 
+def environments_with_cataloged_searches(
+    atomic_environment_list,
+    event_outputs,
+    valid_event_results,
+) -> set[str | bytes]:
+    """Return environment IDs supported by catalog insertion or duplicate evidence."""
+    searched_environments: set[str | bytes] = set()
+    for event_output, valid_result in zip(event_outputs, valid_event_results):
+        if valid_result.is_ok():
+            searched_environments.add(
+                atomic_environment_list[int(event_output.central_atom_index)]
+            )
+            continue
+
+        error = valid_result.err_value()
+        error_type = getattr(error, "type", error)
+        if error_type == ErrorType.EVENT_NOT_NEW:
+            searched_environments.add(
+                atomic_environment_list[int(event_output.central_atom_index)]
+            )
+    return searched_environments
+
+
 # NOTE can maybe reimplment tries if empty catalog
 #TODO: Add reconstruction info
 
@@ -206,8 +229,9 @@ class KMC:
 
             # == ADD NEW GENERIC EVENTS TO REFERENCE EVENT TABLE ==
             ##=>Check if the event is valid, ie if not already present and has a valid energy barrier if yes add it to the reference table
+            event_search_outputs = event_search.get_successes_results()
             results_is_valid_events = self.add_reference_events(
-                event_search.get_successes_results()
+                event_search_outputs
             )
 
             ##=>Close simulation if no events in the reference table
@@ -220,10 +244,18 @@ class KMC:
 
 
             # == Update variables ==
-            l_ids = list(set(self.atomic_environment.atomic_environment_list))
-            self.visited_environments.update(
-                set(l_ids).difference(self.visited_environments)
+            searched_environments = environments_with_cataloged_searches(
+                self.atomic_environment.atomic_environment_list,
+                event_search_outputs,
+                results_is_valid_events,
             )
+            self.loggers.info(
+                "log",
+                "\t :=> Marking {} atomic environments as searched".format(
+                    len(searched_environments.difference(self.visited_environments))
+                ),
+            )
+            self.visited_environments.update(searched_environments)
             # == Refinement ==
             ##=>Subset of reference_event_table with generic event that can be apply to the current step (ie event_id in atomic environment)
             subset_reference_event_table = self.reference_table.has_id_subset_table(
