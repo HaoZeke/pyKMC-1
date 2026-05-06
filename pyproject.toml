@@ -74,6 +74,7 @@ verify-pypartn = { cmd = "python -c \"import pypARTn; base = pypARTn.artn(engine
 
 [tool.pixi.feature.test.dependencies]
 pytest = "*"
+asv = "*"
 
 [tool.pixi.feature.test.tasks]
 test-amsel-selector = { cmd = "pytest tests/basins/test_amsel_selector.py -q", depends-on = ["install-editable", "install-pypartn", "install-ira"] }
