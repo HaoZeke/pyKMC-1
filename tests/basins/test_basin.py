@@ -559,7 +559,7 @@ class TestBasin :
             "boundary_rate": pytest.approx(3.0),
         }
 
-    def test_execute_stops_before_refinement_when_frontier_committor_is_unresolved(
+    def test_execute_absorbs_frontier_boundary_before_refinement(
         self, monkeypatch
     ):
         table = BasinStatesConnectivity()
@@ -584,8 +584,9 @@ class TestBasin :
             self.states = {0: object()}
             self.connectivity_table = table
 
-        def fail_refine(self, system):
-            raise AssertionError("frontier-incomplete basins must not refine exits")
+        def stop_refine(self, system):
+            assert not bool(self.connectivity_table.df.loc[0, "transient"])
+            return Err(ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="stop"))
 
         monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
         monkeypatch.setattr(
@@ -593,7 +594,7 @@ class TestBasin :
             "construct_connexion_table",
             lambda self, max_expansions=None, max_closed_states=None: Ok(None),
         )
-        monkeypatch.setattr(BasinsGenericEvents, "refine_absorbing", fail_refine)
+        monkeypatch.setattr(BasinsGenericEvents, "refine_absorbing", stop_refine)
         monkeypatch.setattr(
             basin_module,
             "amsel_state_guidance_scores",
@@ -613,12 +614,16 @@ class TestBasin :
         result = basin.execute(system=object())
 
         assert not result.is_ok()
-        assert result.err_value().type == ErrorType.BASIN_TEXIT_NOT_FOUND
-        assert "unresolved frontier" in result.err_value().message
+        assert result.err_value().type == ErrorType.EVENT_NOT_FOUND
         assert basin.unresolved_frontier_diagnostics == {
             "total": 1,
             "unresolved_committor": pytest.approx(1.0),
             "unresolved_rate": pytest.approx(3.0),
+        }
+        assert basin.frontier_boundary_diagnostics == {
+            "total": 1,
+            "boundary_committor": pytest.approx(1.0),
+            "boundary_rate": pytest.approx(3.0),
         }
 
     def test_construct_marks_all_crystal_state_as_absorbing_terminal(

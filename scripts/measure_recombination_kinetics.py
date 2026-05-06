@@ -30,6 +30,11 @@ BASIN_FRONTIER_BUDGET_RE = re.compile(
     r"unresolved_committor=(?P<committor>[0-9.eE+-]+); "
     r"unresolved_rate=(?P<rate>[0-9.eE+-]+)"
 )
+BASIN_FRONTIER_BOUNDARY_RE = re.compile(
+    r"Basin frontier boundary absorbed (?P<count>\d+) states; "
+    r"boundary_committor=(?P<committor>[0-9.eE+-]+); "
+    r"boundary_rate=(?P<rate>[0-9.eE+-]+)"
+)
 BASIN_TRACE_RE = re.compile(
     r"Basin exploration trace order=(?P<order>[0-9,]*); "
     r"queue=(?P<queue>[0-9,]*); "
@@ -298,6 +303,23 @@ def basin_confidence_rows_from_log(
             row["frontier_states"] = int(frontier_match.group("count"))
             row["frontier_committor"] = float(frontier_match.group("committor"))
             row["frontier_rate"] = float(frontier_match.group("rate"))
+            row_by_step[step] = row
+            rows.append(row)
+            continue
+
+        boundary_match = BASIN_FRONTIER_BOUNDARY_RE.search(line)
+        if boundary_match is not None:
+            step = int(current_step or 0)
+            row = _empty_basin_confidence_row(
+                case=case,
+                selector=selector,
+                trial=trial,
+                seed=seed,
+                step=step,
+            )
+            row["frontier_states"] = int(boundary_match.group("count"))
+            row["frontier_committor"] = float(boundary_match.group("committor"))
+            row["frontier_rate"] = float(boundary_match.group("rate"))
             row_by_step[step] = row
             rows.append(row)
             continue

@@ -272,17 +272,31 @@ class KMC:
                     self.loggers.info("log", trace_line)
                 frontier = getattr(basin, "unresolved_frontier_diagnostics", {})
                 if int(frontier.get("total", 0)) > 0:
-                    self.loggers.info(
-                        "log",
-                        (
-                            "\t :=> Basin exploration budget left {} frontier states; "
-                            "unresolved_committor={:.6e}; unresolved_rate={:.6e}"
-                        ).format(
-                            int(frontier["total"]),
-                            float(frontier["unresolved_committor"]),
-                            float(frontier["unresolved_rate"]),
-                        ),
-                    )
+                    boundary = getattr(basin, "frontier_boundary_diagnostics", {})
+                    if int(boundary.get("total", 0)) > 0:
+                        self.loggers.info(
+                            "log",
+                            (
+                                "\t :=> Basin frontier boundary absorbed {} states; "
+                                "boundary_committor={:.6e}; boundary_rate={:.6e}"
+                            ).format(
+                                int(boundary["total"]),
+                                float(boundary["boundary_committor"]),
+                                float(boundary["boundary_rate"]),
+                            ),
+                        )
+                    else:
+                        self.loggers.info(
+                            "log",
+                            (
+                                "\t :=> Basin exploration budget left {} frontier states; "
+                                "unresolved_committor={:.6e}; unresolved_rate={:.6e}"
+                            ).format(
+                                int(frontier["total"]),
+                                float(frontier["unresolved_committor"]),
+                                float(frontier["unresolved_rate"]),
+                            ),
+                        )
                 basin_refinement = getattr(basin, "absorbing_refinement_diagnostics", {})
                 if int(basin_refinement.get("skipped", 0)) > 0:
                     self.loggers.info(

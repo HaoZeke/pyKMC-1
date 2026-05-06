@@ -129,6 +129,7 @@ class BasinsGenericEvents() :
         self.absorbing_saddle_positions: dict[int, np.ndarray] = {}
         self.absorbing_refinement_diagnostics: dict[str, object] = {}
         self.unresolved_frontier_diagnostics: dict[str, object] = {}
+        self.frontier_boundary_diagnostics: dict[str, object] = {}
         self.last_exploration_guidance: dict[int, float] = {}
         self.exploration_order: list[int] = []
         self.exploration_decisions: list[dict[str, object]] = []
@@ -155,31 +156,7 @@ class BasinsGenericEvents() :
         mapping = self.connectivity_table.reorder_states_index()
         self.states = {mapping[old]: val for old, val in self.states.items()}
         self._record_unresolved_frontier_diagnostics()
-        frontier_tol = float(
-            getattr(
-                getattr(self.config, "basin", None),
-                "frontier_committor_tol",
-                0.0,
-            )
-        )
-        if (
-            float(
-                self.unresolved_frontier_diagnostics.get(
-                    "unresolved_committor",
-                    0.0,
-                )
-            )
-            > frontier_tol
-        ):
-            return Err(
-                ErrorInfo(
-                    type=ErrorType.BASIN_TEXIT_NOT_FOUND,
-                    message="basin exploration budget left unresolved frontier committor",
-                    variables={
-                        "frontier": self.unresolved_frontier_diagnostics,
-                    },
-                )
-            )
+        self._absorb_unexpanded_frontier()
         #Refine absorbing states
         self.manager.use_local()
         result =self.refine_absorbing(system)
@@ -205,6 +182,20 @@ class BasinsGenericEvents() :
             )
 
         from_state, event_idx, central_atom, sym_idx, is_transient = self.connectivity_table.get_transition_to_state(target_state=exit_state)
+        if exit_state not in self.states:
+            result_state = self.system_from_state(
+                from_state,
+                event_idx,
+                central_atom,
+                sym_idx,
+            )
+            if not result_state.is_ok():
+                return result_state
+            self._add_state(
+                state_index=exit_state,
+                system=result_state.ok_value(),
+                transient=False,
+            )
         #Ensure from_state is state are full 
         self.states[from_state].ensure_full_state(self.config)
 
@@ -236,6 +227,7 @@ class BasinsGenericEvents() :
         self.exploration_decisions = []
         self.absorbing_refinement_diagnostics = {}
         self.unresolved_frontier_diagnostics = {}
+        self.frontier_boundary_diagnostics = {}
         new_system = System(positions=system.positions.copy(), types=system.types.copy(), cell=system.cell.copy(), pbc=system.pbc.copy(), index=np.arange(len(system.types)))
         self._add_state(state_index=0, system=new_system)  #add current state 0 to self.states
 
@@ -781,6 +773,42 @@ class BasinsGenericEvents() :
                 )
             ),
         }
+
+    def _absorb_unexpanded_frontier(self) -> None:
+        df = getattr(self.connectivity_table, "df", None)
+        if not isinstance(df, pd.DataFrame):
+            self.frontier_boundary_diagnostics = {
+                "total": 0,
+                "boundary_committor": 0.0,
+                "boundary_rate": 0.0,
+            }
+            return
+        transient_sources = {int(value) for value in df["state"].to_numpy()}
+        frontier_states = sorted(
+            {
+                int(row["state_connexion"])
+                for _, row in df.iterrows()
+                if bool(row["transient"])
+                and int(row["state_connexion"]) not in transient_sources
+            }
+        )
+        scores = amsel_state_guidance_scores(self.connectivity_table, entry=0)
+        self.frontier_boundary_diagnostics = {
+            "total": len(frontier_states),
+            "boundary_committor": float(
+                sum(float(scores.get(state, 0.0)) for state in frontier_states)
+            ),
+            "boundary_rate": float(
+                sum(
+                    float(row["k_forward"])
+                    for _, row in df.iterrows()
+                    if bool(row["transient"])
+                    and int(row["state_connexion"]) in frontier_states
+                )
+            ),
+        }
+        for state in frontier_states:
+            self.connectivity_table.change_state_to_absorbing(state)
 
 
     def is_new_state(self, system) : 

@@ -374,6 +374,38 @@ def test_basin_confidence_rows_parse_frontier_and_absorbing_markers():
     ]
 
 
+def test_basin_confidence_rows_parse_absorbed_frontier_boundary():
+    script = _load_script()
+
+    rows = script.basin_confidence_rows_from_log(
+        case="ni-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=1000,
+        log_text=(
+            "Step : 4\n"
+            "\t :=> Basin frontier boundary absorbed 8 states; "
+            "boundary_committor=7.500000e-01; boundary_rate=1.524846e-02\n"
+        ),
+    )
+
+    assert rows == [
+        {
+            "case": "ni-vac-sia",
+            "selector": "amsel",
+            "trial": 0,
+            "seed": 1000,
+            "step": 4,
+            "frontier_states": 8,
+            "frontier_committor": 0.75,
+            "frontier_rate": 1.524846e-02,
+            "skipped_absorbing_exits": 0,
+            "skipped_absorbing_committor": 0.0,
+            "skipped_absorbing_rate": 0.0,
+        }
+    ]
+
+
 def test_collect_basin_confidence_rows_reads_trial_logs(tmp_path):
     script = _load_script()
     workdir = tmp_path / "legacy" / "trial-0"
@@ -583,6 +615,28 @@ def test_kinetic_guard_rejects_unresolved_frontier_budget():
     assert guarded["kinetic_claim_ok"] is False
     assert guarded["failed_refinements"] == 3
     assert guarded["failed_refinement_committor"] == 0.875
+
+
+def test_kinetic_guard_accepts_absorbed_frontier_boundary():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {
+            "selector": "amsel",
+            "recombined": False,
+            "kmc_steps": 2,
+            "kinetic_claim_ok": True,
+        },
+        diagnostics=None,
+        log_text=(
+            "Basin frontier boundary absorbed 3 states; "
+            "boundary_committor=8.750000e-01; boundary_rate=2.0"
+        ),
+    )
+
+    assert guarded["kinetic_claim_ok"] is True
+    assert guarded["failed_refinements"] == 0
+    assert guarded["failed_refinement_committor"] == 0.0
 
 
 def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypatch):
