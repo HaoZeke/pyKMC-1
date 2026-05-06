@@ -228,6 +228,7 @@ def live_basin_guidance_payload(
         payload = catalog_guidance_payload(table, case_name=case_name, entry=entry)
         payload["source"] = "live-lammps-mpi"
         payload["refinement"] = refinement
+        _attach_refinement_channel_status(payload, refinement)
         _attach_exploration_payload(
             payload,
             basin=basin,
@@ -290,6 +291,33 @@ def _refinement_failure_report(error: Any, *, rate_source: str) -> dict[str, Any
     report["error_details"] = _json_value(getattr(error, "details", None))
     report["error_variables"] = _json_value(getattr(error, "variables", None) or {})
     return report
+
+
+def _attach_refinement_channel_status(
+    payload: dict[str, Any],
+    refinement: dict[str, Any],
+) -> None:
+    channels = payload.get("channels") or []
+    if refinement.get("ok") is True:
+        for channel in channels:
+            channel.setdefault("refinement_ok", True)
+            channel.setdefault("rate_source", "refined")
+        return
+
+    failed_row = (refinement.get("error_variables") or {}).get("refinement_row") or {}
+    failed_row_index = failed_row.get("row_index")
+    if failed_row_index is None:
+        return
+
+    for channel in channels:
+        if int(channel.get("row_index", -1)) != int(failed_row_index):
+            continue
+        channel["refinement_ok"] = False
+        channel["rate_source"] = "failed-refinement"
+        if refinement.get("error_type") is not None:
+            channel["refinement_error_type"] = refinement["error_type"]
+        if refinement.get("error_message") is not None:
+            channel["refinement_error_message"] = refinement["error_message"]
 
 
 def _attach_exploration_payload(

@@ -27,9 +27,30 @@ def summarize_payload(payload: dict[str, Any], *, queue_head: int = 12) -> dict[
         for row in transient_states
         if row.get("ok", True)
     )
-    processes = _processes(payload.get("channels") or [])
+    channels = payload.get("channels") or []
+    processes = _processes(channels)
     if resolved_rate == 0.0:
         resolved_rate = sum(float(process["rate_sum"]) for process in processes)
+    failed_refinement_committor = sum(
+        _float_or_zero(channel.get("committor"))
+        for channel in channels
+        if _is_failed_refinement_channel(channel)
+    )
+    failed_refinement_rate = sum(
+        _float_or_zero(channel.get("rate"))
+        for channel in channels
+        if _is_failed_refinement_channel(channel)
+    )
+    usable_resolved_committor = max(0.0, resolved_committor - failed_refinement_committor)
+    usable_resolved_rate = max(0.0, resolved_rate - failed_refinement_rate)
+    top_process = processes[0]["event_connexion"] if processes else None
+    top_process_refinement_ok = None
+    if top_process is not None:
+        top_process_refinement_ok = not any(
+            _is_failed_refinement_channel(channel)
+            and _event_value(channel.get("event_connexion")) == top_process
+            for channel in channels
+        )
     accounted_committor = resolved_committor + frontier_committor
     kinetic_confidence = None
     if accounted_committor > 0.0:
@@ -49,13 +70,17 @@ def summarize_payload(payload: dict[str, Any], *, queue_head: int = 12) -> dict[
         "closed_count": len(closed_states),
         "resolved_committor": resolved_committor,
         "resolved_rate": resolved_rate,
+        "failed_refinement_committor": failed_refinement_committor,
+        "failed_refinement_rate": failed_refinement_rate,
+        "usable_resolved_committor": usable_resolved_committor,
+        "usable_resolved_rate": usable_resolved_rate,
         "frontier_committor": frontier_committor,
         "accounted_committor": accounted_committor,
         "kinetic_confidence": kinetic_confidence,
+        "kinetic_claim_ok": refinement.get("ok") is True,
         "processes": processes,
-        "top_process_event_connexion": (
-            processes[0]["event_connexion"] if processes else None
-        ),
+        "top_process_event_connexion": top_process,
+        "top_process_refinement_ok": top_process_refinement_ok,
         "queue_head": states_to_explore,
     }
 
@@ -83,10 +108,16 @@ def write_csv(payload: dict[str, Any], out) -> None:
         "closed_nonentry_states",
         "resolved_committor",
         "resolved_rate",
+        "failed_refinement_committor",
+        "failed_refinement_rate",
+        "usable_resolved_committor",
+        "usable_resolved_rate",
         "frontier_committor",
         "accounted_committor",
         "kinetic_confidence",
+        "kinetic_claim_ok",
         "top_process_event_connexion",
+        "top_process_refinement_ok",
         "queue_head",
     ]
     rows = [_csv_row(row, fieldnames=fieldnames) for row in payload["rows"]]
@@ -123,6 +154,12 @@ def _gain(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "resolved_committor_ratio": ratio,
         "resolved_rate_delta": float(challenger["resolved_rate"])
         - float(baseline["resolved_rate"]),
+        "usable_resolved_committor_delta": float(
+            challenger["usable_resolved_committor"]
+        )
+        - float(baseline["usable_resolved_committor"]),
+        "usable_resolved_rate_delta": float(challenger["usable_resolved_rate"])
+        - float(baseline["usable_resolved_rate"]),
         "kinetic_confidence_delta": _delta(challenger_confidence, baseline_confidence),
         "frontier_committor_delta": float(challenger["frontier_committor"])
         - float(baseline["frontier_committor"]),
@@ -179,6 +216,13 @@ def _processes(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
         reverse=True,
     )
     return rows
+
+
+def _is_failed_refinement_channel(channel: dict[str, Any]) -> bool:
+    return (
+        channel.get("refinement_ok") is False
+        or channel.get("rate_source") == "failed-refinement"
+    )
 
 
 def _event_value(value: Any) -> Any:
