@@ -574,6 +574,83 @@ class TestBasin :
             "unresolved_rate": pytest.approx(3.0),
         }
 
+    def test_construct_marks_all_crystal_state_as_absorbing_terminal(
+        self, monkeypatch
+    ):
+        class FakeEnvironment:
+            atomic_environment_list = ["crystal", "crystal", "crystal"]
+
+        class FakeState:
+            def __init__(self, system=None):
+                self.system = system
+                self.environment = FakeEnvironment()
+                self.transient = True
+
+            def ensure_full_state(self, config):
+                return None
+
+            def release_heavy_objects(self):
+                return None
+
+        class FailingExplorer:
+            connectivity_table = BasinStatesConnectivity()
+
+            def explore(self, *args, **kwargs):
+                raise AssertionError("terminal all-crystal states must not be explored")
+
+            def clear(self):
+                return None
+
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 1,
+                    "central_atom": 10,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 3.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                }
+            ]
+        )
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace()
+        basin.states = {0: FakeState(system=object())}
+        basin.states_to_explore = [1]
+        basin.explored_states = [0]
+        basin.current_state = 0
+        basin.connectivity_table = table
+        basin.explorer = FailingExplorer()
+        basin.exploration_order = []
+        basin.exploration_decisions = []
+        basin.last_exploration_guidance = {}
+        monkeypatch.setattr(
+            basin,
+            "system_from_state",
+            lambda *args, **kwargs: Ok(object()),
+        )
+        monkeypatch.setattr(basin, "is_new_state", lambda system: -1)
+        monkeypatch.setattr(
+            basin,
+            "_add_state",
+            lambda state_index, system, transient=True: basin.states.update(
+                {state_index: FakeState(system=system)}
+            ),
+        )
+
+        result = basin.construct_connexion_table()
+
+        assert result.is_ok()
+        assert basin.connectivity_table.df.loc[0, "transient"] is False
+        assert basin.states[1].transient is False
+        assert basin.states_to_explore == []
+
     def test_execute_uses_configured_basin_exploration_budgets(self, monkeypatch):
         calls = {}
 
