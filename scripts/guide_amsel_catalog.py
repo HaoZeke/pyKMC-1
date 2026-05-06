@@ -264,6 +264,7 @@ def _attach_exploration_payload(
         "priority": priority,
         "max_expansions": max_expansions,
         "expanded_states": [int(state) for state in getattr(basin, "exploration_order", [])],
+        "closed_states": [int(state) for state in getattr(basin, "explored_states", [])],
         "states_to_explore": [int(state) for state in getattr(basin, "states_to_explore", [])],
         "guidance_scores": {
             str(int(state)): float(score)
