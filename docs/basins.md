@@ -70,6 +70,24 @@ python scripts/guide_amsel_catalog.py \
   --visited-environments tests/data/visited_environments_Ni_fcc_4000at_monovacancy+sia.pickle
 ```
 
+For fixed-work exploration comparisons, the live mode can stop after a
+bounded number of expanded transient states or closed queue states:
+
+```bash
+python scripts/guide_amsel_catalog.py \
+  --live-basin \
+  --exploration-priority amsel \
+  --max-closed-states 2 \
+  --config tests/data/input_Cu.in \
+  --initial-config tests/data/initial_config_Cu.xyz \
+  --reference-table tests/data/reference_table_Cu_fake.pickle \
+  --visited-environments tests/data/visited_environments_Cu.pickle
+```
+
+The JSON `exploration` block records `expanded_states`,
+`closed_states`, `states_to_explore`, and the AMSEL
+`guidance_scores` used to order the queue.
+
 ---
 
 ## General Idea
