@@ -36,9 +36,31 @@ def test_run_selector_report_captures_legacy_success():
     assert report["case"] == "single-exit"
     assert report["selector"] == "legacy-fpta"
     assert report["ok"] is True
+    assert report["clock_semantics"] == "sampled-quantile"
+    assert report["time_draw"] == pytest.approx(0.25)
+    assert report["outlet_draw"] == pytest.approx(0.0)
     assert math.isfinite(report["elapsed_ns"])
     assert report["exit_state"] == 1
     assert report["t_exit"] > 0.0
+
+
+def test_run_selector_report_labels_mean_clock_as_mfpt():
+    pytest.importorskip("amsel")
+    script = _load_script()
+    table = script.single_exit_connectivity(rate=2.0)
+
+    report = script.run_selector(
+        case_name="single-exit",
+        selector_name="amsel-mean",
+        selector_factory=script.amsel_mean_selector,
+        table=table,
+        draws=[0.5, 0.0],
+    )
+
+    assert report["ok"] is True
+    assert report["clock_mode"] == "mean"
+    assert report["clock_semantics"] == "deterministic-mfpt"
+    assert report["t_exit"] == pytest.approx(0.5)
 
 
 def test_feature_report_exposes_independent_amsel_diagnostics():
@@ -55,6 +77,21 @@ def test_feature_report_exposes_independent_amsel_diagnostics():
     assert report["reduced_kinetics"]["slow_subspace_rank"] == 1
 
 
+def test_clock_reference_explains_rank1_mean_and_quantile_clocks():
+    pytest.importorskip("amsel")
+    script = _load_script()
+    table = script.single_exit_connectivity(rate=2.0)
+    features = script.amsel_feature_report(table)
+
+    report = script.rank1_clock_reference(features=features, draws=[0.5, 0.0])
+
+    assert report["ok"] is True
+    assert report["effective_rate"] == pytest.approx(2.0)
+    assert report["sampled_quantile_time"] == pytest.approx(math.log(2.0) / 2.0)
+    assert report["mfpt"] == pytest.approx(0.5)
+    assert report["mfpt_over_sampled_quantile_time"] == pytest.approx(1.0 / math.log(2.0))
+
+
 def test_selector_payload_marks_live_source_and_table_size():
     pytest.importorskip("amsel")
     script = _load_script()
@@ -69,10 +106,19 @@ def test_selector_payload_marks_live_source_and_table_size():
     )
 
     assert payload["source"] == "live-lammps-mpi"
+    assert payload["draws"] == [0.5, 0.0]
     assert payload["connectivity"]["rows"] == 1
     assert [item["selector"] for item in payload["selectors"]] == [
         "legacy-fpta",
         "amsel-sampled",
+        "amsel-mean",
         "amsel-adaptive",
     ]
+    assert [item["clock_semantics"] for item in payload["selectors"]] == [
+        "sampled-quantile",
+        "sampled-quantile",
+        "deterministic-mfpt",
+        "deterministic-mfpt",
+    ]
     assert payload["amsel_features"]["ok"] is True
+    assert payload["clock_reference"]["ok"] is True
