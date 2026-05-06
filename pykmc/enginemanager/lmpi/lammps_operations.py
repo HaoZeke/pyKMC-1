@@ -4,6 +4,7 @@ from mpi4py import MPI
 import ctypes 
 import pypARTn
 import os
+from pathlib import Path
 from ...activevolume.active_volume import reset, redefine_atoms, partn_search_AV, partn_refine_AV, position_results_AV
 
 from ...result import  (
@@ -15,6 +16,71 @@ from ...result import  (
     ErrorType,
     EventRefinementOutput,
 )
+
+
+def _partn_plugin_candidate_paths(configured_path: str) -> list[Path]:
+    candidates = [Path(configured_path).expanduser()]
+
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        candidates.append(
+            Path(conda_prefix)
+            / "share"
+            / "artn-plugin"
+            / "lib"
+            / "libartn-lmp.so"
+        )
+
+    for key in ("PYKMC_ARTN_PLUGIN_DIR", "ARTN_PLUGIN_DIR"):
+        source_root = os.environ.get(key)
+        if source_root:
+            candidates.append(Path(source_root).expanduser() / "lib" / "libartn-lmp.so")
+
+    unique_candidates = []
+    seen = set()
+    for candidate in candidates:
+        candidate = candidate.resolve(strict=False)
+        if candidate in seen:
+            continue
+        unique_candidates.append(candidate)
+        seen.add(candidate)
+    return unique_candidates
+
+
+def _readable_file(path: Path) -> bool:
+    try:
+        return path.is_file() and os.access(path, os.R_OK)
+    except OSError:
+        return False
+
+
+def _has_artn_fix(engine) -> bool:
+    has_style = getattr(engine.lmp, "has_style", None)
+    if has_style is None:
+        raise RuntimeError("LAMMPS Python object does not expose has_style.")
+    return bool(has_style("fix", "artn"))
+
+
+def load_partn_plugin(engine, config) -> str:
+    """Load and verify the LAMMPS pARTn plugin."""
+    if _has_artn_fix(engine):
+        return str(config.partn.path_artnso)
+
+    attempts = []
+    for candidate in _partn_plugin_candidate_paths(config.partn.path_artnso):
+        if not _readable_file(candidate):
+            attempts.append(f"{candidate}: not a readable file")
+            continue
+        engine.command(f"plugin load {candidate}")
+        if _has_artn_fix(engine):
+            return str(candidate)
+        attempts.append(f"{candidate}: loaded but did not register fix artn")
+
+    attempted = "; ".join(attempts)
+    raise RuntimeError(
+        "pARTn LAMMPS plugin did not register fix artn. "
+        f"Attempted plugin paths: {attempted}"
+    )
 
 
 def initialize_parameters(engine) : 
@@ -162,7 +228,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
     delr_threshold = config.eventsearch.delr_thr
 
     # LAMMPS COMMANDS
-    engine.command("plugin load {}".format(config.partn.path_artnso))
+    load_partn_plugin(engine, config)
     engine.command("fix 10 all artn dmax {}".format(config.partn.dmax))
     engine.command("min_style fire")
 
@@ -316,10 +382,10 @@ def partn_refine(engine, config, central_atom_idx:int , positions = None, cell =
             if minimize_outter_atoms : 
                 minimize_freeze_core(engine, positions[central_atom_idx], config.atomicenvironment.rcut, maxiter = 10)
 
+    # LAMMPS COMMANDS
+    load_partn_plugin(engine, config)
     # INITILIZE ARTN
     artn = pypARTn.artn(engine="lmp")
-    # LAMMPS COMMANDS
-    engine.command("plugin load {}".format(config.partn.path_artnso))
     
     # SETUP ARTN
     artn.reset_input()
@@ -435,4 +501,3 @@ def partn_refine(engine, config, central_atom_idx:int , positions = None, cell =
                 )
             )
         return None
-
