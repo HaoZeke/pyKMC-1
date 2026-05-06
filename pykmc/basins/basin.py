@@ -137,12 +137,20 @@ class BasinsGenericEvents() :
         self.explored_states = [] 
         self.connectivity_table = BasinStatesConnectivity()
         self.explorer = BasinGenericEventExplorer(config=self.config, reference_table=self.reference_table)
-        if _AMSEL_AVAILABLE:
-            self.selector = AmselFPTASelector(clock_mode="adaptive")
-        else:
-            self.selector = FPTASelector()
+        self.selector = self._make_selector()
         new_system = System(positions=system.positions.copy(), types=system.types.copy(), cell=system.cell.copy(), pbc=system.pbc.copy(), index=np.arange(len(system.types)))
         self._add_state(state_index=0, system=new_system)  #add current state 0 to self.states
+
+    def _make_selector(self):
+        selector = getattr(self.config.basin, "selector", "auto")
+        if selector == "auto":
+            if _AMSEL_AVAILABLE:
+                return AmselFPTASelector(clock_mode="adaptive")
+            return FPTASelector()
+        if selector == "legacy-fpta":
+            return FPTASelector()
+        clock_mode = selector.removeprefix("amsel-")
+        return AmselFPTASelector(clock_mode=clock_mode)
 
 
     def construct_connexion_table(self) : 

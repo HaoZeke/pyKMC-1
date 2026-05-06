@@ -536,6 +536,10 @@ class IraConfig(BaseModel):
 class BasinConfig(BaseModel):
     """Basin parameters"""
 
+    selector: Literal["auto", "legacy-fpta", "amsel-sampled", "amsel-mean", "amsel-adaptive"] = Field(
+        default="auto",
+        description="Basin exit selector. auto uses AMSEL adaptive selection when available and legacy FPTA otherwise.",
+    )
     energy_thr: float = Field(
     default = 0.0,
     description="Energy threshold"
