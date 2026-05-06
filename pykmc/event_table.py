@@ -1,6 +1,7 @@
 """Module implementing Classes to manage reference events and active events."""
 
 import pandas as pd
+from typing import Any
 from .rate_constant import compute_rate_Eyring
 from .config import Config
 import numpy as np
@@ -19,6 +20,39 @@ from .result import (
 )
 from .point_set_registration import simple_ira, check_match
 from .utils.geometry import compute_delr
+
+
+def duplicate_event_error_info(
+    dfevent: pd.Series,
+    matched_event: pd.Series,
+) -> ErrorInfo:
+    """Build duplicate-event evidence with the matched catalog process identity."""
+    return ErrorInfo(
+        type=ErrorType.EVENT_NOT_NEW,
+        message="Found event already in reference table",
+        details="Same topology",
+        variables={
+            "matched_idx_ref": _optional_int(matched_event.get("idx_ref")),
+            "event_id": matched_event.get("event_id", dfevent.get("event_id")),
+            "id_final": matched_event.get("id_final", dfevent.get("id_final")),
+            "energy_barrier": _optional_float(
+                matched_event.get("energy_barrier", dfevent.get("energy_barrier"))
+            ),
+            "k": _optional_float(matched_event.get("k", dfevent.get("k"))),
+        },
+    )
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or pd.isna(value):
+        return None
+    return int(value)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
 
 
 class ReferenceEventTable:
@@ -179,9 +213,8 @@ class ReferenceEventTable:
                 dE_backward=dE_backward,
                 cell=cell,
             )
-            if self.is_new_event(
-                dfevent=dfevent_forward
-            ):  # check if event not already in the catalog
+            matched_forward = self.matching_event(dfevent_forward)
+            if matched_forward is None:  # check if event not already in the catalog
                 if (
                     dfevent_forward["event_id"] == dfevent_forward["id_final"]
                 ):  # We are sure that the backward reaction same as forward
@@ -231,13 +264,7 @@ class ReferenceEventTable:
                         return Ok(dfevent_forward.to_frame().T) #return only forward
 
             else:
-                return Err(
-                    ErrorInfo(
-                        type=ErrorType.EVENT_NOT_NEW,
-                        message="Found event already in reference table",
-                        details="Same topology",
-                    )
-                )
+                return Err(duplicate_event_error_info(dfevent_forward, matched_forward))
 
     def is_new_event(self, dfevent: pd.Series) -> bool:
         """Check if the constructed event Series is already in the table.
@@ -253,17 +280,21 @@ class ReferenceEventTable:
             if the event is in the table.
 
         """
+        return self.matching_event(dfevent) is None
+
+    def matching_event(self, dfevent: pd.Series) -> pd.Series | None:
+        """Return a matching reference-table row for ``dfevent`` when one exists."""
         # Only select rows with same event_id as dfenvent :
         subset = self.table[self.table["event_id"] == dfevent["event_id"]]
         if len(subset) == 0 :
-            return True
+            return None
 
         #if same  id, chekc if same dE
         tol = 0.25
         dE = dfevent["energy_barrier"]
         subset = subset[(subset["energy_barrier"] - dE).abs() <= tol]
         if len(subset) == 0 :
-            return True
+            return None
 
         #if all same, check PSR  saddle_initial
         event_saddle = dfevent['saddle_positions']
@@ -285,8 +316,8 @@ class ReferenceEventTable:
             if not result.is_ok() : #matching score > thr
                 continue
 
-            return False
-        return True
+            return ev.copy()
+        return None
 
     def get_valid_events(
         self, results_is_valid_event: list[Result[pd.Series, ErrorInfo]]

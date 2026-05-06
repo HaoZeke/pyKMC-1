@@ -4,6 +4,8 @@ This module defines the `KMC` class.
 """
 
 from pykmc import NeighborsList, AtomicEnvironment, ActiveEventTable, Config, Reconstruction
+from collections import Counter
+from dataclasses import dataclass, field
 import random
 from .result import (
     EventSearchOutput,
@@ -44,6 +46,20 @@ from .utils import push_towards, compute_delr
 import copy
 from .basins.detection import DetectorThreshold
 from .basins import BasinsGenericEvents
+
+try:
+    import amsel as _amsel
+except ImportError:  # pragma: no cover - exercised without AMSEL installed.
+    _amsel = None
+
+
+@dataclass
+class EnvironmentSearchEvidence:
+    """Process-discovery evidence accumulated for one atomic environment."""
+
+    attempts: int = 0
+    process_counts: Counter = field(default_factory=Counter)
+    process_rates: dict[object, float] = field(default_factory=dict)
 
 
 def basin_exploration_trace_line(basin) -> str | None:
@@ -115,6 +131,121 @@ def environments_with_cataloged_searches(
     return searched_environments
 
 
+def event_search_process_evidence(
+    atomic_environment_list,
+    event_outputs,
+    valid_event_results,
+) -> dict[str | bytes, EnvironmentSearchEvidence]:
+    """Return per-environment process evidence from reference-event validation."""
+    evidence: dict[str | bytes, EnvironmentSearchEvidence] = {}
+    for event_output, valid_result in zip(event_outputs, valid_event_results):
+        environment = atomic_environment_list[int(event_output.central_atom_index)]
+        if environment not in evidence:
+            evidence[environment] = EnvironmentSearchEvidence()
+        environment_evidence = evidence[environment]
+        environment_evidence.attempts += 1
+
+        for process_key, rate in _process_keys_from_valid_result(valid_result):
+            environment_evidence.process_counts[process_key] += 1
+            if rate is not None:
+                environment_evidence.process_rates[process_key] = float(rate)
+    return evidence
+
+
+def undercovered_environments_for_search(
+    *,
+    current_environments,
+    new_environments,
+    visited_environments,
+    environment_search_evidence,
+) -> list[str | bytes]:
+    """Return current environment IDs that should receive event-search work."""
+    current_environment_set = set(current_environments)
+    searchable = []
+    seen = set()
+    for environment in list(new_environments):
+        if environment not in current_environment_set or environment in seen:
+            continue
+        searchable.append(environment)
+        seen.add(environment)
+
+    for environment in sorted(
+        current_environment_set.intersection(visited_environments),
+        key=str,
+    ):
+        if environment == "crystal" or environment in seen:
+            continue
+        evidence = environment_search_evidence.get(environment)
+        if evidence is None or not _needs_more_process_search(evidence):
+            continue
+        searchable.append(environment)
+        seen.add(environment)
+    return searchable
+
+
+def merge_environment_search_evidence(
+    target: dict[str | bytes, EnvironmentSearchEvidence],
+    update: dict[str | bytes, EnvironmentSearchEvidence],
+) -> None:
+    """Accumulate event-search process evidence by atomic environment."""
+    for environment, evidence in update.items():
+        if environment not in target:
+            target[environment] = EnvironmentSearchEvidence()
+        target_evidence = target[environment]
+        target_evidence.attempts += int(evidence.attempts)
+        target_evidence.process_counts.update(evidence.process_counts)
+        target_evidence.process_rates.update(evidence.process_rates)
+
+
+def _needs_more_process_search(evidence: EnvironmentSearchEvidence) -> bool:
+    if not evidence.process_counts:
+        return False
+    if _amsel is not None and hasattr(_amsel, "event_completeness"):
+        certificate = _amsel.event_completeness(
+            process_counts=dict(evidence.process_counts),
+            process_rates=evidence.process_rates,
+            attempts=evidence.attempts,
+        )
+        return bool(certificate.needs_more_search)
+    observations = sum(evidence.process_counts.values())
+    singleton_count = sum(1 for count in evidence.process_counts.values() if count == 1)
+    return observations > 0 and (float(singleton_count) / float(observations)) > 0.05
+
+
+def _process_keys_from_valid_result(valid_result):
+    if valid_result.is_ok():
+        event_rows = valid_result.ok_value()
+        return [
+            _process_key_and_rate(row)
+            for _, row in event_rows.iterrows()
+        ]
+
+    error = valid_result.err_value()
+    error_type = getattr(error, "type", error)
+    if error_type != ErrorType.EVENT_NOT_NEW:
+        return []
+    variables = getattr(error, "variables", None) or {}
+    process_key = (
+        variables.get("matched_idx_ref"),
+        variables.get("event_id"),
+        variables.get("id_final"),
+    )
+    if process_key == (None, None, None):
+        return []
+    return [(process_key, variables.get("k"))]
+
+
+def _process_key_and_rate(row) -> tuple[tuple[object, object, object], float | None]:
+    return (
+        (
+            int(row["idx_ref"]) if row.get("idx_ref") is not None else None,
+            row.get("event_id"),
+            row.get("id_final"),
+        ),
+        row.get("k"),
+    )
+
+
 # NOTE can maybe reimplment tries if empty catalog
 #TODO: Add reconstruction info
 
@@ -158,6 +289,7 @@ class KMC:
         self.atomic_environment = None
         self.reference_table = None
         self.visited_environments = None
+        self.environment_search_evidence: dict[str | bytes, EnvironmentSearchEvidence] = {}
         self.total_energy = None
         self.potential_energy = None
 
@@ -217,11 +349,27 @@ class KMC:
 
             # == Find Current atomic environments that has not been visited ==
             new_environments = self.get_new_environments()
+            search_environments = undercovered_environments_for_search(
+                current_environments=self.atomic_environment.atomic_environment_list,
+                new_environments=new_environments,
+                visited_environments=self.visited_environments,
+                environment_search_evidence=self.environment_search_evidence,
+            )
+            repeated_environments = set(search_environments).difference(
+                set(new_environments)
+            )
+            if repeated_environments:
+                self.loggers.info(
+                    "log",
+                    "\t :=> Resampling {} undercovered atomic environments".format(
+                        len(repeated_environments)
+                    ),
+                )
 
             # == FIND NEW GENERIC EVENTS ==
             ##=>List of atoms(central) on which we gonna perfom an event search
             central_atom_research_list = self.central_atoms_research(
-                new_environments, nsearch
+                search_environments, nsearch
             )
 
             ##=>Perform event search on each atom in central_atom_research_list
@@ -248,6 +396,14 @@ class KMC:
                 self.atomic_environment.atomic_environment_list,
                 event_search_outputs,
                 results_is_valid_events,
+            )
+            merge_environment_search_evidence(
+                self.environment_search_evidence,
+                event_search_process_evidence(
+                    self.atomic_environment.atomic_environment_list,
+                    event_search_outputs,
+                    results_is_valid_events,
+                ),
             )
             self.loggers.info(
                 "log",
