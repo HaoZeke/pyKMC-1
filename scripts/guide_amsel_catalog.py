@@ -160,6 +160,8 @@ def live_basin_guidance_payload(
     visited_environments: Path,
     case_name: str,
     entry: int,
+    exploration_priority: str | None = None,
+    max_expansions: int | None = None,
 ) -> dict[str, Any] | None:
     from pykmc import Config, ReferenceEventTable, System
     from pykmc.basins import BasinsGenericEvents, StatesConnectivity
@@ -167,6 +169,8 @@ def live_basin_guidance_payload(
 
     config = Config.from_ini_file(str(config_path))
     config.control.reference_table = str(reference_table)
+    if exploration_priority is not None:
+        config.basin.exploration_priority = exploration_priority
     system = System.create_from_file(str(initial_config))
     references = ReferenceEventTable(config)
     with visited_environments.open("rb") as handle:
@@ -186,15 +190,22 @@ def live_basin_guidance_payload(
             manager=manager,
         )
         basin._initialize(system)
-        result = basin.construct_connexion_table()
+        result = basin.construct_connexion_table(max_expansions=max_expansions)
         if not result.is_ok():
-            return {
+            payload = {
                 "ok": False,
                 "source": "live-lammps-mpi",
                 "case": case_name,
                 "stage": "construct_connexion_table",
                 "error": str(result.err_value()),
             }
+            _attach_exploration_payload(
+                payload,
+                basin=basin,
+                priority=config.basin.exploration_priority,
+                max_expansions=max_expansions,
+            )
+            return payload
 
         mapping = basin.connectivity_table.reorder_states_index()
         basin.states = {mapping[old]: val for old, val in basin.states.items()}
@@ -218,6 +229,12 @@ def live_basin_guidance_payload(
         payload = catalog_guidance_payload(table, case_name=case_name, entry=entry)
         payload["source"] = "live-lammps-mpi"
         payload["refinement"] = refinement
+        _attach_exploration_payload(
+            payload,
+            basin=basin,
+            priority=config.basin.exploration_priority,
+            max_expansions=max_expansions,
+        )
         return payload
     finally:
         manager.close_all()
@@ -233,6 +250,26 @@ def write_csv(payload: dict[str, Any], out) -> None:
     writer = csv.DictWriter(out, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)
+
+
+def _attach_exploration_payload(
+    payload: dict[str, Any],
+    *,
+    basin: Any,
+    priority: str,
+    max_expansions: int | None,
+) -> None:
+    scores = getattr(basin, "last_exploration_guidance", {}) or {}
+    payload["exploration"] = {
+        "priority": priority,
+        "max_expansions": max_expansions,
+        "expanded_states": [int(state) for state in getattr(basin, "exploration_order", [])],
+        "states_to_explore": [int(state) for state in getattr(basin, "states_to_explore", [])],
+        "guidance_scores": {
+            str(int(state)): float(score)
+            for state, score in sorted(scores.items(), key=lambda item: int(item[0]))
+        },
+    }
 
 
 def _connectivity_df(connectivity_table: Any) -> pd.DataFrame:
@@ -404,6 +441,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Build and refine the basin through the live LAMMPS/MPI manager.",
     )
+    parser.add_argument(
+        "--exploration-priority",
+        choices=("auto", "legacy", "amsel"),
+        help="Override [Basin].exploration_priority for live basin construction.",
+    )
+    parser.add_argument(
+        "--max-expansions",
+        type=int,
+        help="Stop live basin construction after this many expanded transient states.",
+    )
     parser.add_argument("--config", type=Path, default=Path("tests/data/input_Cu.in"))
     parser.add_argument(
         "--initial-config",
@@ -430,6 +477,8 @@ def main(argv: list[str] | None = None) -> int:
             visited_environments=args.visited_environments,
             case_name=args.case_name,
             entry=args.entry,
+            exploration_priority=args.exploration_priority,
+            max_expansions=args.max_expansions,
         )
         if payload is None:
             return 0
