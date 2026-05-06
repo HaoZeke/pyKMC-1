@@ -64,3 +64,24 @@ class TestSolver :
         else : 
             err = res.err_value()
             test_logger.debug("Err while searching t_exit : {}".format(err))
+
+    def test_find_texit_without_spectral_decomposition(self):
+        M_abs_reduced = np.array(
+            [
+                [2.0, 0.0],
+                [-2.0, 0.0],
+            ]
+        )
+        p0 = np.array([1.0, 0.0])
+
+        solver = BisectionSolver(
+            M=M_abs_reduced,
+            p0=p0,
+            r=0.5,
+            spectral_decomposition=False,
+        )
+
+        result = solver.solve()
+
+        assert result.is_ok()
+        assert result.ok_value().t_exit > 0.0
