@@ -75,6 +75,23 @@ def test_summarize_payload_reports_resolved_and_frontier_mass():
     assert row["queue_head"] == [13, 14, 1]
 
 
+def test_summarize_payload_excludes_failed_refinement_from_usable_kinetics():
+    script = _load_script()
+    payload = _payload("amsel", [0, 13], 0.126, [0.874], event_connexion=1, rate=2.0)
+    payload["channels"][0]["row_index"] = 12
+    payload["channels"][0]["refinement_ok"] = False
+    payload["channels"][0]["rate_source"] = "failed-refinement"
+
+    row = script.summarize_payload(payload)
+
+    assert row["failed_refinement_committor"] == pytest.approx(0.126)
+    assert row["failed_refinement_rate"] == pytest.approx(2.0)
+    assert row["usable_resolved_committor"] == pytest.approx(0.0)
+    assert row["usable_resolved_rate"] == pytest.approx(0.0)
+    assert row["kinetic_claim_ok"] is False
+    assert row["top_process_refinement_ok"] is False
+
+
 def test_comparison_payload_reports_amsel_gain_over_legacy():
     script = _load_script()
     payload = script.comparison_payload(

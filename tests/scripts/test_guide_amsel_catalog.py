@@ -231,3 +231,32 @@ def test_refinement_failure_serializes_error_context():
             "event_connexion": 1,
         }
     }
+
+
+def test_failed_refinement_channel_is_marked_unusable():
+    script = _load_script()
+    payload = {
+        "channels": [
+            {"row_index": 12, "state_connexion": 13, "committor": 0.125},
+            {"row_index": 4, "state_connexion": 5, "committor": 1e-9},
+        ]
+    }
+    refinement = {
+        "ok": False,
+        "rate_source": "partial-refined",
+        "error_type": "EVENT_NOT_FOUND",
+        "error_variables": {
+            "refinement_row": {
+                "row_index": 12,
+                "state_connexion": 13,
+                "event_connexion": 1,
+            }
+        },
+    }
+
+    script._attach_refinement_channel_status(payload, refinement)
+
+    assert payload["channels"][0]["refinement_ok"] is False
+    assert payload["channels"][0]["rate_source"] == "failed-refinement"
+    assert payload["channels"][0]["refinement_error_type"] == "EVENT_NOT_FOUND"
+    assert "refinement_ok" not in payload["channels"][1]
