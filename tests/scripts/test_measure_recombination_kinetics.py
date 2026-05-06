@@ -235,6 +235,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
         tmp_path / "visited_environments.pickle"
     )
     assert config["Control"]["n_steps"] == "5"
+    assert config["Control"]["random_seed"] == "10"
     assert config["Control"]["refine_thr"] == "0.0"
     assert config["EventSearch"]["nsearch"] == "3"
     assert config["pARTn"]["path_artnso"] == str(tmp_path / "libartn-lmp.so")
