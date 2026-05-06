@@ -77,7 +77,9 @@ def summarize_payload(payload: dict[str, Any], *, queue_head: int = 12) -> dict[
         "frontier_committor": frontier_committor,
         "accounted_committor": accounted_committor,
         "kinetic_confidence": kinetic_confidence,
-        "kinetic_claim_ok": refinement.get("ok") is True,
+        "kinetic_claim_ok": (
+            refinement.get("ok") is True and failed_refinement_committor == 0.0
+        ),
         "processes": processes,
         "top_process_event_connexion": top_process,
         "top_process_refinement_ok": top_process_refinement_ok,
