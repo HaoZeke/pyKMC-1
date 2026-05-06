@@ -603,7 +603,14 @@ class BasinsGenericEvents() :
         return scores
 
     def _record_unresolved_frontier_diagnostics(self) -> None:
-        df = self.connectivity_table.df
+        df = getattr(self.connectivity_table, "df", None)
+        if not isinstance(df, pd.DataFrame):
+            self.unresolved_frontier_diagnostics = {
+                "total": 0,
+                "unresolved_committor": 0.0,
+                "unresolved_rate": 0.0,
+            }
+            return
         transient_sources = {int(value) for value in df["state"].to_numpy()}
         frontier_states = sorted(
             {
