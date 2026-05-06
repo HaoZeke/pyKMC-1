@@ -401,6 +401,86 @@ def test_cli_default_inputs_do_not_preload_catalog(tmp_path):
     assert "visited_environments" not in config["Control"]
 
 
+def test_cli_generic_case_requires_explicit_inputs(tmp_path):
+    script = _load_script()
+
+    with pytest.raises(SystemExit) as exc:
+        script.main(
+            [
+                "--case",
+                "generic-defect",
+                "--partn-path",
+                str(tmp_path / "libartn-lmp.so"),
+                "--priority",
+                "amsel",
+                "--trials",
+                "1",
+                "--seed",
+                "10",
+                "--max-steps",
+                "1",
+                "--dry-run",
+                "--out",
+                str(tmp_path / "out"),
+            ]
+        )
+
+    assert exc.value.code == 2
+
+
+def test_cli_generic_case_uses_explicit_inputs_without_preload(tmp_path):
+    script = _load_script()
+    out = tmp_path / "out"
+    template = tmp_path / "input.in"
+    template.write_text(
+        "[Control]\n"
+        "initial_config = ./old.xyz\n"
+        "[pARTn]\n"
+        "path_artnso = ./old.so\n"
+        "[Lammps]\n"
+        "pair_coeff = * * ./Generic.eam X\n"
+        "[BASIN]\n"
+    )
+    (tmp_path / "Generic.eam").write_text("potential")
+
+    code = script.main(
+        [
+            "--case",
+            "generic-defect",
+            "--template-input",
+            str(template),
+            "--initial-config",
+            str(tmp_path / "initial_config.xyz"),
+            "--partn-path",
+            str(tmp_path / "libartn-lmp.so"),
+            "--priority",
+            "amsel",
+            "--trials",
+            "1",
+            "--seed",
+            "10",
+            "--max-steps",
+            "1",
+            "--dry-run",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["case"] == "generic-defect"
+    assert manifest["reference_table"] is None
+    assert manifest["visited_environments"] is None
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(out / "amsel" / "trial-0" / "input.in")
+    assert config["Control"]["initial_config"] == str(tmp_path / "initial_config.xyz")
+    assert "reference_table" not in config["Control"]
+    assert "visited_environments" not in config["Control"]
+
+
 def test_render_trial_input_can_request_diverse_amsel_exploration(tmp_path):
     script = _load_script()
 
