@@ -221,6 +221,19 @@ class KMC:
                 basin = BasinsGenericEvents(self.config, self.reference_table, self.visited_environments, self.manager)
                 self.system.update_positions(result_reconstruction.ok_value().min1_positions)
                 result_basin = basin.execute(self.system)
+                basin_refinement = getattr(basin, "absorbing_refinement_diagnostics", {})
+                if int(basin_refinement.get("skipped", 0)) > 0:
+                    self.loggers.info(
+                        "log",
+                        (
+                            "\t :=> Basin absorbing refinement skipped {} exits; "
+                            "unresolved_committor={:.6e}; unresolved_rate={:.6e}"
+                        ).format(
+                            int(basin_refinement["skipped"]),
+                            float(basin_refinement["unresolved_committor"]),
+                            float(basin_refinement["unresolved_rate"]),
+                        ),
+                    )
                 if result_basin.is_ok() : #Basin did no fail
                 #move system to a state connected to the exit_state
                     self.system.update_positions(result_basin.ok_value().initial_system_positions)

@@ -6,6 +6,7 @@ import argparse
 import configparser
 import csv
 import json
+import re
 import subprocess
 import sys
 from fractions import Fraction
@@ -13,6 +14,10 @@ from pathlib import Path
 from typing import Any
 
 CRYSTAL_TERMINATION_MARKER = "Only atoms with cristalline environment"
+BASIN_REFINEMENT_BUDGET_RE = re.compile(
+    r"Basin absorbing refinement skipped (?P<count>\d+) exits; "
+    r"unresolved_committor=(?P<committor>[0-9.eE+-]+);"
+)
 TRIAL_FIELDS = [
     "case",
     "selector",
@@ -143,6 +148,10 @@ def apply_kinetic_guard(
     if "Basin fails with error" in log_text and "EVENT_NOT_FOUND" in log_text:
         guarded["failed_refinements"] += 1
         guarded["kinetic_claim_ok"] = False
+    for match in BASIN_REFINEMENT_BUDGET_RE.finditer(log_text):
+        guarded["failed_refinements"] += int(match.group("count"))
+        guarded["failed_refinement_committor"] += float(match.group("committor"))
+        guarded["kinetic_claim_ok"] = False
     if guarded["failed_refinements"] > 0:
         guarded["kinetic_claim_ok"] = False
     return guarded
@@ -210,6 +219,7 @@ def trial_commands(
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
+    basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
     mpi_ranks: int,
     mpirun: str,
@@ -235,6 +245,7 @@ def trial_commands(
             basin_energy_thr=basin_energy_thr,
             basin_max_expansions=basin_max_expansions,
             basin_max_closed_states=basin_max_closed_states,
+            basin_max_absorbing_refinements=basin_max_absorbing_refinements,
             amsel_selector=amsel_selector,
         )
         commands.append(
@@ -249,6 +260,7 @@ def trial_commands(
                 "basin_energy_thr": basin_energy_thr,
                 "basin_max_expansions": basin_max_expansions,
                 "basin_max_closed_states": basin_max_closed_states,
+                "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
                 "amsel_selector": amsel_selector,
                 "workdir": str(trial_dir),
                 "command": [
@@ -282,6 +294,7 @@ def render_trial_input(
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
+    basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
 ) -> str:
     config = configparser.ConfigParser()
@@ -317,6 +330,10 @@ def render_trial_input(
         config[basin]["max_expansions"] = str(int(basin_max_expansions))
     if basin_max_closed_states is not None:
         config[basin]["max_closed_states"] = str(int(basin_max_closed_states))
+    if basin_max_absorbing_refinements is not None:
+        config[basin]["max_absorbing_refinements"] = str(
+            int(basin_max_absorbing_refinements)
+        )
     absolutize_lammps_paths(config, template_dir=template_dir)
 
     from io import StringIO
@@ -343,6 +360,7 @@ def write_trial_input(
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
+    basin_max_absorbing_refinements: int | None,
     amsel_selector: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -362,6 +380,7 @@ def write_trial_input(
             basin_energy_thr=basin_energy_thr,
             basin_max_expansions=basin_max_expansions,
             basin_max_closed_states=basin_max_closed_states,
+            basin_max_absorbing_refinements=basin_max_absorbing_refinements,
             amsel_selector=amsel_selector,
         )
     )
@@ -544,6 +563,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--basin-energy-thr", type=float)
     parser.add_argument("--basin-max-expansions", type=int)
     parser.add_argument("--basin-max-closed-states", type=int)
+    parser.add_argument("--basin-max-absorbing-refinements", type=int)
     parser.add_argument(
         "--amsel-selector",
         choices=("amsel-sampled", "amsel-mean", "amsel-adaptive"),
@@ -579,6 +599,7 @@ def main(argv: list[str] | None = None) -> int:
         basin_energy_thr=args.basin_energy_thr,
         basin_max_expansions=args.basin_max_expansions,
         basin_max_closed_states=args.basin_max_closed_states,
+        basin_max_absorbing_refinements=args.basin_max_absorbing_refinements,
         amsel_selector=args.amsel_selector,
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
@@ -603,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
         "basin_energy_thr": args.basin_energy_thr,
         "basin_max_expansions": args.basin_max_expansions,
         "basin_max_closed_states": args.basin_max_closed_states,
+        "basin_max_absorbing_refinements": args.basin_max_absorbing_refinements,
         "amsel_selector": args.amsel_selector,
         "work_budget": args.work_budget,
         "mpi_ranks": args.mpi_ranks,

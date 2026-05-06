@@ -563,6 +563,11 @@ class BasinConfig(BaseModel):
         gt=0,
         description="Maximum number of basin states to close before selecting an exit.",
     )
+    max_absorbing_refinements: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Maximum number of absorbing basin exits to refine before selecting an exit.",
+    )
     reconstruction_minimize: Optional[str] = Field(
         default=None,
         description="LAMMPS minimize command used when reconstructing catalog states inside a basin graph.",

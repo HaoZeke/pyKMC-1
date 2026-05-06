@@ -10,7 +10,7 @@ from pykmc import System, Config, NeighborsList, AtomicEnvironment, ReferenceEve
 from typing import Optional
 from ..utils import geometry
 from ..rate_constant import compute_rate_Eyring
-from pykmc.result import Err, ErrorInfo, Ok, BasinOutput
+from pykmc.result import Err, ErrorInfo, ErrorType, Ok, BasinOutput
 import hashlib
 import pandas as pd
 import copy
@@ -127,6 +127,7 @@ class BasinsGenericEvents() :
         self.states: dict[int, StateData] = {}  #Dictionnary of StateDate
         self.known_environments = known_environments 
         self.absorbing_saddle_positions: dict[int, np.ndarray] = {}
+        self.absorbing_refinement_diagnostics: dict[str, object] = {}
         self.last_exploration_guidance: dict[int, float] = {}
         self.exploration_order: list[int] = []
 
@@ -163,6 +164,17 @@ class BasinsGenericEvents() :
         #Construct output KMC needs 
         t_exit = result.ok_value().t_exit
         exit_state = result.ok_value().exit_state
+        if exit_state not in self.absorbing_saddle_positions:
+            return Err(
+                ErrorInfo(
+                    type=ErrorType.BASIN_TEXIT_NOT_FOUND,
+                    message="selected basin exit was not refined",
+                    variables={
+                        "exit_state": int(exit_state),
+                        "absorbing_refinement": self.absorbing_refinement_diagnostics,
+                    },
+                )
+            )
 
         from_state, event_idx, central_atom, sym_idx, is_transient = self.connectivity_table.get_transition_to_state(target_state=exit_state)
         #Ensure from_state is state are full 
@@ -193,6 +205,7 @@ class BasinsGenericEvents() :
         self.explorer = BasinGenericEventExplorer(config=self.config, reference_table=self.reference_table)
         self.selector = self._make_selector()
         self.exploration_order = []
+        self.absorbing_refinement_diagnostics = {}
         new_system = System(positions=system.positions.copy(), types=system.types.copy(), cell=system.cell.copy(), pbc=system.pbc.copy(), index=np.arange(len(system.types)))
         self._add_state(state_index=0, system=new_system)  #add current state 0 to self.states
 
@@ -437,7 +450,9 @@ class BasinsGenericEvents() :
         #compute the energy of the state 
         #for all row in connectivity table where we need to refine
         futures_context = {} #idx → { "min": f_min, "saddle": f_sad }
-        for idx, row in self.connectivity_table.df.iterrows() : 
+        for idx, row in self.connectivity_table.df.loc[
+            self._absorbing_refinement_rows()
+        ].iterrows() :
             if row['transient']  == False : #need to refine
                 #tmp_system = copy.deepcopy(self.states[row["state"]].system)
                 tmp_system = System(positions=self.states[row["state"]].system.positions.copy(), types=self.states[row["state"]].system.types, cell=self.states[row["state"]].system.cell, pbc=True, index=np.arange(len(self.states[row["state"]].system.types)))
@@ -526,6 +541,63 @@ class BasinsGenericEvents() :
             self.connectivity_table.df.loc[idx, "dE_forward"] = dE
             self.connectivity_table.df.loc[idx, "k_forward"] = k
         return Ok(None)
+
+    def _absorbing_refinement_rows(self) -> list[int]:
+        df = self.connectivity_table.df
+        absorbing_rows = [
+            int(idx) for idx, row in df.iterrows() if not bool(row["transient"])
+        ]
+        max_refinements = getattr(
+            getattr(self.config, "basin", None),
+            "max_absorbing_refinements",
+            None,
+        )
+        scores = self._absorbing_refinement_scores()
+        ordered_rows = sorted(
+            absorbing_rows,
+            key=lambda idx: (
+                -float(scores.get(int(df.loc[idx, "state_connexion"]), 0.0)),
+                -float(df.loc[idx, "k_forward"]),
+                int(idx),
+            ),
+        )
+        if max_refinements is None:
+            selected_rows = ordered_rows
+        else:
+            selected_rows = ordered_rows[: max(0, int(max_refinements))]
+
+        selected_set = set(selected_rows)
+        skipped_rows = [idx for idx in ordered_rows if idx not in selected_set]
+        self.absorbing_refinement_diagnostics = {
+            "total": len(absorbing_rows),
+            "refined": len(selected_rows),
+            "skipped": len(skipped_rows),
+            "unresolved_committor": float(
+                sum(
+                    float(scores.get(int(df.loc[idx, "state_connexion"]), 0.0))
+                    for idx in skipped_rows
+                )
+            ),
+            "unresolved_rate": float(
+                sum(float(df.loc[idx, "k_forward"]) for idx in skipped_rows)
+            ),
+        }
+        return selected_rows
+
+    def _absorbing_refinement_scores(self) -> dict[int, float]:
+        try:
+            report = AmselFPTASelector().diagnose_connectivity(
+                self.connectivity_table,
+                entry=0,
+            )
+        except Exception:  # noqa: BLE001 - refinement ordering falls back to rates.
+            return {}
+        scores: dict[int, float] = {}
+        for outlet in report.get("ngt_outlets", []):
+            if not isinstance(outlet, dict) or not outlet.get("ok", False):
+                continue
+            scores[int(outlet["absorbing_state"])] = float(outlet["committor"])
+        return scores
 
 
     def is_new_state(self, system) : 
