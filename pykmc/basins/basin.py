@@ -157,16 +157,23 @@ class BasinsGenericEvents() :
         return AmselFPTASelector(clock_mode=clock_mode)
 
 
-    def construct_connexion_table(self, max_expansions: int | None = None) : 
+    def construct_connexion_table(
+        self,
+        max_expansions: int | None = None,
+        max_closed_states: int | None = None,
+    ) : 
         """ 
         explore the basin and construct the connextion table
         """
         if not hasattr(self, "exploration_order"):
             self.exploration_order = []
         expanded_states = 0
+        closed_states = 0
         #Loop over state to explore 
         while len(self.states_to_explore) != 0 :
             if max_expansions is not None and expanded_states >= max_expansions:
+                break
+            if max_closed_states is not None and closed_states >= max_closed_states:
                 break
             #next state to explore : 
             to_explore = self.states_to_explore[0]
@@ -188,6 +195,7 @@ class BasinsGenericEvents() :
                     #update table
                     self.connectivity_table.change_state_index(current_index=to_explore, new_index=is_new_state)
                     self.explored_states.append(to_explore)
+                    closed_states += 1
                     self.states_to_explore.remove(to_explore)
 
                     #Cleaning
@@ -210,6 +218,7 @@ class BasinsGenericEvents() :
                 if not is_transient : 
                     self.states_to_explore.remove(to_explore)
                     self.explored_states.append(to_explore)
+                    closed_states += 1
 
                     #Cleaning
                     self.states[from_state].release_heavy_objects()
@@ -237,6 +246,7 @@ class BasinsGenericEvents() :
             #to_explore has been explored : 
             self.states_to_explore.remove(to_explore)
             self.explored_states.append(to_explore)
+            closed_states += 1
 
             #Merge state connectivity table to basin connectivity table 
             self.connectivity_table.merge(self.explorer.connectivity_table)
