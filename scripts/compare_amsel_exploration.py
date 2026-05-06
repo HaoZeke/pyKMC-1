@@ -21,11 +21,19 @@ def summarize_payload(payload: dict[str, Any], *, queue_head: int = 12) -> dict[
         int(state) for state in exploration.get("states_to_explore", [])[:queue_head]
     ]
     resolved_committor = _float_or_zero(channel_summary.get("committor_sum"))
+    resolved_rate = _float_or_zero(channel_summary.get("rate_sum"))
     frontier_committor = sum(
         _float_or_zero(row.get("hit_committor"))
         for row in transient_states
         if row.get("ok", True)
     )
+    processes = _processes(payload.get("channels") or [])
+    if resolved_rate == 0.0:
+        resolved_rate = sum(float(process["rate_sum"]) for process in processes)
+    accounted_committor = resolved_committor + frontier_committor
+    kinetic_confidence = None
+    if accounted_committor > 0.0:
+        kinetic_confidence = resolved_committor / accounted_committor
 
     return {
         "case": payload.get("case"),
@@ -40,8 +48,14 @@ def summarize_payload(payload: dict[str, Any], *, queue_head: int = 12) -> dict[
         "closed_nonentry_states": [state for state in closed_states if state != 0],
         "closed_count": len(closed_states),
         "resolved_committor": resolved_committor,
+        "resolved_rate": resolved_rate,
         "frontier_committor": frontier_committor,
-        "accounted_committor": resolved_committor + frontier_committor,
+        "accounted_committor": accounted_committor,
+        "kinetic_confidence": kinetic_confidence,
+        "processes": processes,
+        "top_process_event_connexion": (
+            processes[0]["event_connexion"] if processes else None
+        ),
         "queue_head": states_to_explore,
     }
 
@@ -69,8 +83,11 @@ def write_csv(payload: dict[str, Any], out) -> None:
         "closed_count",
         "closed_nonentry_states",
         "resolved_committor",
+        "resolved_rate",
         "frontier_committor",
         "accounted_committor",
+        "kinetic_confidence",
+        "top_process_event_connexion",
         "queue_head",
     ]
     writer = csv.DictWriter(out, fieldnames=fieldnames)
@@ -87,6 +104,8 @@ def _gain(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     baseline_resolved = float(baseline["resolved_committor"])
     challenger_resolved = float(challenger["resolved_committor"])
+    baseline_confidence = baseline.get("kinetic_confidence")
+    challenger_confidence = challenger.get("kinetic_confidence")
     ratio = None
     if baseline_resolved > 0.0:
         ratio = challenger_resolved / baseline_resolved
@@ -102,8 +121,19 @@ def _gain(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "closed_budget": closed_budget,
         "resolved_committor_delta": challenger_resolved - baseline_resolved,
         "resolved_committor_ratio": ratio,
+        "resolved_rate_delta": float(challenger["resolved_rate"])
+        - float(baseline["resolved_rate"]),
+        "kinetic_confidence_delta": _delta(challenger_confidence, baseline_confidence),
         "frontier_committor_delta": float(challenger["frontier_committor"])
         - float(baseline["frontier_committor"]),
+        "baseline_top_process_event_connexion": baseline.get(
+            "top_process_event_connexion"
+        ),
+        "challenger_top_process_event_connexion": challenger.get(
+            "top_process_event_connexion"
+        ),
+        "top_process_changed": baseline.get("top_process_event_connexion")
+        != challenger.get("top_process_event_connexion"),
     }
 
 
@@ -111,7 +141,56 @@ def _csv_row(row: dict[str, Any]) -> dict[str, Any]:
     csv_row = row.copy()
     for key in ("closed_nonentry_states", "queue_head"):
         csv_row[key] = " ".join(str(value) for value in row[key])
+    csv_row.pop("processes", None)
     return csv_row
+
+
+def _processes(channels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[Any, dict[str, Any]] = {}
+    for channel in channels:
+        if not channel.get("ok", True):
+            continue
+        event = _event_value(channel.get("event_connexion"))
+        item = grouped.setdefault(
+            event,
+            {
+                "event_connexion": event,
+                "count": 0,
+                "committor_sum": 0.0,
+                "rate_sum": 0.0,
+                "state_connexions": [],
+            },
+        )
+        item["count"] += 1
+        item["committor_sum"] += _float_or_zero(channel.get("committor"))
+        item["rate_sum"] += _float_or_zero(channel.get("rate"))
+        if "state_connexion" in channel:
+            item["state_connexions"].append(int(channel["state_connexion"]))
+
+    rows = list(grouped.values())
+    for row in rows:
+        row["state_connexions"] = sorted(set(row["state_connexions"]))
+    rows.sort(
+        key=lambda row: (
+            float(row["committor_sum"]),
+            float(row["rate_sum"]),
+            str(row["event_connexion"]),
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def _event_value(value: Any) -> Any:
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def _delta(left: Any, right: Any) -> float | None:
+    if left is None or right is None:
+        return None
+    return float(left) - float(right)
 
 
 def _float_or_zero(value: Any) -> float:
