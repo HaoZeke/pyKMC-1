@@ -200,6 +200,7 @@ def trial_commands(
     visited_environments: Path | None,
     partn_path: Path,
     event_searches: int | None,
+    refine_thr: float | None,
     priorities: list[str],
     trials: int,
     seed: int,
@@ -222,6 +223,7 @@ def trial_commands(
             visited_environments=visited_environments,
             max_steps=max_steps,
             event_searches=event_searches,
+            refine_thr=refine_thr,
             priority=str(item["priority"]),
             partn_path=partn_path,
             seed=int(item["seed"]),
@@ -259,6 +261,7 @@ def render_trial_input(
     visited_environments: Path | None,
     max_steps: int,
     event_searches: int | None,
+    refine_thr: float | None,
     priority: str,
     partn_path: Path,
     seed: int,
@@ -273,6 +276,8 @@ def render_trial_input(
     config[control]["initial_config"] = str(initial_config)
     config[control]["n_steps"] = str(int(max_steps))
     config[control]["basin"] = "True"
+    if refine_thr is not None:
+        config[control]["refine_thr"] = str(float(refine_thr))
     if reference_table is not None:
         config[control]["reference_table"] = str(reference_table)
     if visited_environments is not None:
@@ -302,6 +307,7 @@ def write_trial_input(
     visited_environments: Path | None,
     max_steps: int,
     event_searches: int | None,
+    refine_thr: float | None,
     priority: str,
     partn_path: Path,
     seed: int,
@@ -316,6 +322,7 @@ def write_trial_input(
             visited_environments=visited_environments,
             max_steps=max_steps,
             event_searches=event_searches,
+            refine_thr=refine_thr,
             priority=priority,
             partn_path=partn_path,
             seed=seed,
@@ -436,6 +443,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--event-searches", type=int)
+    parser.add_argument("--refine-thr", type=float)
     parser.add_argument("--work-budget")
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
@@ -456,6 +464,7 @@ def main(argv: list[str] | None = None) -> int:
         visited_environments=args.visited_environments,
         partn_path=args.partn_path,
         event_searches=args.event_searches,
+        refine_thr=args.refine_thr,
         priorities=args.priority,
         trials=args.trials,
         seed=args.seed,
@@ -479,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
         "seed": args.seed,
         "max_steps": args.max_steps,
         "event_searches": args.event_searches,
+        "refine_thr": args.refine_thr,
         "work_budget": args.work_budget,
         "mpi_ranks": args.mpi_ranks,
         "dry_run": bool(args.dry_run),
