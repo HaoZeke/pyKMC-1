@@ -14,6 +14,7 @@ from pykmc.basins import (
 import logging
 from pykmc.enginemanager.lmpi.pool import ManagerFactory
 import pykmc.basins.basin as basin_module
+from pykmc.result import ErrorInfo, ErrorType
 
 logger = logging.getLogger("tests")
 
@@ -298,3 +299,41 @@ class TestBasin :
         stored.positions[1] = [3.0, 0.0, 0.0]
         assert basin.is_new_state(candidate) == -1
         assert builds == 2
+
+    def test_refinement_error_context_records_failed_connectivity_row(self):
+        error = ErrorInfo(
+            type=ErrorType.EVENT_NOT_FOUND,
+            message="no event found",
+            details=(0, ""),
+        )
+        row = pd.Series(
+            {
+                "state": 0,
+                "state_connexion": 13,
+                "event_connexion": 1,
+                "central_atom": 3330,
+                "sym": 0,
+                "transient": False,
+            }
+        )
+
+        contextual = basin_module._refinement_error_with_row_context(
+            error,
+            row_index=7,
+            row=row,
+        )
+
+        assert contextual.type is ErrorType.EVENT_NOT_FOUND
+        assert contextual.message == "no event found"
+        assert contextual.details == (0, "")
+        assert contextual.variables == {
+            "refinement_row": {
+                "row_index": 7,
+                "state": 0,
+                "state_connexion": 13,
+                "event_connexion": 1,
+                "central_atom": 3330,
+                "sym": 0,
+                "transient": False,
+            }
+        }
