@@ -42,6 +42,14 @@ def test_run_selector_report_captures_legacy_success():
     assert report["outlet_draw"] == pytest.approx(0.0)
     assert report["stable_absorption_probability"] == pytest.approx(0.25, rel=1e-3)
     assert report["time_draw_absorption_error"] == pytest.approx(0.0, abs=1e-3)
+    assert report["master_equation_absorption_probability"] == pytest.approx(
+        0.25, rel=1e-3
+    )
+    assert report["reduced_master_equation_absorption_probability"] == pytest.approx(
+        0.25, rel=1e-3
+    )
+    assert report["master_reduced_absorption_error"] == pytest.approx(0.0, abs=1e-12)
+    assert report["master_equation_outlet_quantile_hit"] is True
     assert math.isfinite(report["elapsed_ns"])
     assert report["exit_state"] == 1
     assert report["t_exit"] > 0.0
