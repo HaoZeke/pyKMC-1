@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +150,77 @@ def catalog_guidance_payload(
         },
         "transient_states": transient_rows,
     }
+
+
+def live_basin_guidance_payload(
+    *,
+    config_path: Path,
+    initial_config: Path,
+    reference_table: Path,
+    visited_environments: Path,
+    case_name: str,
+    entry: int,
+) -> dict[str, Any] | None:
+    from pykmc import Config, ReferenceEventTable, System
+    from pykmc.basins import BasinsGenericEvents, StatesConnectivity
+    from pykmc.enginemanager.lmpi.pool import ManagerFactory
+
+    config = Config.from_ini_file(str(config_path))
+    config.control.reference_table = str(reference_table)
+    system = System.create_from_file(str(initial_config))
+    references = ReferenceEventTable(config)
+    with visited_environments.open("rb") as handle:
+        known_environments = pickle.load(handle)
+
+    factory = ManagerFactory(n_sessions=config.control.n_sessions, use_rank_0=True)
+    manager = factory.launch()
+    if manager is None:
+        return None
+
+    try:
+        manager.initialize_sessions(config, system)
+        basin = BasinsGenericEvents(
+            config=config,
+            reference_table=references,
+            known_environments=known_environments,
+            manager=manager,
+        )
+        basin._initialize(system)
+        result = basin.construct_connexion_table()
+        if not result.is_ok():
+            return {
+                "ok": False,
+                "source": "live-lammps-mpi",
+                "case": case_name,
+                "stage": "construct_connexion_table",
+                "error": str(result.err_value()),
+            }
+
+        mapping = basin.connectivity_table.reorder_states_index()
+        basin.states = {mapping[old]: val for old, val in basin.states.items()}
+        constructed_table = StatesConnectivity()
+        constructed_table.df = basin.connectivity_table.get_table().copy()
+
+        manager.use_local()
+        result = basin.refine_absorbing(system)
+        if result.is_ok():
+            table = basin.connectivity_table
+            refinement = {"ok": True, "rate_source": "refined"}
+        else:
+            table = constructed_table
+            refinement = {
+                "ok": False,
+                "stage": "refine_absorbing",
+                "error": str(result.err_value()),
+                "rate_source": "catalog",
+            }
+
+        payload = catalog_guidance_payload(table, case_name=case_name, entry=entry)
+        payload["source"] = "live-lammps-mpi"
+        payload["refinement"] = refinement
+        return payload
+    finally:
+        manager.close_all()
 
 
 def write_csv(payload: dict[str, Any], out) -> None:
@@ -307,13 +379,46 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--entry", type=int, default=0)
     parser.add_argument("--format", choices=("json", "csv"), default="json")
     parser.add_argument("--out", type=Path)
+    parser.add_argument(
+        "--live-basin",
+        action="store_true",
+        help="Build and refine the basin through the live LAMMPS/MPI manager.",
+    )
+    parser.add_argument("--config", type=Path, default=Path("tests/data/input_Cu.in"))
+    parser.add_argument(
+        "--initial-config",
+        type=Path,
+        default=Path("tests/data/initial_config_Cu.xyz"),
+    )
+    parser.add_argument(
+        "--reference-table",
+        type=Path,
+        default=Path("tests/data/reference_table_Cu_fake.pickle"),
+    )
+    parser.add_argument(
+        "--visited-environments",
+        type=Path,
+        default=Path("tests/data/visited_environments_Cu.pickle"),
+    )
     args = parser.parse_args(argv)
 
-    payload = catalog_guidance_payload(
-        load_connectivity(args.connectivity),
-        case_name=args.case_name,
-        entry=args.entry,
-    )
+    if args.live_basin:
+        payload = live_basin_guidance_payload(
+            config_path=args.config,
+            initial_config=args.initial_config,
+            reference_table=args.reference_table,
+            visited_environments=args.visited_environments,
+            case_name=args.case_name,
+            entry=args.entry,
+        )
+        if payload is None:
+            return 0
+    else:
+        payload = catalog_guidance_payload(
+            load_connectivity(args.connectivity),
+            case_name=args.case_name,
+            entry=args.entry,
+        )
 
     if args.out is None:
         if args.format == "csv":

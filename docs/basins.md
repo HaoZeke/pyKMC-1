@@ -25,13 +25,15 @@ selector = auto
 * `amsel-mean`: use AMSEL's deterministic mean first-passage clock
 * `amsel-adaptive`: use a sampled AMSEL rank-1 reduced clock when diagnostics support it, otherwise use sampled FPTA
 
-AMSEL also provides catalog-level diagnostics through
+AMSEL also provides catalog-level guidance through
 `scripts/guide_amsel_catalog.py`. This script leaves the KMC loop
 unchanged: it reads a saved basin connectivity table, splits each
 absorbing catalog row into its own absorbing channel, and runs AMSEL's
 NGT graph-transformation solver for each channel. The output ranks
 catalog exits by exact committor probability from the basin entry and
-reports the corresponding NGT effective rate and MFPT:
+reports the corresponding NGT effective rate and MFPT. It also ranks
+non-entry transient basin states by exact hitting probability before
+absorption, which can be used as an exploration-queue priority:
 
 ```bash
 python scripts/guide_amsel_catalog.py \
@@ -44,7 +46,22 @@ The CSV/JSON rows retain `event_connexion`, `central_atom`, `sym`,
 `state`, and `state_connexion`, so the ranking can be joined back to
 the catalog event that produced each absorbing exit. Equal scores mean
 that the current connectivity graph does not distinguish those catalog
-branches kinetically.
+branches kinetically. The `transient_states` section reports the
+highest-rate incoming catalog row for each transient state along with
+`hit_committor`, `rate`, `mfpt`, and `guidance_score`.
+
+The same guidance can be computed from a live LAMMPS/MPI basin build
+instead of a saved pickle:
+
+```bash
+python scripts/guide_amsel_catalog.py \
+  --live-basin \
+  --case-name live-ni \
+  --config tests/data/input.in \
+  --initial-config tests/data/initial_config_Ni_fcc_4000at_monovacancy+sia.xyz \
+  --reference-table tests/data/reference_table_Ni_fcc_4000at_monovacancy+sia.pickle \
+  --visited-environments tests/data/visited_environments_Ni_fcc_4000at_monovacancy+sia.pickle
+```
 
 ---
 
