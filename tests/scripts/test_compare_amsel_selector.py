@@ -39,6 +39,8 @@ def test_run_selector_report_captures_legacy_success():
     assert report["clock_semantics"] == "sampled-quantile"
     assert report["time_draw"] == pytest.approx(0.25)
     assert report["outlet_draw"] == pytest.approx(0.0)
+    assert report["stable_absorption_probability"] == pytest.approx(0.25, rel=1e-3)
+    assert report["time_draw_absorption_error"] == pytest.approx(0.0, abs=1e-3)
     assert math.isfinite(report["elapsed_ns"])
     assert report["exit_state"] == 1
     assert report["t_exit"] > 0.0
@@ -60,6 +62,8 @@ def test_run_selector_report_labels_mean_clock_as_mfpt():
     assert report["ok"] is True
     assert report["clock_mode"] == "mean"
     assert report["clock_semantics"] == "deterministic-mfpt"
+    assert report["stable_absorption_probability"] is None
+    assert report["time_draw_absorption_error"] is None
     assert report["t_exit"] == pytest.approx(0.5)
 
 
