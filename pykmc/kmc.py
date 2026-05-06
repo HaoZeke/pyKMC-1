@@ -485,8 +485,10 @@ class KMC:
                 for i, e in enumerate(self.atomic_environment.atomic_environment_list)
                 if e == env
             ]
-            # Randomly choose nsearch atoms that have that environment
-            tmp2 = [random.choice(tmp1) for _i in range(nsearch)]
+            n_unique = min(int(nsearch), len(tmp1))
+            tmp2 = random.sample(tmp1, n_unique)
+            if int(nsearch) > n_unique:
+                tmp2 += [random.choice(tmp1) for _i in range(int(nsearch) - n_unique)]
             central_atom_research_list += tmp2
         return central_atom_research_list
 
