@@ -46,6 +46,35 @@ from .basins.detection import DetectorThreshold
 from .basins import BasinsGenericEvents
 
 
+def basin_exploration_trace_line(basin) -> str | None:
+    order = [int(state) for state in (getattr(basin, "exploration_order", []) or [])]
+    queue = [int(state) for state in (getattr(basin, "states_to_explore", []) or [])]
+    guidance = {
+        int(state): float(score)
+        for state, score in (
+            getattr(basin, "last_exploration_guidance", {}) or {}
+        ).items()
+    }
+    if not order and not queue and not guidance:
+        return None
+
+    if queue:
+        guidance_states = queue
+    else:
+        guidance_states = sorted(int(state) for state in guidance)
+    guidance_items = [
+        f"{int(state)}:{float(guidance[int(state)]):.6e}"
+        for state in guidance_states
+        if int(state) in guidance
+    ]
+    return (
+        "\t :=> Basin exploration trace "
+        f"order={','.join(str(state) for state in order)}; "
+        f"queue={','.join(str(state) for state in queue)}; "
+        f"guidance={','.join(guidance_items)}"
+    )
+
+
 # NOTE can maybe reimplment tries if empty catalog
 #TODO: Add reconstruction info
 
@@ -221,6 +250,9 @@ class KMC:
                 basin = BasinsGenericEvents(self.config, self.reference_table, self.visited_environments, self.manager)
                 self.system.update_positions(result_reconstruction.ok_value().min1_positions)
                 result_basin = basin.execute(self.system)
+                trace_line = basin_exploration_trace_line(basin)
+                if trace_line is not None:
+                    self.loggers.info("log", trace_line)
                 frontier = getattr(basin, "unresolved_frontier_diagnostics", {})
                 if int(frontier.get("total", 0)) > 0:
                     self.loggers.info(

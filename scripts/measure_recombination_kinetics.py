@@ -24,6 +24,11 @@ BASIN_FRONTIER_BUDGET_RE = re.compile(
     r"unresolved_committor=(?P<committor>[0-9.eE+-]+); "
     r"unresolved_rate=(?P<rate>[0-9.eE+-]+)"
 )
+BASIN_TRACE_RE = re.compile(
+    r"Basin exploration trace order=(?P<order>[0-9,]*); "
+    r"queue=(?P<queue>[0-9,]*); "
+    r"guidance=(?P<guidance>[0-9:.,eE+-]*)"
+)
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 TRIAL_FIELDS = [
     "case",
@@ -54,6 +59,20 @@ BASIN_CONFIDENCE_FIELDS = [
     "skipped_absorbing_exits",
     "skipped_absorbing_committor",
     "skipped_absorbing_rate",
+]
+BASIN_TRACE_FIELDS = [
+    "case",
+    "selector",
+    "trial",
+    "seed",
+    "step",
+    "order",
+    "queue",
+    "guidance",
+    "order_count",
+    "queue_count",
+    "top_queue_state",
+    "top_queue_guidance",
 ]
 
 
@@ -294,6 +313,90 @@ def collect_basin_confidence_rows(
             )
         )
     return rows
+
+
+def basin_trace_rows_from_log(
+    *,
+    case: str,
+    selector: str,
+    trial: int,
+    seed: int,
+    log_text: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    current_step: int | None = None
+    for raw_line in log_text.splitlines():
+        line = raw_line.strip()
+        step_match = STEP_RE.match(line)
+        if step_match is not None:
+            current_step = int(step_match.group("step"))
+            continue
+
+        trace_match = BASIN_TRACE_RE.search(line)
+        if trace_match is None:
+            continue
+
+        order = _parse_state_list(trace_match.group("order"))
+        queue = _parse_state_list(trace_match.group("queue"))
+        guidance_items, guidance_by_state = _parse_guidance(
+            trace_match.group("guidance")
+        )
+        top_queue_state = queue[0] if queue else None
+        top_queue_guidance = (
+            guidance_by_state.get(top_queue_state)
+            if top_queue_state is not None
+            else None
+        )
+        rows.append(
+            {
+                "case": case,
+                "selector": selector,
+                "trial": int(trial),
+                "seed": int(seed),
+                "step": int(current_step or 0),
+                "order": " ".join(str(state) for state in order),
+                "queue": " ".join(str(state) for state in queue),
+                "guidance": " ".join(guidance_items),
+                "order_count": len(order),
+                "queue_count": len(queue),
+                "top_queue_state": top_queue_state,
+                "top_queue_guidance": top_queue_guidance,
+            }
+        )
+    return rows
+
+
+def collect_basin_trace_rows(commands: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for command in commands:
+        log_path = Path(command["workdir"]) / "pykmc.log"
+        if not log_path.exists():
+            continue
+        rows.extend(
+            basin_trace_rows_from_log(
+                case=str(command["case"]),
+                selector=str(command["priority"]),
+                trial=int(command["trial"]),
+                seed=int(command["seed"]),
+                log_text=log_path.read_text(),
+            )
+        )
+    return rows
+
+
+def _parse_state_list(text: str) -> list[int]:
+    return [int(item) for item in text.split(",") if item]
+
+
+def _parse_guidance(text: str) -> tuple[list[str], dict[int, float]]:
+    items = [item for item in text.split(",") if item]
+    guidance: dict[int, float] = {}
+    for item in items:
+        state_text, _, value_text = item.partition(":")
+        if not state_text or not value_text:
+            continue
+        guidance[int(state_text)] = float(value_text)
+    return items, guidance
 
 
 def _empty_basin_confidence_row(
@@ -769,6 +872,7 @@ def main(argv: list[str] | None = None) -> int:
             [],
             BASIN_CONFIDENCE_FIELDS,
         )
+        write_csv(args.out / "basin_trace.csv", [], BASIN_TRACE_FIELDS)
         events_path.write_text("")
         return 0
 
@@ -783,6 +887,11 @@ def main(argv: list[str] | None = None) -> int:
         args.out / "basin_confidence.csv",
         collect_basin_confidence_rows(commands),
         BASIN_CONFIDENCE_FIELDS,
+    )
+    write_csv(
+        args.out / "basin_trace.csv",
+        collect_basin_trace_rows(commands),
+        BASIN_TRACE_FIELDS,
     )
     return 0
 
