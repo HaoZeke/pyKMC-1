@@ -92,6 +92,26 @@ def test_clock_reference_explains_rank1_mean_and_quantile_clocks():
     assert report["mfpt_over_sampled_quantile_time"] == pytest.approx(1.0 / math.log(2.0))
 
 
+def test_clock_reference_rejects_rate_inconsistent_with_mfpt():
+    script = _load_script()
+
+    report = script.rank1_clock_reference(
+        features={
+            "mrm_moments": {"ok": True, "mean": 10.0},
+            "reduced_kinetics": {
+                "ok": True,
+                "effective_rate": 1.0e-30,
+            },
+        },
+        draws=[0.5, 0.0],
+    )
+
+    assert report == {
+        "ok": False,
+        "error": "reduced effective rate is inconsistent with MFPT",
+    }
+
+
 def test_selector_payload_marks_live_source_and_table_size():
     pytest.importorskip("amsel")
     script = _load_script()
