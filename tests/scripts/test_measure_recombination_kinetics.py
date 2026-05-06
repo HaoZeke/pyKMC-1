@@ -65,6 +65,8 @@ def test_parse_pykmc_out_reads_numeric_rows(tmp_path):
             "k_evt_ps": 2.0,
             "k_tot_ps": 5.0,
             "energy_ev": -1000.0,
+            "cpu_time_s": 0.1,
+            "wall_time_s": 0.2,
         }
     ]
 
@@ -541,6 +543,8 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "t_recombination_s": None,
             "censored_time_s": 0.0,
             "kmc_steps": 0,
+            "cpu_time_s": None,
+            "wall_time_s": None,
             "detector_reason": "timeout-7.5s",
             "failed_refinements": 0,
             "failed_refinement_committor": 0.0,

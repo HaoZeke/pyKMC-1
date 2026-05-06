@@ -29,6 +29,7 @@ SUMMARY_FIELDS = [
     "trials",
     "kinetic_claim_ok",
     "recombined",
+    "last_wall_time_s",
     "last_frontier_states",
     "last_frontier_committor",
     "last_frontier_rate",
@@ -165,6 +166,7 @@ def write_sweep_summary(out: Path) -> None:
                 "recombined": sum(
                     1 for row in trials if _csv_bool(row.get("recombined"))
                 ),
+                "last_wall_time_s": _last_step_row(trials).get("wall_time_s"),
                 "last_frontier_states": last_confidence.get("frontier_states"),
                 "last_frontier_committor": last_confidence.get("frontier_committor"),
                 "last_frontier_rate": last_confidence.get("frontier_rate"),

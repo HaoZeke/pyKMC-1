@@ -39,6 +39,8 @@ TRIAL_FIELDS = [
     "t_recombination_s",
     "censored_time_s",
     "kmc_steps",
+    "cpu_time_s",
+    "wall_time_s",
     "detector_reason",
     "failed_refinements",
     "failed_refinement_committor",
@@ -125,6 +127,8 @@ def parse_pykmc_out(path: Path) -> list[dict[str, Any]]:
                 "k_evt_ps": float(parts[5]),
                 "k_tot_ps": float(parts[6]),
                 "energy_ev": float(parts[7]),
+                "cpu_time_s": float(parts[8]) if len(parts) > 8 else None,
+                "wall_time_s": float(parts[9]) if len(parts) > 9 else None,
             }
         )
     return rows
@@ -152,6 +156,8 @@ def trial_row_from_outputs(
         "t_recombination_s": final_time if recombined else None,
         "censored_time_s": None if recombined else final_time,
         "kmc_steps": len(output_rows),
+        "cpu_time_s": output_rows[-1]["cpu_time_s"] if output_rows else None,
+        "wall_time_s": output_rows[-1]["wall_time_s"] if output_rows else None,
         "detector_reason": detector["detector_reason"],
         "output_dir": str(output_dir),
     }
@@ -706,6 +712,8 @@ def execute_trials(
                             "t_recombination_s": None,
                             "censored_time_s": 0.0,
                             "kmc_steps": 0,
+                            "cpu_time_s": None,
+                            "wall_time_s": None,
                             "detector_reason": f"timeout-{trial_timeout_s}s",
                             "kinetic_claim_ok": False,
                             "output_dir": str(workdir),
@@ -751,6 +759,8 @@ def execute_trials(
                             "t_recombination_s": None,
                             "censored_time_s": 0.0,
                             "kmc_steps": 0,
+                            "cpu_time_s": None,
+                            "wall_time_s": None,
                             "detector_reason": f"returncode-{result.returncode}",
                             "kinetic_claim_ok": False,
                             "output_dir": str(workdir),
