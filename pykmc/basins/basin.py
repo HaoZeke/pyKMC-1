@@ -81,6 +81,7 @@ class BasinsGenericEvents() :
         self.known_environments = known_environments 
         self.absorbing_saddle_positions: dict[int, np.ndarray] = {}
         self.last_exploration_guidance: dict[int, float] = {}
+        self.exploration_order: list[int] = []
 
     def detection(self, params) -> bool : 
         """Utility method."""
@@ -140,6 +141,7 @@ class BasinsGenericEvents() :
         self.connectivity_table = BasinStatesConnectivity()
         self.explorer = BasinGenericEventExplorer(config=self.config, reference_table=self.reference_table)
         self.selector = self._make_selector()
+        self.exploration_order = []
         new_system = System(positions=system.positions.copy(), types=system.types.copy(), cell=system.cell.copy(), pbc=system.pbc.copy(), index=np.arange(len(system.types)))
         self._add_state(state_index=0, system=new_system)  #add current state 0 to self.states
 
@@ -155,12 +157,17 @@ class BasinsGenericEvents() :
         return AmselFPTASelector(clock_mode=clock_mode)
 
 
-    def construct_connexion_table(self) : 
+    def construct_connexion_table(self, max_expansions: int | None = None) : 
         """ 
         explore the basin and construct the connextion table
         """
+        if not hasattr(self, "exploration_order"):
+            self.exploration_order = []
+        expanded_states = 0
         #Loop over state to explore 
         while len(self.states_to_explore) != 0 :
+            if max_expansions is not None and expanded_states >= max_expansions:
+                break
             #next state to explore : 
             to_explore = self.states_to_explore[0]
 
@@ -220,10 +227,12 @@ class BasinsGenericEvents() :
             #Explore state 
             self.current_state = to_explore
             last_state_connectivity = self.get_last_state_index()
+            self.exploration_order.append(int(to_explore))
 
             #Ensure full state to explore 
             self.states[to_explore].ensure_full_state(self.config)
             self.explorer.explore(state=self.states[to_explore], state_index=self.current_state, start_index=last_state_connectivity)
+            expanded_states += 1
             
             #to_explore has been explored : 
             self.states_to_explore.remove(to_explore)
