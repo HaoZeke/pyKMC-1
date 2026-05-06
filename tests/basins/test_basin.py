@@ -648,7 +648,7 @@ class TestBasin :
         result = basin.construct_connexion_table()
 
         assert result.is_ok()
-        assert basin.connectivity_table.df.loc[0, "transient"] is False
+        assert not bool(basin.connectivity_table.df.loc[0, "transient"])
         assert basin.states[1].transient is False
         assert basin.states_to_explore == []
 
