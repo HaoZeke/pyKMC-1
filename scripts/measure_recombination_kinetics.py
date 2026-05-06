@@ -215,6 +215,7 @@ def trial_commands(
         write_trial_input(
             trial_dir / "input.in",
             template_text=template_text,
+            template_dir=template_input.parent,
             initial_config=initial_config,
             reference_table=reference_table,
             visited_environments=visited_environments,
@@ -250,6 +251,7 @@ def trial_commands(
 def render_trial_input(
     *,
     template_text: str,
+    template_dir: Path,
     initial_config: Path,
     reference_table: Path | None,
     visited_environments: Path | None,
@@ -275,6 +277,7 @@ def render_trial_input(
     config[partn]["path_artnso"] = str(partn_path)
     config[partn]["zseed"] = str(int(seed))
     config[basin]["exploration_priority"] = priority
+    absolutize_lammps_paths(config, template_dir=template_dir)
 
     from io import StringIO
 
@@ -287,6 +290,7 @@ def write_trial_input(
     path: Path,
     *,
     template_text: str,
+    template_dir: Path,
     initial_config: Path,
     reference_table: Path | None,
     visited_environments: Path | None,
@@ -299,6 +303,7 @@ def write_trial_input(
     path.write_text(
         render_trial_input(
             template_text=template_text,
+            template_dir=template_dir,
             initial_config=initial_config,
             reference_table=reference_table,
             visited_environments=visited_environments,
@@ -308,6 +313,27 @@ def write_trial_input(
             seed=seed,
         )
     )
+
+
+def absolutize_lammps_paths(
+    config: configparser.ConfigParser,
+    *,
+    template_dir: Path,
+) -> None:
+    lammps = _optional_section(config, "Lammps")
+    if lammps is None:
+        return
+    pair_coeff = config[lammps].get("pair_coeff")
+    if pair_coeff is None:
+        return
+    tokens = []
+    for token in pair_coeff.split():
+        candidate = template_dir / token
+        if not Path(token).is_absolute() and candidate.exists():
+            tokens.append(str(candidate.resolve()))
+        else:
+            tokens.append(token)
+    config[lammps]["pair_coeff"] = " ".join(tokens)
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
@@ -486,6 +512,13 @@ def _section(config: configparser.ConfigParser, name: str) -> str:
             return section
     config.add_section(name)
     return name
+
+
+def _optional_section(config: configparser.ConfigParser, name: str) -> str | None:
+    for section in config.sections():
+        if section.lower() == name.lower():
+            return section
+    return None
 
 
 if __name__ == "__main__":
