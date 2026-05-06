@@ -53,3 +53,26 @@ def test_feature_report_exposes_independent_amsel_diagnostics():
     assert report["reduced_kinetics"]["ok"] is True
     assert report["ngt_outlets"][0]["ok"] is True
     assert report["reduced_kinetics"]["slow_subspace_rank"] == 1
+
+
+def test_selector_payload_marks_live_source_and_table_size():
+    pytest.importorskip("amsel")
+    script = _load_script()
+    table = script.single_exit_connectivity(rate=2.0)
+
+    payload = script.selector_payload(
+        table=table,
+        case_name="live-cu",
+        draws=[0.5, 0.0],
+        entry=0,
+        source="live-lammps-mpi",
+    )
+
+    assert payload["source"] == "live-lammps-mpi"
+    assert payload["connectivity"]["rows"] == 1
+    assert [item["selector"] for item in payload["selectors"]] == [
+        "legacy-fpta",
+        "amsel-sampled",
+        "amsel-adaptive",
+    ]
+    assert payload["amsel_features"]["ok"] is True
