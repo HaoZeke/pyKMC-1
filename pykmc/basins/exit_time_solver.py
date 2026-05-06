@@ -59,6 +59,9 @@ class BisectionSolver() :
         self.t_max = 0 
         self.t_min = 0
         self.t_exit = -1
+        self.Valeig = None
+        self.Veceig = None
+        self.Veceiginv = None
 
         #Compute only one time eigen values/vector of M when using spectral decomposition
         if self.spectral_decomposition == True : 

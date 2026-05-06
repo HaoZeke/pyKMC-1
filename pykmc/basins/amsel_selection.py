@@ -154,13 +154,17 @@ class AmselFPTASelector:
                     entry=entry,
                     include_outlets=False,
                 )
+                effective_rate = float(rk.effective_rate)
                 use_reduced_clock = self.clock_mode == "mean" or (
                     self._mean_clock_diagnostics_ok(diagnostics)
+                    and self._reduced_clock_consistent(
+                        diagnostics,
+                        effective_rate=effective_rate,
+                    )
                     and rk.one_rate_clock_is_plausible(self.rank_tol)
                 )
                 if use_reduced_clock:
                     mrm_res = problem.mrm(entry=entry)
-                    effective_rate = float(rk.effective_rate)
                     if self.clock_mode == "mean":
                         t_exit = float(mrm_res.tau_total)
                         weights_arr = (
@@ -348,6 +352,26 @@ class AmselFPTASelector:
         if not isinstance(moments, dict) or not isinstance(reduced, dict):
             return False
         return bool(moments.get("ok", False)) and bool(reduced.get("ok", False))
+
+    @staticmethod
+    def _reduced_clock_consistent(
+        diagnostics: dict[str, object],
+        *,
+        effective_rate: float,
+        rel_tol: float = 1.0e-6,
+    ) -> bool:
+        moments = diagnostics.get("mrm_moments")
+        if not isinstance(moments, dict):
+            return False
+        mean = float(moments.get("mean", float("nan")))
+        effective_rate = float(effective_rate)
+        if not np.isfinite(mean) or mean <= 0.0:
+            return False
+        if not np.isfinite(effective_rate) or effective_rate <= 0.0:
+            return False
+        implied_mean = 1.0 / effective_rate
+        scale = max(abs(mean), abs(implied_mean), 1.0)
+        return abs(implied_mean - mean) <= float(rel_tol) * scale
 
     @staticmethod
     def _extract_graph(
