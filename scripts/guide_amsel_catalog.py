@@ -162,6 +162,7 @@ def live_basin_guidance_payload(
     entry: int,
     exploration_priority: str | None = None,
     max_expansions: int | None = None,
+    max_closed_states: int | None = None,
 ) -> dict[str, Any] | None:
     from pykmc import Config, ReferenceEventTable, System
     from pykmc.basins import BasinsGenericEvents, StatesConnectivity
@@ -190,7 +191,10 @@ def live_basin_guidance_payload(
             manager=manager,
         )
         basin._initialize(system)
-        result = basin.construct_connexion_table(max_expansions=max_expansions)
+        result = basin.construct_connexion_table(
+            max_expansions=max_expansions,
+            max_closed_states=max_closed_states,
+        )
         if not result.is_ok():
             payload = {
                 "ok": False,
@@ -204,6 +208,7 @@ def live_basin_guidance_payload(
                 basin=basin,
                 priority=config.basin.exploration_priority,
                 max_expansions=max_expansions,
+                max_closed_states=max_closed_states,
             )
             return payload
 
@@ -234,6 +239,7 @@ def live_basin_guidance_payload(
             basin=basin,
             priority=config.basin.exploration_priority,
             max_expansions=max_expansions,
+            max_closed_states=max_closed_states,
         )
         return payload
     finally:
@@ -258,11 +264,13 @@ def _attach_exploration_payload(
     basin: Any,
     priority: str,
     max_expansions: int | None,
+    max_closed_states: int | None,
 ) -> None:
     scores = getattr(basin, "last_exploration_guidance", {}) or {}
     payload["exploration"] = {
         "priority": priority,
         "max_expansions": max_expansions,
+        "max_closed_states": max_closed_states,
         "expanded_states": [int(state) for state in getattr(basin, "exploration_order", [])],
         "closed_states": [int(state) for state in getattr(basin, "explored_states", [])],
         "states_to_explore": [int(state) for state in getattr(basin, "states_to_explore", [])],
@@ -452,6 +460,11 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         help="Stop live basin construction after this many expanded transient states.",
     )
+    parser.add_argument(
+        "--max-closed-states",
+        type=int,
+        help="Stop live basin construction after this many closed queue states.",
+    )
     parser.add_argument("--config", type=Path, default=Path("tests/data/input_Cu.in"))
     parser.add_argument(
         "--initial-config",
@@ -480,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
             entry=args.entry,
             exploration_priority=args.exploration_priority,
             max_expansions=args.max_expansions,
+            max_closed_states=args.max_closed_states,
         )
         if payload is None:
             return 0
