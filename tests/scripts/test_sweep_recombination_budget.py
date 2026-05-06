@@ -25,6 +25,7 @@ def test_budget_sweep_commands_label_and_isolate_outputs(tmp_path):
         python="python",
         out=tmp_path / "sweep",
         closed_states=[1, 2],
+        expansions=[None],
         absorbing_refinements=[0],
         measure_args=["--case", "ni-vac-sia", "--priority", "amsel"],
     )
@@ -32,6 +33,7 @@ def test_budget_sweep_commands_label_and_isolate_outputs(tmp_path):
     assert commands == [
         {
             "budget_label": "closed-1_absorb-0",
+            "basin_max_expansions": None,
             "basin_max_closed_states": 1,
             "basin_max_absorbing_refinements": 0,
             "out": str(tmp_path / "sweep" / "closed-1_absorb-0"),
@@ -54,6 +56,7 @@ def test_budget_sweep_commands_label_and_isolate_outputs(tmp_path):
         },
         {
             "budget_label": "closed-2_absorb-0",
+            "basin_max_expansions": None,
             "basin_max_closed_states": 2,
             "basin_max_absorbing_refinements": 0,
             "out": str(tmp_path / "sweep" / "closed-2_absorb-0"),
@@ -77,6 +80,31 @@ def test_budget_sweep_commands_label_and_isolate_outputs(tmp_path):
     ]
 
 
+def test_budget_sweep_commands_can_vary_expansion_budget(tmp_path):
+    script = _load_script()
+
+    commands = script.budget_sweep_commands(
+        measure_script=tmp_path / "measure_recombination_kinetics.py",
+        python="python",
+        out=tmp_path / "sweep",
+        closed_states=[1000],
+        expansions=[2, 4],
+        absorbing_refinements=[0],
+        measure_args=["--case", "ni-vac-sia", "--priority", "amsel"],
+    )
+
+    assert commands[0]["budget_label"] == "expand-2_closed-1000_absorb-0"
+    assert commands[0]["basin_max_expansions"] == 2
+    command = commands[0]["command"]
+    expansion_arg = command.index("--basin-max-expansions")
+    assert command[expansion_arg : expansion_arg + 2] == [
+        "--basin-max-expansions",
+        "2",
+    ]
+    assert commands[1]["budget_label"] == "expand-4_closed-1000_absorb-0"
+    assert commands[1]["basin_max_expansions"] == 4
+
+
 def test_cli_dry_run_writes_sweep_manifest_and_commands(tmp_path):
     script = _load_script()
     out = tmp_path / "sweep"
@@ -89,6 +117,8 @@ def test_cli_dry_run_writes_sweep_manifest_and_commands(tmp_path):
             "python",
             "--closed-states",
             "1,2",
+            "--expansions",
+            "2,4",
             "--absorbing-refinements",
             "0,1",
             "--dry-run",
@@ -108,9 +138,10 @@ def test_cli_dry_run_writes_sweep_manifest_and_commands(tmp_path):
     manifest = json.loads((out / "sweep_manifest.json").read_text())
     commands = json.loads((out / "sweep_commands.json").read_text())
     assert manifest["closed_states"] == [1, 2]
+    assert manifest["expansions"] == [2, 4]
     assert manifest["absorbing_refinements"] == [0, 1]
-    assert len(commands) == 4
-    assert commands[0]["budget_label"] == "closed-1_absorb-0"
+    assert len(commands) == 8
+    assert commands[0]["budget_label"] == "expand-2_closed-1_absorb-0"
 
 
 def test_aggregate_outputs_adds_budget_columns(tmp_path):
@@ -163,6 +194,7 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
         [
             {
                 "budget_label": "closed-1_absorb-0",
+                "basin_max_expansions": None,
                 "basin_max_closed_states": 1,
                 "basin_max_absorbing_refinements": 0,
                 "out": str(child),
@@ -177,6 +209,7 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
     )
     trace = list(csv.DictReader((tmp_path / "sweep" / "sweep_basin_trace.csv").open()))
     assert trials[0]["budget_label"] == "closed-1_absorb-0"
+    assert trials[0]["basin_max_expansions"] == ""
     assert trials[0]["basin_max_closed_states"] == "1"
     assert confidence[0]["frontier_committor"] == "1.0"
     assert trace[0]["queue"] == "13 14"
@@ -184,6 +217,7 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
     assert summary == [
         {
             "budget_label": "closed-1_absorb-0",
+            "basin_max_expansions": "",
             "basin_max_closed_states": "1",
             "basin_max_absorbing_refinements": "0",
             "selector": "amsel",

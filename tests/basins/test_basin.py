@@ -169,7 +169,7 @@ class TestBasin :
         assert basin.last_exploration_guidance[14] == pytest.approx(0.375)
         assert basin.last_exploration_guidance[1] == pytest.approx(0.25)
 
-    def test_update_to_explore_can_prioritize_uncovered_event_families(
+    def test_update_to_explore_uses_event_family_novelty_as_tiebreaker(
         self, monkeypatch
     ):
         table = BasinStatesConnectivity()
@@ -228,6 +228,67 @@ class TestBasin :
         monkeypatch.setattr(
             basin_module,
             "amsel_state_guidance_scores",
+            lambda connectivity_table, entry=0: {14: 0.9, 33: 0.9, 40: 0.1},
+        )
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(exploration_priority="amsel-diverse")
+        )
+        basin.connectivity_table = table
+        basin.explored_states = [0, 13]
+
+        basin.update_to_explore()
+
+        assert basin.states_to_explore == [33, 14, 40]
+        assert basin.last_exploration_guidance[14] == pytest.approx(0.9)
+
+    def test_update_to_explore_keeps_guidance_before_event_family_novelty(
+        self, monkeypatch
+    ):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 14,
+                    "event_connexion": 1,
+                    "central_atom": 3330,
+                    "sym": 2,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 3.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 0,
+                    "state_connexion": 33,
+                    "event_connexion": 2,
+                    "central_atom": 910,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 0.5,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 13,
+                    "state_connexion": 40,
+                    "event_connexion": 3,
+                    "central_atom": 912,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 0.25,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+            ]
+        )
+        monkeypatch.setattr(
+            basin_module,
+            "amsel_state_guidance_scores",
             lambda connectivity_table, entry=0: {14: 0.9, 33: 0.2, 40: 0.1},
         )
         basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
@@ -239,8 +300,7 @@ class TestBasin :
 
         basin.update_to_explore()
 
-        assert basin.states_to_explore == [33, 40, 14]
-        assert basin.last_exploration_guidance[14] == pytest.approx(0.9)
+        assert basin.states_to_explore == [14, 33, 40]
 
     def test_record_exploration_decision_captures_event_family_and_guidance(self):
         table = BasinStatesConnectivity()
