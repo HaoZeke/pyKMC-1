@@ -219,17 +219,11 @@ def live_basin_guidance_payload(
 
         manager.use_local()
         result = basin.refine_absorbing(system)
-        if result.is_ok():
-            table = basin.connectivity_table
-            refinement = {"ok": True, "rate_source": "refined"}
-        else:
-            table = constructed_table
-            refinement = {
-                "ok": False,
-                "stage": "refine_absorbing",
-                "error": str(result.err_value()),
-                "rate_source": "catalog",
-            }
+        table, refinement = _refinement_table_and_report(
+            result,
+            refined_table=basin.connectivity_table,
+            catalog_table=constructed_table,
+        )
 
         payload = catalog_guidance_payload(table, case_name=case_name, entry=entry)
         payload["source"] = "live-lammps-mpi"
@@ -256,6 +250,35 @@ def write_csv(payload: dict[str, Any], out) -> None:
     writer = csv.DictWriter(out, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)
+
+
+def _refinement_table_and_report(
+    result: Any,
+    *,
+    refined_table: Any,
+    catalog_table: Any,
+) -> tuple[Any, dict[str, Any]]:
+    if result.is_ok():
+        return refined_table, {"ok": True, "rate_source": "refined"}
+    if refined_table is None:
+        return (
+            catalog_table,
+            {
+                "ok": False,
+                "stage": "refine_absorbing",
+                "error": str(result.err_value()),
+                "rate_source": "catalog",
+            },
+        )
+    return (
+        refined_table,
+        {
+            "ok": False,
+            "stage": "refine_absorbing",
+            "error": str(result.err_value()),
+            "rate_source": "partial-refined",
+        },
+    )
 
 
 def _attach_exploration_payload(
