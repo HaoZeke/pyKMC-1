@@ -88,6 +88,21 @@ The JSON `exploration` block records `expanded_states`,
 `closed_states`, `states_to_explore`, and the AMSEL
 `guidance_scores` used to order the queue.
 
+Use `scripts/compare_amsel_exploration.py` on two fixed-work JSON
+payloads to compare physical process observables:
+
+```bash
+python scripts/compare_amsel_exploration.py \
+  /tmp/cu-legacy-closed2.json \
+  /tmp/cu-amsel-closed2.json \
+  --format csv
+```
+
+The comparison reports resolved exit committor, resolved rate,
+remaining frontier committor, kinetic confidence
+`resolved / (resolved + frontier)`, and the top resolved
+`event_connexion` process class.
+
 ---
 
 ## General Idea
