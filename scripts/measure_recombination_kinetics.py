@@ -225,6 +225,8 @@ def apply_kinetic_guard(
         guarded["kinetic_claim_ok"] = False
     if guarded["failed_refinements"] > 0:
         guarded["kinetic_claim_ok"] = False
+    if not guarded.get("recombined", False) and int(guarded.get("kmc_steps") or 0) == 0:
+        guarded["kinetic_claim_ok"] = False
     return guarded
 
 
