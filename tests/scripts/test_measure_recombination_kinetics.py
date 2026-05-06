@@ -882,6 +882,12 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
     script = _load_script()
     workdir = tmp_path / "legacy" / "trial-0"
     workdir.mkdir(parents=True)
+    (workdir / "pykmc.out").write_text(
+        "1 1.0e-12 1.0e-12 3 0.4 2.0 5.0 -1000.0 0.1 0.2\n"
+        "2 2.0e-12 3.0e-12 3 0.4 2.0 5.0 -1000.0 0.3 0.4\n"
+    )
+    (workdir / "pykmc.log").write_text("Step : 2\n")
+    (workdir / "trajkmc.xyz").write_text("trajectory placeholder\n")
 
     def fake_run(*args, **kwargs):
         raise subprocess.TimeoutExpired(
@@ -891,6 +897,11 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
         )
 
     monkeypatch.setattr(script.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        script,
+        "trajectory_noncrystal_counts",
+        lambda path: [28, 27, 25],
+    )
 
     rows = script.execute_trials(
         [
@@ -899,6 +910,7 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
                 "priority": "legacy",
                 "trial": 0,
                 "seed": 1000,
+                "event_searches": 2,
                 "workdir": str(workdir),
                 "command": ["python", "-m", "pykmc"],
             }
@@ -915,13 +927,16 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "seed": 1000,
             "recombined": False,
             "t_recombination_s": None,
-            "censored_time_s": 0.0,
-            "kmc_steps": 0,
-            "cpu_time_s": None,
-            "wall_time_s": None,
+            "censored_time_s": 3.0e-12,
+            "kmc_steps": 2,
+            "cpu_time_s": 0.3,
+            "wall_time_s": 0.4,
             "detector_reason": "timeout-7.5s",
-            "event_discovery_status": "unknown",
-            "event_searches": None,
+            "event_discovery_status": "not-zero-event",
+            "event_searches": 2,
+            "final_noncrystal_atoms": 25,
+            "min_noncrystal_atoms": 25,
+            "trajectory_recombination_frame": None,
             "failed_refinements": 0,
             "failed_refinement_committor": 0.0,
             "usable_resolved_committor": None,
