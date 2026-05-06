@@ -101,6 +101,27 @@ def test_trial_row_uses_recombination_or_censor_time(tmp_path):
     assert row["kinetic_claim_ok"] is True
 
 
+def test_trial_row_rejects_zero_step_censored_run(tmp_path):
+    script = _load_script()
+    (tmp_path / "pykmc.out").write_text("")
+    (tmp_path / "pykmc.log").write_text(
+        "No events have been found, empty reference events table.\n"
+        ":=> End of simulation\n"
+    )
+
+    row = script.trial_row_from_outputs(
+        case="ni-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=11,
+        output_dir=tmp_path,
+    )
+
+    assert row["recombined"] is False
+    assert row["kmc_steps"] == 0
+    assert row["kinetic_claim_ok"] is False
+
+
 def test_survival_rows_are_plot_ready():
     script = _load_script()
     trials = [
