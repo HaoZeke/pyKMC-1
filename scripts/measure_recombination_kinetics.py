@@ -989,7 +989,11 @@ def _timeout_output(error: subprocess.TimeoutExpired) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--case", choices=("ni-vac-sia", "cu-vac-sia"), required=True)
+    parser.add_argument(
+        "--case",
+        choices=("ni-vac-sia", "cu-vac-sia", "generic-defect"),
+        required=True,
+    )
     parser.add_argument("--template-input", type=Path)
     parser.add_argument("--initial-config", type=Path)
     parser.add_argument("--reference-table", type=Path)
@@ -1039,9 +1043,11 @@ def main(argv: list[str] | None = None) -> int:
             "--reference-table and --visited-environments require "
             "--allow-preloaded-catalog"
         )
-    defaults = case_defaults(args.case)
-    template_input = args.template_input or defaults["template_input"]
-    initial_config = args.initial_config or defaults["initial_config"]
+    defaults = {} if args.case == "generic-defect" else case_defaults(args.case)
+    template_input = args.template_input or defaults.get("template_input")
+    initial_config = args.initial_config or defaults.get("initial_config")
+    if template_input is None or initial_config is None:
+        parser.error("--template-input and --initial-config are required for generic-defect")
 
     commands = trial_commands(
         out=args.out,
