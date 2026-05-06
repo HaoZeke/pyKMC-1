@@ -10,6 +10,13 @@ from ..system import System
 from ..config import Config
 
 
+def active_volume_atom_index(atom_map, atom_idx: int) -> int:
+    matches = np.where(np.asarray(atom_map, dtype=int) == int(atom_idx))[0]
+    if len(matches) != 1:
+        raise ValueError(f"atom {atom_idx} maps to {len(matches)} active-volume atoms")
+    return int(matches[0])
+
+
 def define_AV(config, central_atom_idx: int, positions, cell):
     # Defining parameters
     # Radius of whole active volume in Ang
@@ -162,7 +169,7 @@ def partn_refine_AV(engine, config, central_atom_idx:int, positions, cell, type,
     core_idx=[]
     core_ids=[]
     for i, atom_idx in enumerate(saddle_idx):
-        index = int(np.where(atom_map == atom_idx)[0])  # index in atom map where this value is true
+        index = active_volume_atom_index(atom_map, atom_idx)
         av_positions[index] = saddle_positions[i]
         core_idx.append(index)  # Atom id
         core_ids.append(index + 1)
