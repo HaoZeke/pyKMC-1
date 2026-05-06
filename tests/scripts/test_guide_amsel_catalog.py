@@ -139,3 +139,28 @@ def test_frontier_transient_rows_are_guidance_targets_not_exit_channels():
     assert [row["state"] for row in payload["transient_states"]] == [1]
     assert payload["transient_states"][0]["hit_committor"] == pytest.approx(0.9)
     assert payload["transient_states"][0]["incoming_event_connexion"] == 301
+
+
+def test_exploration_payload_records_budgeted_queue_state():
+    script = _load_script()
+    payload = {"ok": True}
+    basin = SimpleNamespace(
+        exploration_order=[0],
+        states_to_explore=[13, 14, 1],
+        last_exploration_guidance={13: 0.375, 14: 0.375, 1: 0.25},
+    )
+
+    script._attach_exploration_payload(
+        payload,
+        basin=basin,
+        priority="amsel",
+        max_expansions=1,
+    )
+
+    assert payload["exploration"] == {
+        "priority": "amsel",
+        "max_expansions": 1,
+        "expanded_states": [0],
+        "states_to_explore": [13, 14, 1],
+        "guidance_scores": {"1": 0.25, "13": 0.375, "14": 0.375},
+    }
