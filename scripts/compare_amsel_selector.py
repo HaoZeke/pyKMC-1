@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pickle
 import time
 import warnings
@@ -24,10 +25,12 @@ class CycleRng:
             raise ValueError("draws must contain at least one value")
         self._draws = values
         self._index = 0
+        self.consumed: list[float] = []
 
     def random(self):
         value = self._draws[self._index % len(self._draws)]
         self._index += 1
+        self.consumed.append(value)
         return value
 
 
@@ -57,8 +60,43 @@ def amsel_sampled_selector(rng: CycleRng) -> AmselFPTASelector:
     return AmselFPTASelector(clock_mode="sampled", rng=rng)
 
 
+def amsel_mean_selector(rng: CycleRng) -> AmselFPTASelector:
+    return AmselFPTASelector(clock_mode="mean", rng=rng)
+
+
 def amsel_adaptive_selector(rng: CycleRng) -> AmselFPTASelector:
     return AmselFPTASelector(clock_mode="adaptive", rng=rng)
+
+
+def selector_clock_report(
+    *,
+    selector_name: str,
+    clock_mode: str | None,
+    consumed_draws: list[float],
+) -> dict[str, object]:
+    if selector_name == "legacy-fpta" or clock_mode == "sampled":
+        semantics = "sampled-quantile"
+    elif selector_name == "amsel-mean" or clock_mode == "mean":
+        semantics = "deterministic-mfpt"
+    else:
+        semantics = "unresolved"
+
+    if semantics == "sampled-quantile":
+        time_draw = consumed_draws[0] if consumed_draws else None
+        outlet_draw = consumed_draws[1] if len(consumed_draws) > 1 else None
+    elif semantics == "deterministic-mfpt":
+        time_draw = None
+        outlet_draw = consumed_draws[0] if consumed_draws else None
+    else:
+        time_draw = None
+        outlet_draw = None
+
+    return {
+        "clock_semantics": semantics,
+        "time_draw": time_draw,
+        "outlet_draw": outlet_draw,
+        "consumed_draws": consumed_draws,
+    }
 
 
 def run_selector(
@@ -69,13 +107,20 @@ def run_selector(
     table: StatesConnectivity,
     draws: list[float],
 ) -> dict[str, object]:
-    selector = selector_factory(CycleRng(draws))
+    rng = CycleRng(draws)
+    selector = selector_factory(rng)
     start_ns = time.perf_counter_ns()
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
         try:
             result = selector.select_from_connectivity(table)
             elapsed_ns = time.perf_counter_ns() - start_ns
+            clock_mode = getattr(selector, "last_clock_mode", None)
+            clock_report = selector_clock_report(
+                selector_name=selector_name,
+                clock_mode=clock_mode,
+                consumed_draws=list(rng.consumed),
+            )
             if result.is_ok():
                 value = result.ok_value()
                 return {
@@ -87,7 +132,8 @@ def run_selector(
                     "exit_state": int(value.exit_state),
                     "warning_count": len(captured),
                     "warnings": [str(item.message) for item in captured],
-                    "clock_mode": getattr(selector, "last_clock_mode", None),
+                    "clock_mode": clock_mode,
+                    **clock_report,
                 }
             err = result.err_value()
             return {
@@ -98,10 +144,17 @@ def run_selector(
                 "error": str(getattr(err, "message", err)),
                 "warning_count": len(captured),
                 "warnings": [str(item.message) for item in captured],
-                "clock_mode": getattr(selector, "last_clock_mode", None),
+                "clock_mode": clock_mode,
+                **clock_report,
             }
         except Exception as exc:  # noqa: BLE001 - report comparison failures.
             elapsed_ns = time.perf_counter_ns() - start_ns
+            clock_mode = getattr(selector, "last_clock_mode", None)
+            clock_report = selector_clock_report(
+                selector_name=selector_name,
+                clock_mode=clock_mode,
+                consumed_draws=list(rng.consumed),
+            )
             return {
                 "case": case_name,
                 "selector": selector_name,
@@ -110,13 +163,52 @@ def run_selector(
                 "error": f"{type(exc).__name__}: {exc}",
                 "warning_count": len(captured),
                 "warnings": [str(item.message) for item in captured],
-                "clock_mode": getattr(selector, "last_clock_mode", None),
+                "clock_mode": clock_mode,
+                **clock_report,
             }
 
 
 def amsel_feature_report(table: StatesConnectivity, entry: int = 0) -> dict[str, object]:
     selector = AmselFPTASelector()
     return selector.diagnose_connectivity(table, entry=int(entry), include_outlets=True)
+
+
+def rank1_clock_reference(
+    *,
+    features: dict[str, object],
+    draws: list[float],
+) -> dict[str, object]:
+    reduced = features.get("reduced_kinetics")
+    if not isinstance(reduced, dict) or not reduced.get("ok", False):
+        return {"ok": False, "error": "reduced kinetics diagnostics unavailable"}
+    if not draws:
+        return {"ok": False, "error": "at least one probability draw is required"}
+
+    effective_rate = float(reduced["effective_rate"])
+    time_draw = float(draws[0])
+    if not math.isfinite(effective_rate) or effective_rate <= 0.0:
+        return {"ok": False, "error": "effective rate must be positive and finite"}
+    if not 0.0 <= time_draw < 1.0:
+        return {"ok": False, "error": "time draw must satisfy 0 <= r < 1"}
+
+    sampled_quantile_time = -math.log1p(-time_draw) / effective_rate
+    mfpt = 1.0 / effective_rate
+    ratio = math.inf
+    if sampled_quantile_time > 0.0:
+        ratio = mfpt / sampled_quantile_time
+
+    return {
+        "ok": True,
+        "semantics": {
+            "sampled-quantile": "inverse-cdf first-passage sample at the reported time draw",
+            "deterministic-mfpt": "mean first-passage time of the reduced rank-1 clock",
+        },
+        "time_draw": time_draw,
+        "effective_rate": effective_rate,
+        "sampled_quantile_time": sampled_quantile_time,
+        "mfpt": mfpt,
+        "mfpt_over_sampled_quantile_time": ratio,
+    }
 
 
 def selector_payload(
@@ -144,6 +236,13 @@ def selector_payload(
         ),
         run_selector(
             case_name=case_name,
+            selector_name="amsel-mean",
+            selector_factory=amsel_mean_selector,
+            table=table,
+            draws=draws,
+        ),
+        run_selector(
+            case_name=case_name,
             selector_name="amsel-adaptive",
             selector_factory=amsel_adaptive_selector,
             table=table,
@@ -152,15 +251,18 @@ def selector_payload(
     ]
     df = table.get_table()
     states = set(df["state"]).union(set(df["state_connexion"])) if not df.empty else set()
+    features = amsel_feature_report(table, entry=entry)
     return {
         "source": source,
+        "draws": [float(value) for value in draws],
         "connectivity": {
             "rows": int(len(df)),
             "states": int(len(states)),
             "transient_rows": int(df["transient"].sum()) if "transient" in df else None,
         },
         "selectors": reports,
-        "amsel_features": amsel_feature_report(table, entry=entry),
+        "amsel_features": features,
+        "clock_reference": rank1_clock_reference(features=features, draws=draws),
     }
 
 
