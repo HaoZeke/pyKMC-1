@@ -16,12 +16,15 @@ from typing import Any
 CRYSTAL_TERMINATION_MARKER = "Only atoms with cristalline environment"
 BASIN_REFINEMENT_BUDGET_RE = re.compile(
     r"Basin absorbing refinement skipped (?P<count>\d+) exits; "
-    r"unresolved_committor=(?P<committor>[0-9.eE+-]+);"
+    r"unresolved_committor=(?P<committor>[0-9.eE+-]+); "
+    r"unresolved_rate=(?P<rate>[0-9.eE+-]+)"
 )
 BASIN_FRONTIER_BUDGET_RE = re.compile(
     r"Basin exploration budget left (?P<count>\d+) frontier states; "
-    r"unresolved_committor=(?P<committor>[0-9.eE+-]+);"
+    r"unresolved_committor=(?P<committor>[0-9.eE+-]+); "
+    r"unresolved_rate=(?P<rate>[0-9.eE+-]+)"
 )
+STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 TRIAL_FIELDS = [
     "case",
     "selector",
@@ -39,6 +42,19 @@ TRIAL_FIELDS = [
     "output_dir",
 ]
 SURVIVAL_FIELDS = ["selector", "time_s", "n_at_risk", "n_events", "survival"]
+BASIN_CONFIDENCE_FIELDS = [
+    "case",
+    "selector",
+    "trial",
+    "seed",
+    "step",
+    "frontier_states",
+    "frontier_committor",
+    "frontier_rate",
+    "skipped_absorbing_exits",
+    "skipped_absorbing_committor",
+    "skipped_absorbing_rate",
+]
 
 
 def detect_recombination_from_log(text: str) -> dict[str, object]:
@@ -199,6 +215,108 @@ def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def basin_confidence_rows_from_log(
+    *,
+    case: str,
+    selector: str,
+    trial: int,
+    seed: int,
+    log_text: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    current_step: int | None = None
+    row_by_step: dict[int, dict[str, Any]] = {}
+
+    for raw_line in log_text.splitlines():
+        line = raw_line.strip()
+        step_match = STEP_RE.match(line)
+        if step_match is not None:
+            current_step = int(step_match.group("step"))
+            continue
+
+        frontier_match = BASIN_FRONTIER_BUDGET_RE.search(line)
+        if frontier_match is not None:
+            step = int(current_step or 0)
+            row = _empty_basin_confidence_row(
+                case=case,
+                selector=selector,
+                trial=trial,
+                seed=seed,
+                step=step,
+            )
+            row["frontier_states"] = int(frontier_match.group("count"))
+            row["frontier_committor"] = float(frontier_match.group("committor"))
+            row["frontier_rate"] = float(frontier_match.group("rate"))
+            row_by_step[step] = row
+            rows.append(row)
+            continue
+
+        absorbing_match = BASIN_REFINEMENT_BUDGET_RE.search(line)
+        if absorbing_match is not None:
+            step = int(current_step or 0)
+            row = row_by_step.get(step)
+            if row is None:
+                row = _empty_basin_confidence_row(
+                    case=case,
+                    selector=selector,
+                    trial=trial,
+                    seed=seed,
+                    step=step,
+                )
+                row_by_step[step] = row
+                rows.append(row)
+            row["skipped_absorbing_exits"] = int(absorbing_match.group("count"))
+            row["skipped_absorbing_committor"] = float(
+                absorbing_match.group("committor")
+            )
+            row["skipped_absorbing_rate"] = float(absorbing_match.group("rate"))
+
+    return rows
+
+
+def collect_basin_confidence_rows(
+    commands: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for command in commands:
+        log_path = Path(command["workdir"]) / "pykmc.log"
+        if not log_path.exists():
+            continue
+        rows.extend(
+            basin_confidence_rows_from_log(
+                case=str(command["case"]),
+                selector=str(command["priority"]),
+                trial=int(command["trial"]),
+                seed=int(command["seed"]),
+                log_text=log_path.read_text(),
+            )
+        )
+    return rows
+
+
+def _empty_basin_confidence_row(
+    *,
+    case: str,
+    selector: str,
+    trial: int,
+    seed: int,
+    step: int,
+) -> dict[str, Any]:
+    return {
+        "case": case,
+        "selector": selector,
+        "trial": int(trial),
+        "seed": int(seed),
+        "step": int(step),
+        "frontier_states": 0,
+        "frontier_committor": 0.0,
+        "frontier_rate": 0.0,
+        "skipped_absorbing_exits": 0,
+        "skipped_absorbing_committor": 0.0,
+        "skipped_absorbing_rate": 0.0,
+    }
 
 
 def _trial_time(trial: dict[str, Any]) -> float:
@@ -646,6 +764,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         write_csv(args.out / "trials.csv", [], TRIAL_FIELDS)
         write_csv(args.out / "survival.csv", [], SURVIVAL_FIELDS)
+        write_csv(
+            args.out / "basin_confidence.csv",
+            [],
+            BASIN_CONFIDENCE_FIELDS,
+        )
         events_path.write_text("")
         return 0
 
@@ -656,6 +779,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_csv(args.out / "trials.csv", trial_rows, TRIAL_FIELDS)
     write_csv(args.out / "survival.csv", survival_rows(trial_rows), SURVIVAL_FIELDS)
+    write_csv(
+        args.out / "basin_confidence.csv",
+        collect_basin_confidence_rows(commands),
+        BASIN_CONFIDENCE_FIELDS,
+    )
     return 0
 
 
