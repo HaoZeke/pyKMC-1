@@ -2,6 +2,7 @@
 """Measure vacancy-SIA recombination kinetics for PyKMC AMSEL comparisons."""
 from __future__ import annotations
 
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -88,7 +89,7 @@ def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if trial.get("recombined") and trial.get("t_recombination_s") is not None
             }
         )
-        survival = 1.0
+        survival = Fraction(1, 1)
         for event_time in event_times:
             n_at_risk = sum(_trial_time(trial) >= event_time for trial in group)
             n_events = sum(
@@ -99,14 +100,14 @@ def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
             )
             if n_at_risk == 0:
                 continue
-            survival *= 1.0 - (n_events / n_at_risk)
+            survival *= Fraction(n_at_risk - n_events, n_at_risk)
             rows.append(
                 {
                     "selector": selector,
                     "time_s": event_time,
                     "n_at_risk": int(n_at_risk),
                     "n_events": int(n_events),
-                    "survival": survival,
+                    "survival": float(survival),
                 }
             )
     return rows
