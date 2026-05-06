@@ -17,6 +17,18 @@ def test_kmc_seeds_python_and_numpy_rngs_from_control_config():
     assert np.random.random() == expected_numpy
 
 
+def test_central_atoms_research_covers_distinct_atoms_before_resampling():
+    kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
+    kmc.atomic_environment = SimpleNamespace(
+        atomic_environment_list=["env-a", "env-a", "env-a", "crystal"]
+    )
+    random.seed(0)
+
+    central_atoms = kmc.central_atoms_research(["env-a"], nsearch=3)
+
+    assert sorted(central_atoms) == [0, 1, 2]
+
+
 def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
     basin = SimpleNamespace(
         exploration_order=[0, 13],
