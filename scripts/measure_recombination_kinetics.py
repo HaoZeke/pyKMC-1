@@ -14,6 +14,11 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
+try:
+    import amsel as _amsel
+except ImportError:  # pragma: no cover - exercised in environments without AMSEL.
+    _amsel = None
+
 CRYSTAL_TERMINATION_MARKER = "Only atoms with cristalline environment"
 BASIN_REFINEMENT_BUDGET_RE = re.compile(
     r"Basin absorbing refinement skipped (?P<count>\d+) exits; "
@@ -86,6 +91,9 @@ BASIN_TRACE_FIELDS = [
     "closed_process_signatures",
     "closed_process_signature_count",
     "closed_process_singleton_count",
+    "process_completeness_observations",
+    "process_completeness_unique",
+    "process_missing_mass_estimate",
     "closed_guidance",
     "closed_guidance_sum",
     "closed_top_guidance",
@@ -368,7 +376,9 @@ def basin_trace_rows_from_log(
             closed_process_items,
             closed_process_signatures,
             closed_process_singleton_count,
+            closed_process_counts,
         ) = _parse_closed_processes(trace_match.group("closed_processes") or "")
+        process_completeness = _process_completeness(closed_process_counts)
         closed_guidance_items, closed_guidance_by_state = _parse_guidance(
             trace_match.group("closed_guidance") or ""
         )
@@ -402,6 +412,7 @@ def basin_trace_rows_from_log(
                 "closed_process_signatures": " ".join(closed_process_signatures),
                 "closed_process_signature_count": len(closed_process_signatures),
                 "closed_process_singleton_count": closed_process_singleton_count,
+                **process_completeness,
                 "closed_guidance": " ".join(closed_guidance_items),
                 "closed_guidance_sum": float(sum(closed_guidance_values)),
                 "closed_top_guidance": float(max(closed_guidance_values, default=0.0)),
@@ -459,7 +470,9 @@ def _parse_closed_events(text: str) -> tuple[list[str], list[int]]:
     return items, families
 
 
-def _parse_closed_processes(text: str) -> tuple[list[str], list[str], int]:
+def _parse_closed_processes(
+    text: str,
+) -> tuple[list[str], list[str], int, Counter[str]]:
     items = [item for item in text.split(",") if item]
     signatures: list[str] = []
     counts: Counter[str] = Counter()
@@ -474,7 +487,29 @@ def _parse_closed_processes(text: str) -> tuple[list[str], list[str], int]:
         seen.add(signature)
         signatures.append(signature)
     singleton_count = sum(1 for signature in signatures if counts[signature] == 1)
-    return items, signatures, singleton_count
+    return items, signatures, singleton_count, counts
+
+
+def _process_completeness(process_counts: Counter[str]) -> dict[str, Any]:
+    if _amsel is not None and hasattr(_amsel, "event_completeness"):
+        certificate = _amsel.event_completeness(
+            process_counts=dict(process_counts),
+        )
+        return {
+            "process_completeness_observations": certificate.observations,
+            "process_completeness_unique": certificate.unique_processes,
+            "process_missing_mass_estimate": certificate.unseen_process_probability,
+        }
+
+    observations = sum(process_counts.values())
+    unique = len(process_counts)
+    singleton = sum(1 for count in process_counts.values() if count == 1)
+    missing_mass = float(singleton) / float(observations) if observations else 1.0
+    return {
+        "process_completeness_observations": observations,
+        "process_completeness_unique": unique,
+        "process_missing_mass_estimate": missing_mass,
+    }
 
 
 def _empty_basin_confidence_row(

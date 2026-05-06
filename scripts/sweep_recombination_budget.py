@@ -44,6 +44,7 @@ SUMMARY_FIELDS = [
     "last_closed_process_signatures",
     "last_closed_process_signature_count",
     "last_closed_process_singleton_count",
+    "last_process_missing_mass_estimate",
     "last_closed_guidance_sum",
     "last_closed_top_guidance",
     "last_frontier_states_per_closed_family",
@@ -242,6 +243,9 @@ def write_sweep_summary(out: Path) -> None:
                 ),
                 "last_closed_process_singleton_count": last_trace.get(
                     "closed_process_singleton_count"
+                ),
+                "last_process_missing_mass_estimate": last_trace.get(
+                    "process_missing_mass_estimate"
                 ),
                 "last_closed_guidance_sum": last_trace.get("closed_guidance_sum"),
                 "last_closed_top_guidance": last_trace.get("closed_top_guidance"),
