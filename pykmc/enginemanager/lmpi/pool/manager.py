@@ -185,10 +185,12 @@ class Manager:
         Close all sessions and their underlying engines.
         """
         #print("[PoolManager] Closing all sessions.")
-        if self.global_session is not None :
-            self.global_session.close(wait_status=False)
+        if self.sessions and self.global_session is not None:
+            self.use_local()
         for session in self.sessions:
             session.close(wait_status=True)
+        if not self.sessions and self.global_session is not None:
+            self.global_session.close(wait_status=True)
 
 
     def __getattr__(self, name:str) :
@@ -205,6 +207,5 @@ class Manager:
             return global_method
 
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
 
 
