@@ -156,11 +156,13 @@ def test_exploration_payload_records_budgeted_queue_state():
         basin=basin,
         priority="amsel",
         max_expansions=1,
+        max_closed_states=2,
     )
 
     assert payload["exploration"] == {
         "priority": "amsel",
         "max_expansions": 1,
+        "max_closed_states": 2,
         "expanded_states": [0],
         "closed_states": [0, 1],
         "states_to_explore": [13, 14, 1],
