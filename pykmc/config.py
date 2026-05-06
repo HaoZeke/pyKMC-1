@@ -540,6 +540,10 @@ class BasinConfig(BaseModel):
     default = 0.0,
     description="Energy threshold"
     )
+    reconstruction_minimize: str = Field(
+        default="1.0e-6 1.0e-8 10 10",
+        description="LAMMPS minimize command used when reconstructing catalog states inside a basin graph.",
+    )
 
 class Config(BaseModel):
     """Config for the KMC simulations."""
