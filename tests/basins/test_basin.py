@@ -939,6 +939,102 @@ class TestBasin :
         assert result.is_ok()
         assert result.ok_value().exit_state == 1
 
+    def test_execute_falls_back_to_legacy_selector_when_amsel_selector_fails(
+        self, monkeypatch
+    ):
+        class FakeManager:
+            def use_local(self):
+                return None
+
+            def use_global(self):
+                return None
+
+        class FakeNeighbors:
+            def get_neighbors(self, *_args):
+                return np.array([0])
+
+        class FakeState:
+            def __init__(self):
+                self.system = SimpleNamespace(positions=np.array([[0.0, 0.0, 0.0]]))
+                self.neighbors_list = FakeNeighbors()
+
+            def ensure_full_state(self, config):
+                return None
+
+        class FailingSelector:
+            def select_from_connectivity(self, connectivity_table):
+                return Err(
+                    ErrorInfo(
+                        type=ErrorType.BASIN_TEXIT_NOT_FOUND,
+                        message="amsel rejected graph",
+                    )
+                )
+
+        class LegacySelector:
+            def select_from_connectivity(self, connectivity_table):
+                return Ok(BasinSelectorOutput(t_exit=2.0, exit_state=1))
+
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 3,
+                    "central_atom": 0,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.2,
+                    "k_forward": 4.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                }
+            ]
+        )
+
+        def fake_initialize(self, system):
+            self.states = {0: FakeState()}
+            self.connectivity_table = table
+            self.selector = FailingSelector()
+            self.selector_fallback = LegacySelector()
+            self.absorbing_saddle_positions = {1: np.array([[0.0, 0.0, 0.0]])}
+
+        monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "construct_connexion_table",
+            lambda self, max_expansions=None, max_closed_states=None: Ok(None),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "refine_absorbing",
+            lambda self, system: Ok(None),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "system_from_state",
+            lambda self, *args: Ok(
+                SimpleNamespace(positions=np.array([[1.0, 0.0, 0.0]]))
+            ),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "_add_state",
+            lambda self, state_index, system, transient=True: self.states.update(
+                {state_index: SimpleNamespace(system=system, transient=transient)}
+            ),
+        )
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(basin=SimpleNamespace())
+        basin.manager = FakeManager()
+
+        result = basin.execute(system=object())
+
+        assert result.is_ok()
+        assert result.ok_value().t_exit == 2.0
+        assert result.ok_value().num_reference_event == 3
+
     def test_execute_uses_configured_basin_exploration_budgets(self, monkeypatch):
         calls = {}
 
