@@ -60,7 +60,7 @@ def catalog_guidance_payload(
 
     try:
         df = _connectivity_df(connectivity_table)
-        transient, absorbing, rates, channels = _split_absorbing_channels(df)
+        transient, absorbing, rates, channels, guidance_states = _split_absorbing_channels(df)
     except (TypeError, ValueError) as exc:
         return {
             "ok": False,
@@ -126,7 +126,7 @@ def catalog_guidance_payload(
     transient_rows = _transient_state_guidance(
         problem=problem,
         df=df,
-        transient=transient,
+        guidance_states=guidance_states,
         entry=int(entry),
     )
     ok_transient_rows = [row for row in transient_rows if row["ok"]]
@@ -249,7 +249,13 @@ def _connectivity_df(connectivity_table: Any) -> pd.DataFrame:
 
 def _split_absorbing_channels(
     df: pd.DataFrame,
-) -> tuple[list[int], list[int], list[tuple[int, int, float]], list[ExitChannel]]:
+) -> tuple[
+    list[int],
+    list[int],
+    list[tuple[int, int, float]],
+    list[ExitChannel],
+    list[int],
+]:
     transient = sorted({int(value) for value in df["state"].to_numpy()})
     transient_set = set(transient)
     all_state_ids = {
@@ -259,13 +265,16 @@ def _split_absorbing_channels(
     next_channel_id = max(all_state_ids) + 1
     rates: list[tuple[int, int, float]] = []
     channels: list[ExitChannel] = []
+    frontier_targets: set[int] = set()
 
     for row_index, row in df.iterrows():
         source = int(row["state"])
         target = int(row["state_connexion"])
         rate = float(row["k_forward"])
-        if target in transient_set:
+        if _is_transient_destination(row, target, transient_set):
             rates.append((source, target, rate))
+            if target not in transient_set:
+                frontier_targets.add(target)
             continue
 
         channel_id = next_channel_id
@@ -273,8 +282,19 @@ def _split_absorbing_channels(
         rates.append((source, channel_id, rate))
         channels.append(ExitChannel(channel_id=channel_id, row_index=int(row_index), row=row))
 
-    absorbing = [channel.channel_id for channel in channels]
-    return transient, absorbing, rates, channels
+    absorbing = sorted(frontier_targets) + [channel.channel_id for channel in channels]
+    guidance_states = sorted(transient_set | frontier_targets)
+    return transient, absorbing, rates, channels, guidance_states
+
+
+def _is_transient_destination(
+    row: pd.Series,
+    target: int,
+    transient_set: set[int],
+) -> bool:
+    if "transient" in row.index and not pd.isna(row["transient"]):
+        return bool(row["transient"])
+    return target in transient_set
 
 
 def _channel_row(channel: ExitChannel) -> dict[str, Any]:
@@ -295,11 +315,11 @@ def _transient_state_guidance(
     *,
     problem: Any,
     df: pd.DataFrame,
-    transient: list[int],
+    guidance_states: list[int],
     entry: int,
 ) -> list[dict[str, Any]]:
     rows = []
-    for state in transient:
+    for state in guidance_states:
         if state == entry:
             continue
         item = _incoming_transient_row(df, state)
