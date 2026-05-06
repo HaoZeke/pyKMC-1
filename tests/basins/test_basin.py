@@ -14,7 +14,7 @@ from pykmc.basins import (
 import logging
 from pykmc.enginemanager.lmpi.pool import ManagerFactory
 import pykmc.basins.basin as basin_module
-from pykmc.result import ErrorInfo, ErrorType
+from pykmc.result import Err, ErrorInfo, ErrorType, Ok
 
 logger = logging.getLogger("tests")
 
