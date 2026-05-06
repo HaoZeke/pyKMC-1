@@ -131,3 +131,47 @@ def test_survival_rows_are_plot_ready():
             "survival": 0.0,
         },
     ]
+
+
+def test_seed_schedule_is_paired_by_trial():
+    script = _load_script()
+
+    assert script.seed_schedule(base_seed=100, trials=3, priorities=["legacy", "amsel"]) == [
+        {"priority": "legacy", "trial": 0, "seed": 100},
+        {"priority": "amsel", "trial": 0, "seed": 100},
+        {"priority": "legacy", "trial": 1, "seed": 101},
+        {"priority": "amsel", "trial": 1, "seed": 101},
+        {"priority": "legacy", "trial": 2, "seed": 102},
+        {"priority": "amsel", "trial": 2, "seed": 102},
+    ]
+
+
+def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
+    script = _load_script()
+    out = tmp_path / "out"
+
+    code = script.main(
+        [
+            "--case",
+            "ni-vac-sia",
+            "--priority",
+            "legacy",
+            "--priority",
+            "amsel",
+            "--trials",
+            "2",
+            "--seed",
+            "10",
+            "--max-steps",
+            "5",
+            "--work-budget",
+            "closed-states:2",
+            "--dry-run",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    assert (out / "manifest.json").exists()
+    assert (out / "commands.json").exists()
