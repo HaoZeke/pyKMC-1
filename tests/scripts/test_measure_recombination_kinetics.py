@@ -273,6 +273,36 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert legacy["BASIN"]["exploration_priority"] == "legacy"
 
 
+def test_render_trial_input_can_request_diverse_amsel_exploration(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text="[Control]\n[pARTn]\n[BASIN]\n",
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert config["BASIN"]["selector"] == "amsel-adaptive"
+    assert config["BASIN"]["exploration_priority"] == "amsel-diverse"
+
+
 def test_basin_confidence_rows_parse_frontier_and_absorbing_markers():
     script = _load_script()
 
