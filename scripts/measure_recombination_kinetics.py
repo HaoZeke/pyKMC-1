@@ -99,7 +99,7 @@ def trial_row_from_outputs(
     detector = detect_recombination_from_log(log_text)
     final_time = output_rows[-1]["time_s"] if output_rows else 0.0
     recombined = bool(detector["recombined"])
-    return {
+    row = {
         "case": case,
         "selector": selector,
         "trial": int(trial),
@@ -111,6 +111,41 @@ def trial_row_from_outputs(
         "detector_reason": detector["detector_reason"],
         "output_dir": str(output_dir),
     }
+    return apply_kinetic_guard(row, diagnostics=None, log_text=log_text)
+
+
+def apply_kinetic_guard(
+    row: dict[str, Any],
+    *,
+    diagnostics: dict[str, Any] | None,
+    log_text: str,
+) -> dict[str, Any]:
+    guarded = dict(row)
+    guarded["failed_refinements"] = int(guarded.get("failed_refinements") or 0)
+    guarded["failed_refinement_committor"] = float(
+        guarded.get("failed_refinement_committor") or 0.0
+    )
+    guarded["usable_resolved_committor"] = guarded.get("usable_resolved_committor")
+    guarded["kinetic_claim_ok"] = bool(guarded.get("kinetic_claim_ok", True))
+
+    if diagnostics is not None:
+        failed_committor = float(diagnostics.get("failed_refinement_committor") or 0.0)
+        guarded["failed_refinement_committor"] = failed_committor
+        guarded["usable_resolved_committor"] = diagnostics.get(
+            "usable_resolved_committor"
+        )
+        guarded["failed_refinements"] = int(
+            diagnostics.get("failed_refinements") or guarded["failed_refinements"]
+        )
+        if failed_committor > 0.0 or diagnostics.get("kinetic_claim_ok") is False:
+            guarded["kinetic_claim_ok"] = False
+
+    if "Basin fails with error" in log_text and "EVENT_NOT_FOUND" in log_text:
+        guarded["failed_refinements"] += 1
+        guarded["kinetic_claim_ok"] = False
+    if guarded["failed_refinements"] > 0:
+        guarded["kinetic_claim_ok"] = False
+    return guarded
 
 
 def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -328,18 +363,23 @@ def execute_trials(commands: list[dict[str, Any]], events_path: Path) -> list[di
                 )
             else:
                 rows.append(
-                    {
-                        "case": command["case"],
-                        "selector": command["priority"],
-                        "trial": int(command["trial"]),
-                        "seed": int(command["seed"]),
-                        "recombined": False,
-                        "t_recombination_s": None,
-                        "censored_time_s": 0.0,
-                        "kmc_steps": 0,
-                        "detector_reason": f"returncode-{result.returncode}",
-                        "output_dir": str(workdir),
-                    }
+                    apply_kinetic_guard(
+                        {
+                            "case": command["case"],
+                            "selector": command["priority"],
+                            "trial": int(command["trial"]),
+                            "seed": int(command["seed"]),
+                            "recombined": False,
+                            "t_recombination_s": None,
+                            "censored_time_s": 0.0,
+                            "kmc_steps": 0,
+                            "detector_reason": f"returncode-{result.returncode}",
+                            "kinetic_claim_ok": False,
+                            "output_dir": str(workdir),
+                        },
+                        diagnostics=None,
+                        log_text="",
+                    )
                 )
     return rows
 
