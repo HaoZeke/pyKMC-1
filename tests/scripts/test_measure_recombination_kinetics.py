@@ -90,6 +90,10 @@ def test_trial_row_uses_recombination_or_censor_time(tmp_path):
     assert row["t_recombination_s"] == 3.0e-12
     assert row["censored_time_s"] is None
     assert row["kmc_steps"] == 2
+    assert row["failed_refinements"] == 0
+    assert row["failed_refinement_committor"] == 0.0
+    assert row["usable_resolved_committor"] is None
+    assert row["kinetic_claim_ok"] is True
 
 
 def test_survival_rows_are_plot_ready():
@@ -225,3 +229,38 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert config["pARTn"]["path_artnso"] == str(tmp_path / "libartn-lmp.so")
     assert config["pARTn"]["zseed"] == "10"
     assert config["BASIN"]["exploration_priority"] == "amsel"
+
+
+def test_kinetic_guard_rejects_failed_refinement_mass():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {"selector": "amsel", "kinetic_claim_ok": True},
+        diagnostics={
+            "failed_refinement_committor": 0.125,
+            "usable_resolved_committor": 3.6e-9,
+        },
+        log_text="",
+    )
+
+    assert guarded["kinetic_claim_ok"] is False
+    assert guarded["failed_refinements"] == 0
+    assert guarded["failed_refinement_committor"] == 0.125
+    assert guarded["usable_resolved_committor"] == 3.6e-9
+
+
+def test_kinetic_guard_rejects_unresolved_basin_failure():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {"selector": "amsel", "kinetic_claim_ok": True},
+        diagnostics=None,
+        log_text=(
+            "Basin fails with error : "
+            "ErrorInfo(type=<ErrorType.EVENT_NOT_FOUND: 1>, message='missing')"
+        ),
+    )
+
+    assert guarded["kinetic_claim_ok"] is False
+    assert guarded["failed_refinements"] == 1
+    assert guarded["failed_refinement_committor"] == 0.0
