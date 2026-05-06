@@ -14,10 +14,16 @@ basin = True
 
 [Basin]
 energy_thr = 0.1
+selector = auto
 ```
 
-*Note: currently only one basin-handling strategy is implemented.
-The `[Basin]` section is intended for future extensions when multiple algorithms (e.g., FTPA, MRT, local basins, …) will be available.*
+`selector` controls the basin exit-time implementation:
+
+* `auto`: use AMSEL adaptive selection when AMSEL is available, otherwise use legacy FPTA
+* `legacy-fpta`: use the original NumPy/SciPy FPTA selector
+* `amsel-sampled`: use AMSEL's sampled FPTA clock
+* `amsel-mean`: use AMSEL's deterministic mean first-passage clock
+* `amsel-adaptive`: use AMSEL diagnostics to choose the clock mode
 
 ---
 
@@ -81,4 +87,3 @@ The `Basin` object uses two additional components:
 
 The basin process may fail during PSR, refinement, reconstruction, or exit-time calculation.
 If a failure occurs, the basin returns an `Err`, and the originally selected KMC event is applied instead.
-
