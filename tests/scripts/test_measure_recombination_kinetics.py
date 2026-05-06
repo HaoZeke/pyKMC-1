@@ -600,6 +600,28 @@ def test_kinetic_guard_rejects_unresolved_absorbing_refinement_budget():
     assert guarded["failed_refinement_committor"] == 0.325
 
 
+def test_kinetic_guard_accepts_zero_mass_absorbing_refinement_budget():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {
+            "selector": "amsel",
+            "recombined": False,
+            "kmc_steps": 1,
+            "kinetic_claim_ok": True,
+        },
+        diagnostics=None,
+        log_text=(
+            "Basin absorbing refinement skipped 7 exits; "
+            "unresolved_committor=3.600574e-18; unresolved_rate=1.0"
+        ),
+    )
+
+    assert guarded["kinetic_claim_ok"] is True
+    assert guarded["failed_refinements"] == 7
+    assert guarded["failed_refinement_committor"] == pytest.approx(3.600574e-18)
+
+
 def test_kinetic_guard_rejects_unresolved_frontier_budget():
     script = _load_script()
 
