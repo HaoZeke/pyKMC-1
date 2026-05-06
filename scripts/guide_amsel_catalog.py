@@ -263,22 +263,33 @@ def _refinement_table_and_report(
     if refined_table is None:
         return (
             catalog_table,
-            {
-                "ok": False,
-                "stage": "refine_absorbing",
-                "error": str(result.err_value()),
-                "rate_source": "catalog",
-            },
+            _refinement_failure_report(result.err_value(), rate_source="catalog"),
         )
     return (
         refined_table,
-        {
-            "ok": False,
-            "stage": "refine_absorbing",
-            "error": str(result.err_value()),
-            "rate_source": "partial-refined",
-        },
+        _refinement_failure_report(
+            result.err_value(),
+            rate_source="partial-refined",
+        ),
     )
+
+
+def _refinement_failure_report(error: Any, *, rate_source: str) -> dict[str, Any]:
+    report = {
+        "ok": False,
+        "stage": "refine_absorbing",
+        "error": str(error),
+        "rate_source": rate_source,
+    }
+    error_type = getattr(error, "type", None)
+    if error_type is None:
+        return report
+
+    report["error_type"] = getattr(error_type, "name", str(error_type))
+    report["error_message"] = getattr(error, "message", None)
+    report["error_details"] = _json_value(getattr(error, "details", None))
+    report["error_variables"] = _json_value(getattr(error, "variables", None) or {})
+    return report
 
 
 def _attach_exploration_payload(
@@ -454,6 +465,14 @@ def _json_scalar(value: Any) -> Any:
     if isinstance(value, (bool, int, float, str)):
         return value
     return str(value)
+
+
+def _json_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    return _json_scalar(value)
 
 
 def main(argv: list[str] | None = None) -> int:
