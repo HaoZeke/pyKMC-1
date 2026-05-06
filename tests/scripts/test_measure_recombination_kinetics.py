@@ -163,9 +163,12 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
         "[pARTn]\n"
         "path_artnso = ./old.so\n"
         "zseed = 0\n"
+        "[Lammps]\n"
+        "pair_coeff = * * ./Ni.eam Ni\n"
         "[BASIN]\n"
         "energy_thr = 0.5\n"
     )
+    (tmp_path / "Ni.eam").write_text("potential")
 
     code = script.main(
         [
@@ -228,6 +231,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert config["Control"]["n_steps"] == "5"
     assert config["pARTn"]["path_artnso"] == str(tmp_path / "libartn-lmp.so")
     assert config["pARTn"]["zseed"] == "10"
+    assert config["Lammps"]["pair_coeff"] == f"* * {tmp_path / 'Ni.eam'} Ni"
     assert config["BASIN"]["exploration_priority"] == "amsel"
 
 
