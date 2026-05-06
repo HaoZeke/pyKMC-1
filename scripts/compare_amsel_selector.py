@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from pykmc.basins import AmselFPTASelector, FPTASelector, StatesConnectivity
-from pykmc.basins.utils import solve_master_equation_last_value
+from pykmc.basins.utils import solve_master_equation
 
 
 class CycleRng:
@@ -125,10 +125,12 @@ def run_selector(
             )
             if result.is_ok():
                 value = result.ok_value()
-                stable_report = stable_absorption_report(
+                master_report = master_equation_report(
                     table=table,
                     t_exit=float(value.t_exit),
                     time_draw=clock_report["time_draw"],
+                    outlet_draw=clock_report["outlet_draw"],
+                    exit_state=int(value.exit_state),
                 )
                 return {
                     "case": case_name,
@@ -141,7 +143,7 @@ def run_selector(
                     "warnings": [str(item.message) for item in captured],
                     "clock_mode": clock_mode,
                     **clock_report,
-                    **stable_report,
+                    **master_report,
                 }
             err = result.err_value()
             return {
@@ -176,34 +178,91 @@ def run_selector(
             }
 
 
-def stable_absorption_report(
+def _real_array(values) -> np.ndarray:
+    arr = np.real_if_close(np.asarray(values), tol=1000)
+    return np.asarray(arr, dtype=np.float64)
+
+
+def master_equation_report(
     *,
     table: StatesConnectivity,
     t_exit: float,
     time_draw: float | None,
-) -> dict[str, float | None]:
-    if time_draw is None:
-        return {
-            "stable_absorption_probability": None,
-            "time_draw_absorption_error": None,
-        }
-
+    outlet_draw: float | None,
+    exit_state: int,
+) -> dict[str, float | bool | int | None]:
     selector = FPTASelector()
     selector.build_absorbing_matrix_from_connectivity(table)
-    selector.build_reduced_matrix(len(set(table.df["state"])))
+    n_transient = len(set(table.df["state"]))
+    selector.build_reduced_matrix(n_transient)
+
+    p0_full = np.zeros(len(selector.M_abs))
+    p0_full[0] = 1.0
+    p_full = _real_array(
+        solve_master_equation(
+            M=selector.M_abs,
+            t=float(t_exit),
+            p0=p0_full,
+            spectral_decomposition=False,
+        )
+    )
+
     p0 = np.zeros(len(selector.M_abs_reduced))
     p0[0] = 1.0
-    absorbed = float(
-        solve_master_equation_last_value(
+    p_reduced = _real_array(
+        solve_master_equation(
             M=selector.M_abs_reduced,
             t=float(t_exit),
             p0=p0,
             spectral_decomposition=False,
         )
     )
+
+    absorbing_states = list(range(n_transient, len(selector.M_abs)))
+    p_absorbing = p_full[n_transient:]
+    full_absorbed = float(np.sum(p_absorbing))
+    reduced_absorbed = float(p_reduced[-1])
+
+    time_error = None
+    stable_absorption = None
+    stable_time_error = None
+    if time_draw is not None:
+        stable_absorption = full_absorbed
+        time_error = full_absorbed - float(time_draw)
+        stable_time_error = time_error
+
+    selected_probability = None
+    cdf_lower = None
+    cdf_upper = None
+    quantile_hit = None
+    quantile_state = None
+    selected_index = int(exit_state) - n_transient
+    if full_absorbed > 0.0 and 0 <= selected_index < len(p_absorbing):
+        conditional = p_absorbing / full_absorbed
+        cdf = np.cumsum(conditional)
+        selected_probability = float(conditional[selected_index])
+        cdf_lower = float(cdf[selected_index - 1]) if selected_index > 0 else 0.0
+        cdf_upper = float(cdf[selected_index])
+        if outlet_draw is not None:
+            draw_index = int(np.searchsorted(cdf, float(outlet_draw)))
+            draw_index = min(draw_index, len(absorbing_states) - 1)
+            quantile_state = int(absorbing_states[draw_index])
+            quantile_hit = quantile_state == int(exit_state)
+
     return {
-        "stable_absorption_probability": absorbed,
-        "time_draw_absorption_error": absorbed - float(time_draw),
+        "stable_absorption_probability": stable_absorption,
+        "time_draw_absorption_error": stable_time_error,
+        "master_equation_absorption_probability": full_absorbed,
+        "reduced_master_equation_absorption_probability": reduced_absorbed,
+        "master_reduced_absorption_error": reduced_absorbed - full_absorbed,
+        "time_draw_master_equation_error": time_error,
+        "master_equation_probability_sum": float(np.sum(p_full)),
+        "master_equation_min_probability": float(np.min(p_full)),
+        "master_equation_selected_exit_probability": selected_probability,
+        "master_equation_outlet_cdf_lower": cdf_lower,
+        "master_equation_outlet_cdf_upper": cdf_upper,
+        "master_equation_outlet_quantile_hit": quantile_hit,
+        "master_equation_outlet_quantile_state": quantile_state,
     }
 
 
