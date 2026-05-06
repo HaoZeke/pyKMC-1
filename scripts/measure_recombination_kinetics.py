@@ -60,6 +60,9 @@ TRIAL_FIELDS = [
     "detector_reason",
     "event_discovery_status",
     "event_searches",
+    "final_noncrystal_atoms",
+    "min_noncrystal_atoms",
+    "trajectory_recombination_frame",
     "failed_refinements",
     "failed_refinement_committor",
     "usable_resolved_committor",
@@ -132,6 +135,95 @@ def event_discovery_status_from_log(text: str) -> str:
     return "not-zero-event"
 
 
+def trajectory_noncrystal_counts(path: Path) -> list[int]:
+    if not path.exists():
+        return []
+    try:
+        from ase.io import iread
+        from pykmc import AtomicEnvironment, NeighborsList, System
+    except ImportError:
+        return []
+
+    settings = atomic_environment_settings(path.with_name("input.in"))
+    counts: list[int] = []
+    for atoms in iread(path, index=":"):
+        system = System(
+            types=atoms.get_chemical_symbols(),
+            positions=atoms.get_positions(),
+            cell=atoms.get_cell(),
+            pbc=atoms.get_pbc(),
+        )
+        system.update_positions(system.positions)
+        neighbors = NeighborsList(system, settings["rnei"], settings["rcut"])
+        environment = AtomicEnvironment(
+            settings["style"],
+            neighbors.neighbors_list["rnei"],
+            neighbors.neighbors_list.get("rcut"),
+            settings["neighbors_add"],
+        )
+        counts.append(
+            sum(env != "crystal" for env in environment.atomic_environment_list)
+        )
+    return counts
+
+
+def atomic_environment_settings(input_path: Path) -> dict[str, Any]:
+    settings: dict[str, Any] = {
+        "style": "cna/graph",
+        "rnei": 3.0,
+        "rcut": 6.5,
+        "neighbors_add": 0,
+    }
+    if not input_path.exists():
+        return settings
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(input_path)
+    section = _optional_section(config, "AtomicEnvironment")
+    if section is None:
+        return settings
+    settings["style"] = config[section].get("style", str(settings["style"]))
+    settings["rnei"] = config[section].getfloat("rnei", fallback=float(settings["rnei"]))
+    settings["rcut"] = config[section].getfloat("rcut", fallback=float(settings["rcut"]))
+    settings["neighbors_add"] = config[section].getint(
+        "neighbors_add",
+        fallback=int(settings["neighbors_add"]),
+    )
+    return settings
+
+
+def trajectory_recombination_summary(
+    noncrystal_counts: list[int],
+    output_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    summary = {
+        "final_noncrystal_atoms": None,
+        "min_noncrystal_atoms": None,
+        "trajectory_recombination_frame": None,
+        "trajectory_recombination_time_s": None,
+    }
+    if not noncrystal_counts:
+        return summary
+
+    summary["final_noncrystal_atoms"] = int(noncrystal_counts[-1])
+    summary["min_noncrystal_atoms"] = int(min(noncrystal_counts))
+    for frame_index, noncrystal_count in enumerate(noncrystal_counts):
+        if int(noncrystal_count) != 0:
+            continue
+        summary["trajectory_recombination_frame"] = int(frame_index)
+        if frame_index == 0:
+            summary["trajectory_recombination_time_s"] = 0.0
+        elif output_rows:
+            output_index = min(frame_index - 1, len(output_rows) - 1)
+            summary["trajectory_recombination_time_s"] = output_rows[output_index][
+                "time_s"
+            ]
+        else:
+            summary["trajectory_recombination_time_s"] = 0.0
+        break
+    return summary
+
+
 def seed_schedule(
     *,
     base_seed: int,
@@ -187,8 +279,20 @@ def trial_row_from_outputs(
     output_rows = parse_pykmc_out(output_dir / "pykmc.out")
     log_text = (output_dir / "pykmc.log").read_text()
     detector = detect_recombination_from_log(log_text)
+    trajectory_summary = trajectory_recombination_summary(
+        trajectory_noncrystal_counts(output_dir / "trajkmc.xyz"),
+        output_rows,
+    )
     final_time = output_rows[-1]["time_s"] if output_rows else 0.0
     recombined = bool(detector["recombined"])
+    detector_reason = detector["detector_reason"]
+    if (
+        not recombined
+        and trajectory_summary["trajectory_recombination_frame"] is not None
+    ):
+        recombined = True
+        detector_reason = "trajectory-all-crystal"
+        final_time = float(trajectory_summary["trajectory_recombination_time_s"])
     row = {
         "case": case,
         "selector": selector,
@@ -200,9 +304,14 @@ def trial_row_from_outputs(
         "kmc_steps": len(output_rows),
         "cpu_time_s": output_rows[-1]["cpu_time_s"] if output_rows else None,
         "wall_time_s": output_rows[-1]["wall_time_s"] if output_rows else None,
-        "detector_reason": detector["detector_reason"],
+        "detector_reason": detector_reason,
         "event_discovery_status": event_discovery_status_from_log(log_text),
         "event_searches": None,
+        "final_noncrystal_atoms": trajectory_summary["final_noncrystal_atoms"],
+        "min_noncrystal_atoms": trajectory_summary["min_noncrystal_atoms"],
+        "trajectory_recombination_frame": trajectory_summary[
+            "trajectory_recombination_frame"
+        ],
         "output_dir": str(output_dir),
     }
     return apply_kinetic_guard(row, diagnostics=None, log_text=log_text)
