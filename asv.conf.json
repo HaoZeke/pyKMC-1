@@ -3,6 +3,7 @@
   "project": "pyKMC",
   "project_url": "https://github.com/hugomoison/pyKMC",
   "repo": ".",
+  "environment_type": "existing",
   "benchmark_dir": "benchmarks",
   "env_dir": ".asv/env",
   "results_dir": ".asv/results",

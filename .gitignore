@@ -16,6 +16,7 @@ utils/analyse/*.xyz
 # Benchmarks 
 benchmarks/** 
 !benchmarks/**/*.py
+.asv/
 
 *__pycache__/
 *.pyc
