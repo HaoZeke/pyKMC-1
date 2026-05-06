@@ -248,7 +248,9 @@ class TestBasin :
         monkeypatch.setattr(
             BasinsGenericEvents,
             "refine_absorbing",
-            lambda self, system: Err(ErrorInfo(ErrorType.EVENT_NOT_FOUND)),
+            lambda self, system: Err(
+                ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="stop")
+            ),
         )
 
         basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
