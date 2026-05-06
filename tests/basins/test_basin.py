@@ -225,6 +225,43 @@ class TestBasin :
         assert basin.explorer.explored == [0]
         assert basin.states_to_explore == [1]
 
+    def test_execute_uses_configured_basin_exploration_budgets(self, monkeypatch):
+        calls = {}
+
+        def fake_initialize(self, system):
+            self.states = {}
+            self.connectivity_table = SimpleNamespace(
+                reorder_states_index=lambda: {},
+            )
+
+        def fake_construct(self, max_expansions=None, max_closed_states=None):
+            calls["max_expansions"] = max_expansions
+            calls["max_closed_states"] = max_closed_states
+            return Ok(None)
+
+        monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "construct_connexion_table",
+            fake_construct,
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "refine_absorbing",
+            lambda self, system: Err(ErrorInfo(ErrorType.EVENT_NOT_FOUND)),
+        )
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(max_expansions=3, max_closed_states=2)
+        )
+        basin.manager = SimpleNamespace(use_local=lambda: None)
+
+        result = basin.execute(system=object())
+
+        assert not result.is_ok()
+        assert calls == {"max_expansions": 3, "max_closed_states": 2}
+
     def test_state_equivalence_reuses_cached_neighbor_tree(self, monkeypatch):
         real_tree = basin_module.cKDTree
         builds = 0

@@ -200,6 +200,12 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "3",
             "--refine-thr",
             "0.0",
+            "--basin-energy-thr",
+            "0.5",
+            "--basin-max-closed-states",
+            "2",
+            "--amsel-selector",
+            "amsel-adaptive",
             "--work-budget",
             "closed-states:2",
             "--dry-run",
@@ -241,7 +247,16 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert config["pARTn"]["path_artnso"] == str(tmp_path / "libartn-lmp.so")
     assert config["pARTn"]["zseed"] == "10"
     assert config["Lammps"]["pair_coeff"] == f"* * {tmp_path / 'Ni.eam'} Ni"
+    assert config["BASIN"]["selector"] == "amsel-adaptive"
     assert config["BASIN"]["exploration_priority"] == "amsel"
+    assert config["BASIN"]["energy_thr"] == "0.5"
+    assert config["BASIN"]["max_closed_states"] == "2"
+
+    legacy = configparser.ConfigParser()
+    legacy.optionxform = str
+    legacy.read(out / "legacy" / "trial-0" / "input.in")
+    assert legacy["BASIN"]["selector"] == "legacy-fpta"
+    assert legacy["BASIN"]["exploration_priority"] == "legacy"
 
 
 def test_kinetic_guard_rejects_failed_refinement_mass():
