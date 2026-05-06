@@ -132,7 +132,10 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
         [
             {
                 "selector": "amsel",
+                "step": "4",
+                "frontier_states": "8",
                 "frontier_committor": "1.0",
+                "frontier_rate": "0.015",
             }
         ],
     )
@@ -141,7 +144,11 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
         [
             {
                 "selector": "amsel",
+                "step": "4",
+                "order": "0 13",
                 "queue": "13 14",
+                "top_queue_state": "13",
+                "top_queue_guidance": "0.5",
             }
         ],
     )
@@ -168,6 +175,25 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
     assert trials[0]["basin_max_closed_states"] == "1"
     assert confidence[0]["frontier_committor"] == "1.0"
     assert trace[0]["queue"] == "13 14"
+    summary = list(csv.DictReader((tmp_path / "sweep" / "sweep_summary.csv").open()))
+    assert summary == [
+        {
+            "budget_label": "closed-1_absorb-0",
+            "basin_max_closed_states": "1",
+            "basin_max_absorbing_refinements": "0",
+            "selector": "amsel",
+            "trials": "1",
+            "kinetic_claim_ok": "0",
+            "recombined": "0",
+            "last_frontier_states": "8",
+            "last_frontier_committor": "1.0",
+            "last_frontier_rate": "0.015",
+            "last_order": "0 13",
+            "last_queue": "13 14",
+            "last_top_queue_state": "13",
+            "last_top_queue_guidance": "0.5",
+        }
+    ]
 
 
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
