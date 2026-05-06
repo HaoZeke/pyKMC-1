@@ -25,6 +25,27 @@ selector = auto
 * `amsel-mean`: use AMSEL's deterministic mean first-passage clock
 * `amsel-adaptive`: use a sampled AMSEL rank-1 reduced clock when diagnostics support it, otherwise use sampled FPTA
 
+AMSEL also provides catalog-level diagnostics through
+`scripts/guide_amsel_catalog.py`. This script leaves the KMC loop
+unchanged: it reads a saved basin connectivity table, splits each
+absorbing catalog row into its own absorbing channel, and runs AMSEL's
+NGT graph-transformation solver for each channel. The output ranks
+catalog exits by exact committor probability from the basin entry and
+reports the corresponding NGT effective rate and MFPT:
+
+```bash
+python scripts/guide_amsel_catalog.py \
+  --connectivity tests/data/basin_connectivity_Cu_fake.pickle \
+  --case-name cu-fixture \
+  --format csv
+```
+
+The CSV/JSON rows retain `event_connexion`, `central_atom`, `sym`,
+`state`, and `state_connexion`, so the ranking can be joined back to
+the catalog event that produced each absorbing exit. Equal scores mean
+that the current connectivity graph does not distinguish those catalog
+branches kinetically.
+
 ---
 
 ## General Idea
