@@ -163,6 +163,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
         "[pARTn]\n"
         "path_artnso = ./old.so\n"
         "zseed = 0\n"
+        "[EventSearch]\n"
+        "nsearch = 20\n"
         "[Lammps]\n"
         "pair_coeff = * * ./Ni.eam Ni\n"
         "[BASIN]\n"
@@ -194,6 +196,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "10",
             "--max-steps",
             "5",
+            "--event-searches",
+            "3",
             "--work-budget",
             "closed-states:2",
             "--dry-run",
@@ -229,6 +233,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
         tmp_path / "visited_environments.pickle"
     )
     assert config["Control"]["n_steps"] == "5"
+    assert config["EventSearch"]["nsearch"] == "3"
     assert config["pARTn"]["path_artnso"] == str(tmp_path / "libartn-lmp.so")
     assert config["pARTn"]["zseed"] == "10"
     assert config["Lammps"]["pair_coeff"] == f"* * {tmp_path / 'Ni.eam'} Ni"
