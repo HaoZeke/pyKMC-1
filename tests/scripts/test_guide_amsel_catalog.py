@@ -110,3 +110,32 @@ def test_transient_state_guidance_ranks_states_by_hitting_probability():
     assert payload["transient_states"][1]["hit_committor"] == pytest.approx(0.1)
     assert payload["transient_states"][0]["incoming_event_connexion"] == 301
     assert payload["transient_states"][1]["incoming_event_connexion"] == 302
+
+
+def test_frontier_transient_rows_are_guidance_targets_not_exit_channels():
+    script = _load_script()
+    table = _connectivity(
+        pd.DataFrame(
+            {
+                "state": [0, 0],
+                "state_connexion": [1, 10],
+                "event_connexion": [301, 101],
+                "central_atom": [5, 3],
+                "sym": [0, 0],
+                "transient": [True, False],
+                "dE_forward": [0.1, 0.4],
+                "k_forward": [9.0, 1.0],
+                "dE_backward": [0.1, 0.1],
+                "k_backward": [0.5, 0.5],
+            }
+        )
+    )
+
+    payload = script.catalog_guidance_payload(table, case_name="frontier", entry=0)
+
+    assert payload["ok"] is True
+    assert [row["state_connexion"] for row in payload["channels"]] == [10]
+    assert payload["channel_summary"]["committor_sum"] == pytest.approx(0.1)
+    assert [row["state"] for row in payload["transient_states"]] == [1]
+    assert payload["transient_states"][0]["hit_committor"] == pytest.approx(0.9)
+    assert payload["transient_states"][0]["incoming_event_connexion"] == 301
