@@ -226,6 +226,9 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert (out / "survival.csv").read_text().splitlines()[0] == ",".join(
         script.SURVIVAL_FIELDS
     )
+    assert (out / "basin_confidence.csv").read_text().splitlines()[0] == ",".join(
+        script.BASIN_CONFIDENCE_FIELDS
+    )
     assert (out / "events.jsonl").exists()
 
     commands = json.loads((out / "commands.json").read_text())
@@ -261,6 +264,95 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     legacy.read(out / "legacy" / "trial-0" / "input.in")
     assert legacy["BASIN"]["selector"] == "legacy-fpta"
     assert legacy["BASIN"]["exploration_priority"] == "legacy"
+
+
+def test_basin_confidence_rows_parse_frontier_and_absorbing_markers():
+    script = _load_script()
+
+    rows = script.basin_confidence_rows_from_log(
+        case="ni-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=1000,
+        log_text=(
+            "Step : 4\n"
+            "\t :=> Basin exploration budget left 8 frontier states; "
+            "unresolved_committor=1.000000e+00; unresolved_rate=1.524846e-02\n"
+            "\t :=> Basin absorbing refinement skipped 12 exits; "
+            "unresolved_committor=4.937930e-17; unresolved_rate=7.529583e-19\n"
+            "Step : 5\n"
+            "\t :=> Basin exploration budget left 3 frontier states; "
+            "unresolved_committor=2.500000e-01; unresolved_rate=7.000000e-03\n"
+        ),
+    )
+
+    assert rows == [
+        {
+            "case": "ni-vac-sia",
+            "selector": "amsel",
+            "trial": 0,
+            "seed": 1000,
+            "step": 4,
+            "frontier_states": 8,
+            "frontier_committor": 1.0,
+            "frontier_rate": 1.524846e-02,
+            "skipped_absorbing_exits": 12,
+            "skipped_absorbing_committor": 4.937930e-17,
+            "skipped_absorbing_rate": 7.529583e-19,
+        },
+        {
+            "case": "ni-vac-sia",
+            "selector": "amsel",
+            "trial": 0,
+            "seed": 1000,
+            "step": 5,
+            "frontier_states": 3,
+            "frontier_committor": 0.25,
+            "frontier_rate": 7.0e-03,
+            "skipped_absorbing_exits": 0,
+            "skipped_absorbing_committor": 0.0,
+            "skipped_absorbing_rate": 0.0,
+        },
+    ]
+
+
+def test_collect_basin_confidence_rows_reads_trial_logs(tmp_path):
+    script = _load_script()
+    workdir = tmp_path / "legacy" / "trial-0"
+    workdir.mkdir(parents=True)
+    (workdir / "pykmc.log").write_text(
+        "Step : 1\n"
+        "\t :=> Basin exploration budget left 2 frontier states; "
+        "unresolved_committor=5.000000e-01; unresolved_rate=1.000000e-03\n"
+    )
+
+    rows = script.collect_basin_confidence_rows(
+        [
+            {
+                "case": "ni-vac-sia",
+                "priority": "legacy",
+                "trial": 0,
+                "seed": 1000,
+                "workdir": str(workdir),
+            }
+        ]
+    )
+
+    assert rows == [
+        {
+            "case": "ni-vac-sia",
+            "selector": "legacy",
+            "trial": 0,
+            "seed": 1000,
+            "step": 1,
+            "frontier_states": 2,
+            "frontier_committor": 0.5,
+            "frontier_rate": 1.0e-03,
+            "skipped_absorbing_exits": 0,
+            "skipped_absorbing_committor": 0.0,
+            "skipped_absorbing_rate": 0.0,
+        }
+    ]
 
 
 def test_kinetic_guard_rejects_failed_refinement_mass():
