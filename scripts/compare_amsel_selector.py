@@ -185,6 +185,14 @@ def rank1_clock_reference(
         return {"ok": False, "error": "at least one probability draw is required"}
 
     effective_rate = float(reduced["effective_rate"])
+    if not AmselFPTASelector._reduced_clock_consistent(
+        features,
+        effective_rate=effective_rate,
+    ):
+        return {
+            "ok": False,
+            "error": "reduced effective rate is inconsistent with MFPT",
+        }
     time_draw = float(draws[0])
     if not math.isfinite(effective_rate) or effective_rate <= 0.0:
         return {"ok": False, "error": "effective rate must be positive and finite"}
