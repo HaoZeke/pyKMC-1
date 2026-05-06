@@ -582,7 +582,7 @@ class BasinConfig(BaseModel):
     frontier_committor_tol: float = Field(
         default=0.0,
         ge=0.0,
-        description="Maximum unresolved frontier committor allowed before basin exit selection.",
+        description="Maximum unresolved basin-boundary committor allowed before basin exit selection.",
     )
     reconstruction_minimize: Optional[str] = Field(
         default=None,

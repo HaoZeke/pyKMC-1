@@ -43,6 +43,7 @@ BASIN_TRACE_RE = re.compile(
     r"(?:; closed_processes=(?P<closed_processes>[^;]*))?"
     r"(?:; closed_guidance=(?P<closed_guidance>[0-9:.,eE+-]*))?"
 )
+KINETIC_GUARD_COMMITTOR_TOL = 1.0e-12
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 TRIAL_FIELDS = [
     "case",
@@ -214,21 +215,28 @@ def apply_kinetic_guard(
         guarded["failed_refinements"] = int(
             diagnostics.get("failed_refinements") or guarded["failed_refinements"]
         )
-        if failed_committor > 0.0 or diagnostics.get("kinetic_claim_ok") is False:
+        if (
+            failed_committor > KINETIC_GUARD_COMMITTOR_TOL
+            or diagnostics.get("kinetic_claim_ok") is False
+        ):
             guarded["kinetic_claim_ok"] = False
 
     if "Basin fails with error" in log_text and "EVENT_NOT_FOUND" in log_text:
         guarded["failed_refinements"] += 1
         guarded["kinetic_claim_ok"] = False
     for match in BASIN_REFINEMENT_BUDGET_RE.finditer(log_text):
+        committor = float(match.group("committor"))
         guarded["failed_refinements"] += int(match.group("count"))
-        guarded["failed_refinement_committor"] += float(match.group("committor"))
-        guarded["kinetic_claim_ok"] = False
+        guarded["failed_refinement_committor"] += committor
+        if committor > KINETIC_GUARD_COMMITTOR_TOL:
+            guarded["kinetic_claim_ok"] = False
     for match in BASIN_FRONTIER_BUDGET_RE.finditer(log_text):
+        committor = float(match.group("committor"))
         guarded["failed_refinements"] += int(match.group("count"))
-        guarded["failed_refinement_committor"] += float(match.group("committor"))
-        guarded["kinetic_claim_ok"] = False
-    if guarded["failed_refinements"] > 0:
+        guarded["failed_refinement_committor"] += committor
+        if committor > KINETIC_GUARD_COMMITTOR_TOL:
+            guarded["kinetic_claim_ok"] = False
+    if guarded["failed_refinement_committor"] > KINETIC_GUARD_COMMITTOR_TOL:
         guarded["kinetic_claim_ok"] = False
     if not guarded.get("recombined", False) and int(guarded.get("kmc_steps") or 0) == 0:
         guarded["kinetic_claim_ok"] = False
@@ -586,6 +594,7 @@ def trial_commands(
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
+    basin_frontier_committor_tol: float | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
     amsel_duplicate_family_penalty: float = 1.0,
@@ -615,6 +624,7 @@ def trial_commands(
             basin_max_expansions=basin_max_expansions,
             basin_max_closed_states=basin_max_closed_states,
             basin_max_absorbing_refinements=basin_max_absorbing_refinements,
+            basin_frontier_committor_tol=basin_frontier_committor_tol,
             amsel_selector=amsel_selector,
             amsel_exploration_priority=amsel_exploration_priority,
             amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
@@ -633,6 +643,7 @@ def trial_commands(
                 "basin_max_expansions": basin_max_expansions,
                 "basin_max_closed_states": basin_max_closed_states,
                 "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
+                "basin_frontier_committor_tol": basin_frontier_committor_tol,
                 "amsel_selector": amsel_selector,
                 "amsel_exploration_priority": amsel_exploration_priority,
                 "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
@@ -670,6 +681,7 @@ def render_trial_input(
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
+    basin_frontier_committor_tol: float | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
     amsel_duplicate_family_penalty: float = 1.0,
@@ -719,6 +731,10 @@ def render_trial_input(
         config[basin]["max_absorbing_refinements"] = str(
             int(basin_max_absorbing_refinements)
         )
+    if basin_frontier_committor_tol is not None:
+        config[basin]["frontier_committor_tol"] = str(
+            float(basin_frontier_committor_tol)
+        )
     absolutize_lammps_paths(config, template_dir=template_dir)
 
     from io import StringIO
@@ -746,6 +762,7 @@ def write_trial_input(
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
+    basin_frontier_committor_tol: float | None,
     amsel_selector: str,
     amsel_exploration_priority: str,
     amsel_duplicate_family_penalty: float,
@@ -769,6 +786,7 @@ def write_trial_input(
             basin_max_expansions=basin_max_expansions,
             basin_max_closed_states=basin_max_closed_states,
             basin_max_absorbing_refinements=basin_max_absorbing_refinements,
+            basin_frontier_committor_tol=basin_frontier_committor_tol,
             amsel_selector=amsel_selector,
             amsel_exploration_priority=amsel_exploration_priority,
             amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
@@ -971,6 +989,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--basin-max-expansions", type=int)
     parser.add_argument("--basin-max-closed-states", type=int)
     parser.add_argument("--basin-max-absorbing-refinements", type=int)
+    parser.add_argument("--basin-frontier-committor-tol", type=float)
     parser.add_argument(
         "--amsel-selector",
         choices=("amsel-sampled", "amsel-mean", "amsel-adaptive"),
@@ -1014,6 +1033,7 @@ def main(argv: list[str] | None = None) -> int:
         basin_max_expansions=args.basin_max_expansions,
         basin_max_closed_states=args.basin_max_closed_states,
         basin_max_absorbing_refinements=args.basin_max_absorbing_refinements,
+        basin_frontier_committor_tol=args.basin_frontier_committor_tol,
         amsel_selector=args.amsel_selector,
         amsel_exploration_priority=args.amsel_exploration_priority,
         amsel_duplicate_family_penalty=args.amsel_duplicate_family_penalty,
@@ -1042,6 +1062,7 @@ def main(argv: list[str] | None = None) -> int:
         "basin_max_expansions": args.basin_max_expansions,
         "basin_max_closed_states": args.basin_max_closed_states,
         "basin_max_absorbing_refinements": args.basin_max_absorbing_refinements,
+        "basin_frontier_committor_tol": args.basin_frontier_committor_tol,
         "amsel_selector": args.amsel_selector,
         "amsel_exploration_priority": args.amsel_exploration_priority,
         "amsel_duplicate_family_penalty": args.amsel_duplicate_family_penalty,

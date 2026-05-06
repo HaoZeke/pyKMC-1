@@ -232,6 +232,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "2",
             "--basin-max-absorbing-refinements",
             "1",
+            "--basin-frontier-committor-tol",
+            "0.01",
             "--amsel-selector",
             "amsel-adaptive",
             "--work-budget",
@@ -286,6 +288,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert config["BASIN"]["energy_thr"] == "0.5"
     assert config["BASIN"]["max_closed_states"] == "2"
     assert config["BASIN"]["max_absorbing_refinements"] == "1"
+    assert config["BASIN"]["frontier_committor_tol"] == "0.01"
 
     legacy = configparser.ConfigParser()
     legacy.optionxform = str
@@ -313,6 +316,7 @@ def test_render_trial_input_can_request_diverse_amsel_exploration(tmp_path):
         basin_max_expansions=None,
         basin_max_closed_states=None,
         basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
         amsel_selector="amsel-adaptive",
         amsel_exploration_priority="amsel-diverse",
     )

@@ -682,6 +682,7 @@ class BasinsGenericEvents() :
             # update connectivity table row
             self.connectivity_table.df.loc[idx, "dE_forward"] = dE
             self.connectivity_table.df.loc[idx, "k_forward"] = k
+        self._refresh_absorbing_refinement_diagnostics()
         return Ok(None)
 
     def _absorbing_refinement_rows(self) -> list[int]:
@@ -704,14 +705,89 @@ class BasinsGenericEvents() :
             ),
         )
         if max_refinements is None:
-            selected_rows = ordered_rows
+            selected_rows = self._rows_until_absorbing_committor_tolerance(
+                ordered_rows,
+                scores,
+            )
         else:
             selected_rows = ordered_rows[: max(0, int(max_refinements))]
 
         selected_set = set(selected_rows)
         skipped_rows = [idx for idx in ordered_rows if idx not in selected_set]
+        self._absorbing_refinement_selected_rows = selected_rows
+        self._absorbing_refinement_skipped_rows = skipped_rows
+        self._absorbing_refinement_total_rows = len(absorbing_rows)
+        self._refresh_absorbing_refinement_diagnostics()
+        return selected_rows
+
+    def _rows_until_absorbing_committor_tolerance(
+        self,
+        ordered_rows: list[int],
+        scores: dict[int, float],
+    ) -> list[int]:
+        if not ordered_rows:
+            return []
+        if not scores:
+            return ordered_rows
+
+        df = self.connectivity_table.df
+        score_by_row = {
+            idx: float(scores.get(int(df.loc[idx, "state_connexion"]), 0.0))
+            for idx in ordered_rows
+        }
+        unresolved = float(sum(score_by_row.values()))
+        if unresolved <= 0.0:
+            return ordered_rows
+
+        committor_tol = float(
+            getattr(
+                getattr(self.config, "basin", None),
+                "frontier_committor_tol",
+                0.0,
+            )
+            or 0.0
+        )
+        if committor_tol <= 0.0:
+            return ordered_rows
+
+        selected_rows: list[int] = []
+        slack = max(1.0e-15, np.finfo(float).eps * max(unresolved, 1.0) * 16.0)
+        for idx in ordered_rows:
+            if unresolved <= committor_tol + slack:
+                break
+            selected_rows.append(idx)
+            unresolved -= score_by_row[idx]
+        return selected_rows
+
+    def _refresh_absorbing_refinement_diagnostics(self) -> None:
+        selected_rows = list(
+            getattr(self, "_absorbing_refinement_selected_rows", [])
+        )
+        skipped_rows = list(getattr(self, "_absorbing_refinement_skipped_rows", []))
+        total = int(
+            getattr(
+                self,
+                "_absorbing_refinement_total_rows",
+                len(selected_rows) + len(skipped_rows),
+            )
+        )
+        self._record_absorbing_refinement_diagnostics(
+            total=total,
+            selected_rows=selected_rows,
+            skipped_rows=skipped_rows,
+        )
+
+    def _record_absorbing_refinement_diagnostics(
+        self,
+        *,
+        total: int,
+        selected_rows: list[int],
+        skipped_rows: list[int],
+    ) -> None:
+        df = self.connectivity_table.df
+        scores = self._absorbing_refinement_scores()
         self.absorbing_refinement_diagnostics = {
-            "total": len(absorbing_rows),
+            "total": int(total),
             "refined": len(selected_rows),
             "skipped": len(skipped_rows),
             "unresolved_committor": float(
@@ -724,7 +800,6 @@ class BasinsGenericEvents() :
                 sum(float(df.loc[idx, "k_forward"]) for idx in skipped_rows)
             ),
         }
-        return selected_rows
 
     def _absorbing_refinement_scores(self) -> dict[int, float]:
         try:
