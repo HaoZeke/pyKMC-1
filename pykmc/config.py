@@ -538,7 +538,7 @@ class BasinConfig(BaseModel):
 
     selector: Literal["auto", "legacy-fpta", "amsel-sampled", "amsel-mean", "amsel-adaptive"] = Field(
         default="auto",
-        description="Basin exit selector. auto uses AMSEL adaptive selection when available and legacy FPTA otherwise.",
+        description="Basin exit selector. auto uses AMSEL sampled FPTA when available and legacy FPTA otherwise.",
     )
     energy_thr: float = Field(
     default = 0.0,

@@ -19,7 +19,7 @@ selector = auto
 
 `selector` controls the basin exit-time implementation:
 
-* `auto`: use AMSEL adaptive selection when AMSEL is available, otherwise use legacy FPTA
+* `auto`: use AMSEL sampled FPTA when AMSEL is available, otherwise use legacy FPTA
 * `legacy-fpta`: use the original NumPy/SciPy FPTA selector
 * `amsel-sampled`: use AMSEL's sampled FPTA clock
 * `amsel-mean`: use AMSEL's deterministic mean first-passage clock

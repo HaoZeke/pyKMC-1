@@ -145,7 +145,7 @@ class BasinsGenericEvents() :
         selector = getattr(self.config.basin, "selector", "auto")
         if selector == "auto":
             if _AMSEL_AVAILABLE:
-                return AmselFPTASelector(clock_mode="adaptive")
+                return AmselFPTASelector(clock_mode="sampled")
             return FPTASelector()
         if selector == "legacy-fpta":
             return FPTASelector()
