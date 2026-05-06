@@ -165,7 +165,7 @@ class BasinsGenericEvents() :
         if not result.is_ok() : 
             return result
         #apply selector algorithm to find t_exit and exit_state
-        result = self.selector.select_from_connectivity(self.connectivity_table)
+        result = self._select_from_connectivity()
         if not result.is_ok() : 
             return result
         #Construct output KMC needs 
@@ -226,6 +226,7 @@ class BasinsGenericEvents() :
         self.connectivity_table = BasinStatesConnectivity()
         self.explorer = BasinGenericEventExplorer(config=self.config, reference_table=self.reference_table)
         self.selector = self._make_selector()
+        self.selector_fallback = self._make_selector_fallback()
         self.exploration_order = []
         self.exploration_decisions = []
         self.absorbing_refinement_diagnostics = {}
@@ -245,6 +246,27 @@ class BasinsGenericEvents() :
         clock_mode = selector.removeprefix("amsel-")
         return AmselFPTASelector(clock_mode=clock_mode)
 
+    def _make_selector_fallback(self):
+        selector = getattr(self.config.basin, "selector", "auto")
+        if selector.startswith("amsel-"):
+            return FPTASelector()
+        if selector == "auto" and _AMSEL_AVAILABLE:
+            return FPTASelector()
+        return None
+
+    def _select_from_connectivity(self):
+        result = self.selector.select_from_connectivity(self.connectivity_table)
+        if result.is_ok():
+            return result
+        selector_fallback = getattr(self, "selector_fallback", None)
+        if selector_fallback is None:
+            return result
+        fallback_result = selector_fallback.select_from_connectivity(
+            self.connectivity_table
+        )
+        if fallback_result.is_ok():
+            return fallback_result
+        return fallback_result
 
     def construct_connexion_table(
         self,
