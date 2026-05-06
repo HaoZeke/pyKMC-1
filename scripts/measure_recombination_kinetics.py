@@ -275,6 +275,7 @@ def render_trial_input(
 
     config[control]["initial_config"] = str(initial_config)
     config[control]["n_steps"] = str(int(max_steps))
+    config[control]["random_seed"] = str(int(seed))
     config[control]["basin"] = "True"
     if refine_thr is not None:
         config[control]["refine_thr"] = str(float(refine_thr))

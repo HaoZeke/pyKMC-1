@@ -66,6 +66,11 @@ class ControlConfig(BaseModel):
         default=..., description="Total number of simulation steps to run.", gt=0
     )
 
+    random_seed: Optional[int] = Field(
+        default=None,
+        description="Seed for Python and NumPy random number generators used by KMC event selection.",
+    )
+
     engine: Literal["lammps"] = Field(
         default=...,
         description="Which E/F Engine to use. Note : Only lammps is implemented.",

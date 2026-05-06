@@ -94,6 +94,7 @@ class KMC:
 
     def run(self) -> None:
         """Run the simulation."""
+        self._seed_rngs()
         # Initialize the simulation, KMC attributes and minimize the system
         #self._initialize()
         self.manager.initialize_sessions(self.config, self.system)
@@ -335,6 +336,13 @@ class KMC:
                 self._close()
         self._save_restart_file(step, total_time)
         self._close()
+
+    def _seed_rngs(self) -> None:
+        seed = getattr(self.config.control, "random_seed", None)
+        if seed is None:
+            return
+        random.seed(int(seed))
+        np.random.seed(int(seed))
 
     def get_new_environments(self) -> list[str | bytes]:
         """Get atomic environments of the current system that has not been already explored.
@@ -709,4 +717,3 @@ class KMC:
         self.loggers.info("log", ":=> End of simulation")
         self.manager.close_all()
         sys.exit()
-
