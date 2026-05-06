@@ -1,12 +1,17 @@
 import random
+from collections import Counter
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 
 from pykmc.kmc import (
+    EnvironmentSearchEvidence,
     KMC,
     basin_exploration_trace_line,
     environments_with_cataloged_searches,
+    event_search_process_evidence,
+    undercovered_environments_for_search,
 )
 from pykmc.result import Err, ErrorInfo, ErrorType, Ok
 
@@ -76,6 +81,78 @@ def test_environments_with_cataloged_searches_keeps_failed_search_centers_unvisi
         event_outputs,
         valid_results,
     ) == {"env-c"}
+
+
+def test_event_search_process_evidence_counts_new_and_duplicate_processes():
+    event_outputs = [
+        SimpleNamespace(central_atom_index=1),
+        SimpleNamespace(central_atom_index=1),
+    ]
+    process_key = (7, "env-b", "env-c")
+    valid_results = [
+        Ok(
+            pd.DataFrame(
+                [
+                    {
+                        "idx_ref": 7,
+                        "event_id": "env-b",
+                        "id_final": "env-c",
+                        "k": 2.5,
+                    }
+                ]
+            )
+        ),
+        Err(
+            ErrorInfo(
+                type=ErrorType.EVENT_NOT_NEW,
+                message="duplicate catalog event",
+                variables={
+                    "matched_idx_ref": 7,
+                    "event_id": "env-b",
+                    "id_final": "env-c",
+                    "k": 2.5,
+                },
+            )
+        ),
+    ]
+
+    evidence = event_search_process_evidence(
+        ["crystal", "env-b"],
+        event_outputs,
+        valid_results,
+    )
+
+    assert evidence["env-b"].attempts == 2
+    assert evidence["env-b"].process_counts == Counter({process_key: 2})
+    assert evidence["env-b"].process_rates == {process_key: 2.5}
+
+
+def test_undercovered_environments_for_search_resamples_singleton_known_environment():
+    evidence = EnvironmentSearchEvidence(
+        attempts=1,
+        process_counts=Counter({("process-0",): 1}),
+    )
+
+    assert undercovered_environments_for_search(
+        current_environments=["crystal", "env-a", "env-a"],
+        new_environments=[],
+        visited_environments={"crystal", "env-a"},
+        environment_search_evidence={"env-a": evidence},
+    ) == ["env-a"]
+
+
+def test_undercovered_environments_for_search_skips_duplicate_saturated_environment():
+    evidence = EnvironmentSearchEvidence(
+        attempts=2,
+        process_counts=Counter({("process-0",): 2}),
+    )
+
+    assert undercovered_environments_for_search(
+        current_environments=["env-a", "env-a", "crystal"],
+        new_environments=[],
+        visited_environments={"crystal", "env-a"},
+        environment_search_evidence={"env-a": evidence},
+    ) == []
 
 
 def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
