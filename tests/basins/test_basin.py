@@ -65,6 +65,44 @@ class TestBasin :
         assert isinstance(basin.selector, AmselFPTASelector)
         assert basin.selector.clock_mode == "sampled"
 
+    def test_basin_auto_uses_sampled_amsel_selector_when_available(
+        self, config_Cu, reference_table_Cu_fake, visited_environments_Cu, system_Cu
+    ):
+        pytest.importorskip("amsel")
+        config_Cu.basin.selector = "auto"
+        basin = BasinsGenericEvents(
+            config=config_Cu,
+            reference_table=reference_table_Cu_fake,
+            known_environments=visited_environments_Cu,
+            manager=None,
+        )
+
+        basin._initialize(system_Cu)
+
+        assert isinstance(basin.selector, AmselFPTASelector)
+        assert basin.selector.clock_mode == "sampled"
+
+    def test_basin_auto_falls_back_to_legacy_selector_without_amsel(
+        self,
+        monkeypatch,
+        config_Cu,
+        reference_table_Cu_fake,
+        visited_environments_Cu,
+        system_Cu,
+    ):
+        monkeypatch.setattr(basin_module, "_AMSEL_AVAILABLE", False)
+        config_Cu.basin.selector = "auto"
+        basin = BasinsGenericEvents(
+            config=config_Cu,
+            reference_table=reference_table_Cu_fake,
+            known_environments=visited_environments_Cu,
+            manager=None,
+        )
+
+        basin._initialize(system_Cu)
+
+        assert isinstance(basin.selector, FPTASelector)
+
     def test_state_equivalence_reuses_cached_neighbor_tree(self, monkeypatch):
         real_tree = basin_module.cKDTree
         builds = 0
