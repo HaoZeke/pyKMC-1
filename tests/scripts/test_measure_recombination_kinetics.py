@@ -403,7 +403,9 @@ def test_basin_trace_rows_parse_order_queue_and_guidance():
         log_text=(
             "Step : 7\n"
             "\t :=> Basin exploration trace order=0,13; "
-            "queue=14,1; guidance=14:3.750000e-01,1:2.500000e-01\n"
+            "queue=14,1; guidance=14:3.750000e-01,1:2.500000e-01; "
+            "closed_events=0:NA,13:1; "
+            "closed_guidance=0:0.000000e+00,13:3.750000e-01\n"
         ),
     )
 
@@ -421,6 +423,12 @@ def test_basin_trace_rows_parse_order_queue_and_guidance():
             "queue_count": 2,
             "top_queue_state": 14,
             "top_queue_guidance": 0.375,
+            "closed_events": "0:NA 13:1",
+            "closed_event_families": "1",
+            "closed_event_family_count": 1,
+            "closed_guidance": "0:0.000000e+00 13:3.750000e-01",
+            "closed_guidance_sum": 0.375,
+            "closed_top_guidance": 0.375,
         }
     ]
 
@@ -432,7 +440,8 @@ def test_collect_basin_trace_rows_reads_trial_logs(tmp_path):
     (workdir / "pykmc.log").write_text(
         "Step : 2\n"
         "\t :=> Basin exploration trace order=0; "
-        "queue=13,14; guidance=13:5.000000e-01,14:2.500000e-01\n"
+        "queue=13,14; guidance=13:5.000000e-01,14:2.500000e-01; "
+        "closed_events=0:NA; closed_guidance=0:0.000000e+00\n"
     )
 
     rows = script.collect_basin_trace_rows(
@@ -461,6 +470,12 @@ def test_collect_basin_trace_rows_reads_trial_logs(tmp_path):
             "queue_count": 2,
             "top_queue_state": 13,
             "top_queue_guidance": 0.5,
+            "closed_events": "0:NA",
+            "closed_event_families": "",
+            "closed_event_family_count": 0,
+            "closed_guidance": "0:0.000000e+00",
+            "closed_guidance_sum": 0.0,
+            "closed_top_guidance": 0.0,
         }
     ]
 

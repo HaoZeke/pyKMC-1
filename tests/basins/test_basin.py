@@ -242,6 +242,39 @@ class TestBasin :
         assert basin.states_to_explore == [33, 40, 14]
         assert basin.last_exploration_guidance[14] == pytest.approx(0.9)
 
+    def test_record_exploration_decision_captures_event_family_and_guidance(self):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 13,
+                    "event_connexion": 7,
+                    "central_atom": 3330,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 3.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+            ]
+        )
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.connectivity_table = table
+        basin.last_exploration_guidance = {13: 0.375}
+        basin.exploration_decisions = []
+
+        basin._record_exploration_decision(13)
+
+        assert basin.exploration_decisions == [
+            {
+                "state": 13,
+                "event_family": 7,
+                "guidance": pytest.approx(0.375),
+            }
+        ]
+
     def test_construct_connexion_table_can_stop_after_expansion_budget(self):
         class FakeState:
             def ensure_full_state(self, config):
