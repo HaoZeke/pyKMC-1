@@ -154,7 +154,9 @@ class BasinsGenericEvents() :
             return result
         #reorder states index 
         mapping = self.connectivity_table.reorder_states_index()
-        self.states = {mapping[old]: val for old, val in self.states.items()}
+        self.states = {
+            mapping[old]: val for old, val in self.states.items() if old in mapping
+        }
         self._record_unresolved_frontier_diagnostics()
         self._absorb_unexpanded_frontier()
         #Refine absorbing states
