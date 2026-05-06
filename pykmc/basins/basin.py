@@ -141,7 +141,11 @@ class BasinsGenericEvents() :
         #initialize the basin
         self._initialize(system)
         #explore the basin
-        result = self.construct_connexion_table()
+        basin_config = getattr(self.config, "basin", None)
+        result = self.construct_connexion_table(
+            max_expansions=getattr(basin_config, "max_expansions", None),
+            max_closed_states=getattr(basin_config, "max_closed_states", None),
+        )
         if not result.is_ok() : 
             return result
         #reorder states index 

@@ -553,6 +553,16 @@ class BasinConfig(BaseModel):
     default = 0.0,
     description="Energy threshold"
     )
+    max_expansions: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Maximum number of transient basin states to expand before selecting an exit.",
+    )
+    max_closed_states: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Maximum number of basin states to close before selecting an exit.",
+    )
     reconstruction_minimize: Optional[str] = Field(
         default=None,
         description="LAMMPS minimize command used when reconstructing catalog states inside a basin graph.",

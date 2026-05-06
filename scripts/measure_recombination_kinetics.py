@@ -206,6 +206,10 @@ def trial_commands(
     seed: int,
     max_steps: int,
     work_budget: str | None,
+    basin_energy_thr: float | None,
+    basin_max_expansions: int | None,
+    basin_max_closed_states: int | None,
+    amsel_selector: str,
     mpi_ranks: int,
     mpirun: str,
     python: str,
@@ -227,6 +231,10 @@ def trial_commands(
             priority=str(item["priority"]),
             partn_path=partn_path,
             seed=int(item["seed"]),
+            basin_energy_thr=basin_energy_thr,
+            basin_max_expansions=basin_max_expansions,
+            basin_max_closed_states=basin_max_closed_states,
+            amsel_selector=amsel_selector,
         )
         commands.append(
             {
@@ -236,6 +244,10 @@ def trial_commands(
                 "seed": item["seed"],
                 "max_steps": int(max_steps),
                 "work_budget": work_budget,
+                "basin_energy_thr": basin_energy_thr,
+                "basin_max_expansions": basin_max_expansions,
+                "basin_max_closed_states": basin_max_closed_states,
+                "amsel_selector": amsel_selector,
                 "workdir": str(trial_dir),
                 "command": [
                     mpirun,
@@ -265,6 +277,10 @@ def render_trial_input(
     priority: str,
     partn_path: Path,
     seed: int,
+    basin_energy_thr: float | None,
+    basin_max_expansions: int | None,
+    basin_max_closed_states: int | None,
+    amsel_selector: str,
 ) -> str:
     config = configparser.ConfigParser()
     config.optionxform = str
@@ -289,6 +305,16 @@ def render_trial_input(
     config[partn]["path_artnso"] = str(partn_path)
     config[partn]["zseed"] = str(int(seed))
     config[basin]["exploration_priority"] = priority
+    config[basin]["selector"] = _selector_for_priority(
+        priority=priority,
+        amsel_selector=amsel_selector,
+    )
+    if basin_energy_thr is not None:
+        config[basin]["energy_thr"] = str(float(basin_energy_thr))
+    if basin_max_expansions is not None:
+        config[basin]["max_expansions"] = str(int(basin_max_expansions))
+    if basin_max_closed_states is not None:
+        config[basin]["max_closed_states"] = str(int(basin_max_closed_states))
     absolutize_lammps_paths(config, template_dir=template_dir)
 
     from io import StringIO
@@ -312,6 +338,10 @@ def write_trial_input(
     priority: str,
     partn_path: Path,
     seed: int,
+    basin_energy_thr: float | None,
+    basin_max_expansions: int | None,
+    basin_max_closed_states: int | None,
+    amsel_selector: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -327,8 +357,20 @@ def write_trial_input(
             priority=priority,
             partn_path=partn_path,
             seed=seed,
+            basin_energy_thr=basin_energy_thr,
+            basin_max_expansions=basin_max_expansions,
+            basin_max_closed_states=basin_max_closed_states,
+            amsel_selector=amsel_selector,
         )
     )
+
+
+def _selector_for_priority(*, priority: str, amsel_selector: str) -> str:
+    if priority == "legacy":
+        return "legacy-fpta"
+    if priority == "amsel":
+        return amsel_selector
+    raise ValueError(f"unknown priority: {priority}")
 
 
 def absolutize_lammps_paths(
@@ -445,6 +487,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--event-searches", type=int)
     parser.add_argument("--refine-thr", type=float)
+    parser.add_argument("--basin-energy-thr", type=float)
+    parser.add_argument("--basin-max-expansions", type=int)
+    parser.add_argument("--basin-max-closed-states", type=int)
+    parser.add_argument(
+        "--amsel-selector",
+        choices=("amsel-sampled", "amsel-mean", "amsel-adaptive"),
+        default="amsel-adaptive",
+    )
     parser.add_argument("--work-budget")
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
@@ -471,6 +521,10 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         max_steps=args.max_steps,
         work_budget=args.work_budget,
+        basin_energy_thr=args.basin_energy_thr,
+        basin_max_expansions=args.basin_max_expansions,
+        basin_max_closed_states=args.basin_max_closed_states,
+        amsel_selector=args.amsel_selector,
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
         python=args.python,
@@ -490,6 +544,10 @@ def main(argv: list[str] | None = None) -> int:
         "max_steps": args.max_steps,
         "event_searches": args.event_searches,
         "refine_thr": args.refine_thr,
+        "basin_energy_thr": args.basin_energy_thr,
+        "basin_max_expansions": args.basin_max_expansions,
+        "basin_max_closed_states": args.basin_max_closed_states,
+        "amsel_selector": args.amsel_selector,
         "work_budget": args.work_budget,
         "mpi_ranks": args.mpi_ranks,
         "dry_run": bool(args.dry_run),
