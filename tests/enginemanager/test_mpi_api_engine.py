@@ -37,3 +37,29 @@ def test_rank_zero_queue_local_engine_runs_loop_on_thread(monkeypatch):
 
     assert loop_threads.get(timeout=1.0) is False
     assert engine.message_reader_thread is not None
+
+
+class FakeLammps:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def test_close_does_not_join_current_reader_thread():
+    engine = MpiApiEngine.__new__(MpiApiEngine)
+    local_lmp = FakeLammps()
+    global_lmp = FakeLammps()
+    engine.local_lmp = local_lmp
+    engine.global_lmp = global_lmp
+    engine.message_reader_thread = threading.current_thread()
+    engine.rank = 0
+    engine._is_alive = True
+
+    engine.close()
+
+    assert local_lmp.closed is True
+    assert global_lmp.closed is True
+    assert engine.message_reader_thread is None
+    assert engine._is_alive is False
