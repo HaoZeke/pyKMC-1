@@ -10,12 +10,59 @@ from pykmc import System, Config, NeighborsList, AtomicEnvironment, ReferenceEve
 from typing import Optional
 from ..utils import geometry
 from ..rate_constant import compute_rate_Eyring
+from pykmc.result import Err, ErrorInfo, Ok, BasinOutput
 import hashlib
 import pandas as pd
 import copy
 import numpy as np
 from scipy.spatial import cKDTree
-from pykmc.result import Ok, BasinOutput
+
+
+REFINEMENT_CONTEXT_COLUMNS = (
+    "state",
+    "state_connexion",
+    "event_connexion",
+    "central_atom",
+    "sym",
+    "transient",
+)
+
+
+def _refinement_error_with_row_context(
+    error: ErrorInfo,
+    *,
+    row_index: int,
+    row: pd.Series,
+) -> ErrorInfo:
+    variables = dict(error.variables or {})
+    variables["refinement_row"] = _refinement_row_payload(
+        row_index=row_index,
+        row=row,
+    )
+    return ErrorInfo(
+        type=error.type,
+        message=error.message,
+        details=error.details,
+        variables=variables,
+    )
+
+
+def _refinement_row_payload(*, row_index: int, row: pd.Series) -> dict[str, object]:
+    payload: dict[str, object] = {"row_index": int(row_index)}
+    for column in REFINEMENT_CONTEXT_COLUMNS:
+        if column in row.index:
+            payload[column] = _json_scalar(row[column])
+    return payload
+
+
+def _json_scalar(value):
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
 
 #TODO: StateDate is here to handle state informations, when State Object will be creates, need to remove
 #TODO: For the moment Basin uses EnergyThresholdDetector, BasinGenericEventExplorer, FPTASelector, need to deal with possible multiple implementation with builder.
@@ -451,7 +498,14 @@ class BasinsGenericEvents() :
             E_min    = ctx["min"].result()
             result_sad = ctx["saddle"].result()
             if not result_sad.is_ok() : 
-                return result_sad
+                row = self.connectivity_table.df.loc[idx]
+                return Err(
+                    _refinement_error_with_row_context(
+                        result_sad.err_value(),
+                        row_index=idx,
+                        row=row,
+                    )
+                )
             E_sad = result_sad.ok_value().E_saddle
             if self.config.control.active_volume==True:
                 dE = E_sad
