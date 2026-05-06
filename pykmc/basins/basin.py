@@ -128,6 +128,7 @@ class BasinsGenericEvents() :
         self.known_environments = known_environments 
         self.absorbing_saddle_positions: dict[int, np.ndarray] = {}
         self.absorbing_refinement_diagnostics: dict[str, object] = {}
+        self.unresolved_frontier_diagnostics: dict[str, object] = {}
         self.last_exploration_guidance: dict[int, float] = {}
         self.exploration_order: list[int] = []
 
@@ -152,6 +153,7 @@ class BasinsGenericEvents() :
         #reorder states index 
         mapping = self.connectivity_table.reorder_states_index()
         self.states = {mapping[old]: val for old, val in self.states.items()}
+        self._record_unresolved_frontier_diagnostics()
         #Refine absorbing states
         self.manager.use_local()
         result =self.refine_absorbing(system)
@@ -206,6 +208,7 @@ class BasinsGenericEvents() :
         self.selector = self._make_selector()
         self.exploration_order = []
         self.absorbing_refinement_diagnostics = {}
+        self.unresolved_frontier_diagnostics = {}
         new_system = System(positions=system.positions.copy(), types=system.types.copy(), cell=system.cell.copy(), pbc=system.pbc.copy(), index=np.arange(len(system.types)))
         self._add_state(state_index=0, system=new_system)  #add current state 0 to self.states
 
@@ -598,6 +601,33 @@ class BasinsGenericEvents() :
                 continue
             scores[int(outlet["absorbing_state"])] = float(outlet["committor"])
         return scores
+
+    def _record_unresolved_frontier_diagnostics(self) -> None:
+        df = self.connectivity_table.df
+        transient_sources = {int(value) for value in df["state"].to_numpy()}
+        frontier_states = sorted(
+            {
+                int(row["state_connexion"])
+                for _, row in df.iterrows()
+                if bool(row["transient"])
+                and int(row["state_connexion"]) not in transient_sources
+            }
+        )
+        scores = amsel_state_guidance_scores(self.connectivity_table, entry=0)
+        self.unresolved_frontier_diagnostics = {
+            "total": len(frontier_states),
+            "unresolved_committor": float(
+                sum(float(scores.get(state, 0.0)) for state in frontier_states)
+            ),
+            "unresolved_rate": float(
+                sum(
+                    float(row["k_forward"])
+                    for _, row in df.iterrows()
+                    if bool(row["transient"])
+                    and int(row["state_connexion"]) in frontier_states
+                )
+            ),
+        }
 
 
     def is_new_state(self, system) : 

@@ -221,6 +221,19 @@ class KMC:
                 basin = BasinsGenericEvents(self.config, self.reference_table, self.visited_environments, self.manager)
                 self.system.update_positions(result_reconstruction.ok_value().min1_positions)
                 result_basin = basin.execute(self.system)
+                frontier = getattr(basin, "unresolved_frontier_diagnostics", {})
+                if int(frontier.get("total", 0)) > 0:
+                    self.loggers.info(
+                        "log",
+                        (
+                            "\t :=> Basin exploration budget left {} frontier states; "
+                            "unresolved_committor={:.6e}; unresolved_rate={:.6e}"
+                        ).format(
+                            int(frontier["total"]),
+                            float(frontier["unresolved_committor"]),
+                            float(frontier["unresolved_rate"]),
+                        ),
+                    )
                 basin_refinement = getattr(basin, "absorbing_refinement_diagnostics", {})
                 if int(basin_refinement.get("skipped", 0)) > 0:
                     self.loggers.info(

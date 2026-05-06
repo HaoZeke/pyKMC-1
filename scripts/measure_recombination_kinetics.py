@@ -18,6 +18,10 @@ BASIN_REFINEMENT_BUDGET_RE = re.compile(
     r"Basin absorbing refinement skipped (?P<count>\d+) exits; "
     r"unresolved_committor=(?P<committor>[0-9.eE+-]+);"
 )
+BASIN_FRONTIER_BUDGET_RE = re.compile(
+    r"Basin exploration budget left (?P<count>\d+) frontier states; "
+    r"unresolved_committor=(?P<committor>[0-9.eE+-]+);"
+)
 TRIAL_FIELDS = [
     "case",
     "selector",
@@ -149,6 +153,10 @@ def apply_kinetic_guard(
         guarded["failed_refinements"] += 1
         guarded["kinetic_claim_ok"] = False
     for match in BASIN_REFINEMENT_BUDGET_RE.finditer(log_text):
+        guarded["failed_refinements"] += int(match.group("count"))
+        guarded["failed_refinement_committor"] += float(match.group("committor"))
+        guarded["kinetic_claim_ok"] = False
+    for match in BASIN_FRONTIER_BUDGET_RE.finditer(log_text):
         guarded["failed_refinements"] += int(match.group("count"))
         guarded["failed_refinement_committor"] += float(match.group("committor"))
         guarded["kinetic_claim_ok"] = False
