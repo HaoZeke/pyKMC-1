@@ -46,3 +46,4 @@ def test_reconstruction_uses_explicit_minimize_command_without_mutating_config()
 def test_basin_reconstruction_uses_main_minimizer_by_default():
     assert BasinConfig().reconstruction_minimize is None
     assert BasinConfig().selector == "auto"
+    assert BasinConfig().exploration_priority == "auto"
