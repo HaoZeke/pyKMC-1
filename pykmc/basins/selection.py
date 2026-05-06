@@ -186,7 +186,7 @@ class FPTASelector():
         p0[0] = 1 #always at state 0 when entering the basin 
 
         #compute P = ext(-Mt)p0
-        p = solve_master_equation(self.M_abs, t_exit, p0) 
+        p = solve_master_equation(self.M_abs, t_exit, p0, spectral_decomposition=False) 
 
         #Select only absorbing state
         p_absorbing = p[len(self.M_abs_reduced)-1:]

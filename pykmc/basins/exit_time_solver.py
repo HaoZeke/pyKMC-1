@@ -1,6 +1,6 @@
 import numpy as np 
 from scipy.sparse.linalg import expm
-from numpy.linalg import eig, inv
+from numpy.linalg import LinAlgError, cond, eig, inv
 from pykmc.result import Result, Ok, Err, ErrorInfo, ErrorType,  BasinExitTimeSolverOutput
 from .utils import solve_master_equation_last_value
 
@@ -63,10 +63,23 @@ class BisectionSolver() :
         self.Veceig = None
         self.Veceiginv = None
 
-        #Compute only one time eigen values/vector of M when using spectral decomposition
+        # Spectral propagation requires a numerically invertible eigenvector basis.
         if self.spectral_decomposition == True : 
-            self.Valeig, self.Veceig = eig(self.M)
-            self.Veceiginv = inv(self.Veceig)
+            try:
+                self.Valeig, self.Veceig = eig(self.M)
+                basis_condition = cond(self.Veceig)
+                if not np.isfinite(basis_condition) or basis_condition > 1.0e12:
+                    self.spectral_decomposition = False
+                    self.Valeig = None
+                    self.Veceig = None
+                    self.Veceiginv = None
+                else:
+                    self.Veceiginv = inv(self.Veceig)
+            except (LinAlgError, FloatingPointError):
+                self.spectral_decomposition = False
+                self.Valeig = None
+                self.Veceig = None
+                self.Veceiginv = None
 
 
     def solve(self) -> Result[BasinExitTimeSolverOutput, ErrorInfo]: 
