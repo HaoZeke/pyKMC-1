@@ -1,7 +1,8 @@
 import numpy as np
+import pytest
 
 from pykmc import System
-from pykmc.basins import BasinsGenericEvents, StateData
+from pykmc.basins import AmselFPTASelector, BasinsGenericEvents, FPTASelector, StateData
 import logging
 from pykmc.enginemanager.lmpi.pool import ManagerFactory
 import pykmc.basins.basin as basin_module
@@ -31,6 +32,38 @@ class TestBasin :
                 test_logger.debug("Error: {}".format(result.err_value()))
             
             manager.close_all()
+
+    def test_basin_initializes_configured_legacy_selector(
+        self, config_Cu, reference_table_Cu_fake, visited_environments_Cu, system_Cu
+    ):
+        config_Cu.basin.selector = "legacy-fpta"
+        basin = BasinsGenericEvents(
+            config=config_Cu,
+            reference_table=reference_table_Cu_fake,
+            known_environments=visited_environments_Cu,
+            manager=None,
+        )
+
+        basin._initialize(system_Cu)
+
+        assert isinstance(basin.selector, FPTASelector)
+
+    def test_basin_initializes_configured_amsel_sampled_selector(
+        self, config_Cu, reference_table_Cu_fake, visited_environments_Cu, system_Cu
+    ):
+        pytest.importorskip("amsel")
+        config_Cu.basin.selector = "amsel-sampled"
+        basin = BasinsGenericEvents(
+            config=config_Cu,
+            reference_table=reference_table_Cu_fake,
+            known_environments=visited_environments_Cu,
+            manager=None,
+        )
+
+        basin._initialize(system_Cu)
+
+        assert isinstance(basin.selector, AmselFPTASelector)
+        assert basin.selector.clock_mode == "sampled"
 
     def test_state_equivalence_reuses_cached_neighbor_tree(self, monkeypatch):
         real_tree = basin_module.cKDTree
