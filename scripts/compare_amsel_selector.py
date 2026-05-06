@@ -210,16 +210,26 @@ def live_basin_payload(
             }
         mapping = basin.connectivity_table.reorder_states_index()
         basin.states = {mapping[old]: val for old, val in basin.states.items()}
+        constructed_table = StatesConnectivity()
+        constructed_table.df = basin.connectivity_table.get_table().copy()
         manager.use_local()
         result = basin.refine_absorbing(system)
         if not result.is_ok():
-            return {
-                "source": "live-lammps-mpi",
-                "case": case_name,
+            payload = selector_payload(
+                table=constructed_table,
+                case_name=case_name,
+                draws=draws,
+                entry=entry,
+                source="live-lammps-mpi",
+            )
+            payload["ok"] = True
+            payload["refinement"] = {
                 "ok": False,
                 "stage": "refine_absorbing",
                 "error": str(result.err_value()),
+                "rate_source": "catalog",
             }
+            return payload
         payload = selector_payload(
             table=basin.connectivity_table,
             case_name=case_name,
@@ -228,6 +238,7 @@ def live_basin_payload(
             source="live-lammps-mpi",
         )
         payload["ok"] = True
+        payload["refinement"] = {"ok": True, "rate_source": "refined"}
         return payload
     finally:
         manager.close_all()
