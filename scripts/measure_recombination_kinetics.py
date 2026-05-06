@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -28,8 +29,9 @@ BASIN_TRACE_RE = re.compile(
     r"Basin exploration trace order=(?P<order>[0-9,]*); "
     r"queue=(?P<queue>[0-9,]*); "
     r"guidance=(?P<guidance>[0-9:.,eE+-]*)"
-    r"(?:; closed_events=(?P<closed_events>[0-9A-Z:,]*); "
-    r"closed_guidance=(?P<closed_guidance>[0-9:.,eE+-]*))?"
+    r"(?:; closed_events=(?P<closed_events>[^;]*))?"
+    r"(?:; closed_processes=(?P<closed_processes>[^;]*))?"
+    r"(?:; closed_guidance=(?P<closed_guidance>[0-9:.,eE+-]*))?"
 )
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 TRIAL_FIELDS = [
@@ -80,6 +82,10 @@ BASIN_TRACE_FIELDS = [
     "closed_events",
     "closed_event_families",
     "closed_event_family_count",
+    "closed_processes",
+    "closed_process_signatures",
+    "closed_process_signature_count",
+    "closed_process_singleton_count",
     "closed_guidance",
     "closed_guidance_sum",
     "closed_top_guidance",
@@ -358,6 +364,11 @@ def basin_trace_rows_from_log(
         closed_event_items, closed_event_families = _parse_closed_events(
             trace_match.group("closed_events") or ""
         )
+        (
+            closed_process_items,
+            closed_process_signatures,
+            closed_process_singleton_count,
+        ) = _parse_closed_processes(trace_match.group("closed_processes") or "")
         closed_guidance_items, closed_guidance_by_state = _parse_guidance(
             trace_match.group("closed_guidance") or ""
         )
@@ -387,6 +398,10 @@ def basin_trace_rows_from_log(
                     str(event) for event in closed_event_families
                 ),
                 "closed_event_family_count": len(closed_event_families),
+                "closed_processes": " ".join(closed_process_items),
+                "closed_process_signatures": " ".join(closed_process_signatures),
+                "closed_process_signature_count": len(closed_process_signatures),
+                "closed_process_singleton_count": closed_process_singleton_count,
                 "closed_guidance": " ".join(closed_guidance_items),
                 "closed_guidance_sum": float(sum(closed_guidance_values)),
                 "closed_top_guidance": float(max(closed_guidance_values, default=0.0)),
@@ -442,6 +457,24 @@ def _parse_closed_events(text: str) -> tuple[list[str], list[int]]:
         seen.add(event)
         families.append(event)
     return items, families
+
+
+def _parse_closed_processes(text: str) -> tuple[list[str], list[str], int]:
+    items = [item for item in text.split(",") if item]
+    signatures: list[str] = []
+    counts: Counter[str] = Counter()
+    seen: set[str] = set()
+    for item in items:
+        _, _, signature = item.partition(":")
+        if not signature or signature == "NA":
+            continue
+        counts[signature] += 1
+        if signature in seen:
+            continue
+        seen.add(signature)
+        signatures.append(signature)
+    singleton_count = sum(1 for signature in signatures if counts[signature] == 1)
+    return items, signatures, singleton_count
 
 
 def _empty_basin_confidence_row(

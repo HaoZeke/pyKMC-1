@@ -41,10 +41,15 @@ SUMMARY_FIELDS = [
     "last_top_queue_guidance",
     "last_closed_event_families",
     "last_closed_event_family_count",
+    "last_closed_process_signatures",
+    "last_closed_process_signature_count",
+    "last_closed_process_singleton_count",
     "last_closed_guidance_sum",
     "last_closed_top_guidance",
     "last_frontier_states_per_closed_family",
     "last_frontier_rate_per_closed_family",
+    "last_frontier_states_per_closed_process_signature",
+    "last_frontier_rate_per_closed_process_signature",
     "last_closed_guidance_per_wall_s",
 ]
 
@@ -194,6 +199,9 @@ def write_sweep_summary(out: Path) -> None:
         last_confidence = _last_step_row(confidence)
         last_trace = _last_step_row(trace)
         closed_family_count = _csv_int(last_trace.get("closed_event_family_count"))
+        closed_process_signature_count = _csv_int(
+            last_trace.get("closed_process_signature_count")
+        )
         frontier_states = _csv_float(last_confidence.get("frontier_states"))
         frontier_rate = _csv_float(last_confidence.get("frontier_rate"))
         closed_guidance_sum = _csv_float(last_trace.get("closed_guidance_sum"))
@@ -226,6 +234,15 @@ def write_sweep_summary(out: Path) -> None:
                 "last_closed_event_family_count": last_trace.get(
                     "closed_event_family_count"
                 ),
+                "last_closed_process_signatures": last_trace.get(
+                    "closed_process_signatures"
+                ),
+                "last_closed_process_signature_count": last_trace.get(
+                    "closed_process_signature_count"
+                ),
+                "last_closed_process_singleton_count": last_trace.get(
+                    "closed_process_singleton_count"
+                ),
                 "last_closed_guidance_sum": last_trace.get("closed_guidance_sum"),
                 "last_closed_top_guidance": last_trace.get("closed_top_guidance"),
                 "last_frontier_states_per_closed_family": _ratio(
@@ -235,6 +252,14 @@ def write_sweep_summary(out: Path) -> None:
                 "last_frontier_rate_per_closed_family": _ratio(
                     frontier_rate,
                     closed_family_count,
+                ),
+                "last_frontier_states_per_closed_process_signature": _ratio(
+                    frontier_states,
+                    closed_process_signature_count,
+                ),
+                "last_frontier_rate_per_closed_process_signature": _ratio(
+                    frontier_rate,
+                    closed_process_signature_count,
                 ),
                 "last_closed_guidance_per_wall_s": _ratio(
                     closed_guidance_sum,

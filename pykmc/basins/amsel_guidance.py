@@ -67,8 +67,8 @@ def amsel_rank_basin_frontier(
     *,
     candidate_states,
     guidance: dict[int, float],
-    event_families: dict[int, int | None],
-    closed_event_families: set[int],
+    event_families: dict[int, object | None],
+    closed_event_families: set[object],
     duplicate_family_penalty: float = 1.0,
     min_guidance: float = 0.0,
 ) -> list[int] | None:

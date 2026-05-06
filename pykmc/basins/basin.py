@@ -131,7 +131,7 @@ class BasinsGenericEvents() :
         self.unresolved_frontier_diagnostics: dict[str, object] = {}
         self.last_exploration_guidance: dict[int, float] = {}
         self.exploration_order: list[int] = []
-        self.exploration_decisions: list[dict[str, float | int | None]] = []
+        self.exploration_decisions: list[dict[str, object]] = []
 
     def detection(self, params) -> bool : 
         """Utility method."""
@@ -399,15 +399,15 @@ class BasinsGenericEvents() :
             return list(candidate_states)
 
         if priority == "amsel-diverse":
-            seen_events = self._explored_event_families()
+            seen_processes = self._explored_process_signatures()
             ranked = amsel_rank_basin_frontier(
                 candidate_states=candidate_states,
                 guidance=scores,
                 event_families={
-                    int(state): self._incoming_event_family(int(state))
+                    int(state): self._incoming_diversity_signature(int(state))
                     for state in candidate_states
                 },
-                closed_event_families=seen_events,
+                closed_event_families=seen_processes,
                 duplicate_family_penalty=float(
                     getattr(
                         getattr(self.config, "basin", None),
@@ -429,8 +429,8 @@ class BasinsGenericEvents() :
                 candidate_states,
                 key=lambda state: (
                     -float(scores.get(int(state), 0.0)),
-                    self._incoming_event_family(int(state)) in seen_events,
-                    self._incoming_event_family_sort_key(int(state)),
+                    self._incoming_diversity_signature(int(state)) in seen_processes,
+                    self._incoming_diversity_signature_sort_key(int(state)),
                     int(state),
                 ),
             )
@@ -463,6 +463,39 @@ class BasinsGenericEvents() :
             return -1
         return int(event)
 
+    def _explored_process_signatures(self) -> set[object]:
+        return {
+            process
+            for state in self.explored_states
+            for process in [self._incoming_diversity_signature(int(state))]
+            if process is not None
+        }
+
+    def _incoming_process_signature(self, state: int) -> str | None:
+        df = getattr(self.connectivity_table, "df", None)
+        required = {"event_connexion", "central_atom"}
+        if not isinstance(df, pd.DataFrame) or not required.issubset(df.columns):
+            return None
+        rows = df.loc[df["state_connexion"] == int(state)]
+        if rows.empty:
+            return None
+        row = rows.iloc[0]
+        if pd.isna(row["event_connexion"]) or pd.isna(row["central_atom"]):
+            return None
+        return f"{int(row['event_connexion'])}:{int(row['central_atom'])}"
+
+    def _incoming_diversity_signature(self, state: int) -> object | None:
+        process = self._incoming_process_signature(state)
+        if process is not None:
+            return process
+        return self._incoming_event_family(state)
+
+    def _incoming_diversity_signature_sort_key(self, state: int) -> str:
+        process = self._incoming_diversity_signature(state)
+        if process is None:
+            return ""
+        return str(process)
+
     def _record_exploration_decision(self, state: int) -> None:
         if not hasattr(self, "exploration_decisions"):
             self.exploration_decisions = []
@@ -471,6 +504,7 @@ class BasinsGenericEvents() :
             {
                 "state": state,
                 "event_family": self._incoming_event_family(state),
+                "process_signature": self._incoming_process_signature(state),
                 "guidance": float(
                     (getattr(self, "last_exploration_guidance", {}) or {}).get(
                         state,
