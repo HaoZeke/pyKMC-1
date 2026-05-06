@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from pykmc.kmc import KMC
+from pykmc.kmc import KMC, basin_exploration_trace_line
 
 
 def test_kmc_seeds_python_and_numpy_rngs_from_control_config():
@@ -15,3 +15,20 @@ def test_kmc_seeds_python_and_numpy_rngs_from_control_config():
     expected_numpy = np.random.RandomState(12345).random_sample()
     assert random.random() == expected_python
     assert np.random.random() == expected_numpy
+
+
+def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
+    basin = SimpleNamespace(
+        exploration_order=[0, 13],
+        states_to_explore=[14, 1],
+        last_exploration_guidance={14: 0.375, 1: 0.25},
+    )
+
+    assert basin_exploration_trace_line(basin) == (
+        "\t :=> Basin exploration trace order=0,13; "
+        "queue=14,1; guidance=14:3.750000e-01,1:2.500000e-01"
+    )
+
+
+def test_basin_exploration_trace_line_skips_empty_trace():
+    assert basin_exploration_trace_line(SimpleNamespace()) is None

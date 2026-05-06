@@ -229,6 +229,9 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert (out / "basin_confidence.csv").read_text().splitlines()[0] == ",".join(
         script.BASIN_CONFIDENCE_FIELDS
     )
+    assert (out / "basin_trace.csv").read_text().splitlines()[0] == ",".join(
+        script.BASIN_TRACE_FIELDS
+    )
     assert (out / "events.jsonl").exists()
 
     commands = json.loads((out / "commands.json").read_text())
@@ -351,6 +354,79 @@ def test_collect_basin_confidence_rows_reads_trial_logs(tmp_path):
             "skipped_absorbing_exits": 0,
             "skipped_absorbing_committor": 0.0,
             "skipped_absorbing_rate": 0.0,
+        }
+    ]
+
+
+def test_basin_trace_rows_parse_order_queue_and_guidance():
+    script = _load_script()
+
+    rows = script.basin_trace_rows_from_log(
+        case="ni-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=1000,
+        log_text=(
+            "Step : 7\n"
+            "\t :=> Basin exploration trace order=0,13; "
+            "queue=14,1; guidance=14:3.750000e-01,1:2.500000e-01\n"
+        ),
+    )
+
+    assert rows == [
+        {
+            "case": "ni-vac-sia",
+            "selector": "amsel",
+            "trial": 0,
+            "seed": 1000,
+            "step": 7,
+            "order": "0 13",
+            "queue": "14 1",
+            "guidance": "14:3.750000e-01 1:2.500000e-01",
+            "order_count": 2,
+            "queue_count": 2,
+            "top_queue_state": 14,
+            "top_queue_guidance": 0.375,
+        }
+    ]
+
+
+def test_collect_basin_trace_rows_reads_trial_logs(tmp_path):
+    script = _load_script()
+    workdir = tmp_path / "amsel" / "trial-0"
+    workdir.mkdir(parents=True)
+    (workdir / "pykmc.log").write_text(
+        "Step : 2\n"
+        "\t :=> Basin exploration trace order=0; "
+        "queue=13,14; guidance=13:5.000000e-01,14:2.500000e-01\n"
+    )
+
+    rows = script.collect_basin_trace_rows(
+        [
+            {
+                "case": "ni-vac-sia",
+                "priority": "amsel",
+                "trial": 0,
+                "seed": 1000,
+                "workdir": str(workdir),
+            }
+        ]
+    )
+
+    assert rows == [
+        {
+            "case": "ni-vac-sia",
+            "selector": "amsel",
+            "trial": 0,
+            "seed": 1000,
+            "step": 2,
+            "order": "0",
+            "queue": "13 14",
+            "guidance": "13:5.000000e-01 14:2.500000e-01",
+            "order_count": 1,
+            "queue_count": 2,
+            "top_queue_state": 13,
+            "top_queue_guidance": 0.5,
         }
     ]
 
