@@ -206,6 +206,7 @@ def trial_commands(
     seed: int,
     max_steps: int,
     work_budget: str | None,
+    trial_timeout_s: float | None,
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
@@ -244,6 +245,7 @@ def trial_commands(
                 "seed": item["seed"],
                 "max_steps": int(max_steps),
                 "work_budget": work_budget,
+                "trial_timeout_s": trial_timeout_s,
                 "basin_energy_thr": basin_energy_thr,
                 "basin_max_expansions": basin_max_expansions,
                 "basin_max_closed_states": basin_max_closed_states,
@@ -407,20 +409,64 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
-def execute_trials(commands: list[dict[str, Any]], events_path: Path) -> list[dict[str, Any]]:
+def execute_trials(
+    commands: list[dict[str, Any]],
+    events_path: Path,
+    *,
+    trial_timeout_s: float | None = None,
+) -> list[dict[str, Any]]:
     rows = []
     events_path.parent.mkdir(parents=True, exist_ok=True)
     with events_path.open("w") as event_handle:
         for command in commands:
             workdir = Path(command["workdir"])
-            result = subprocess.run(
-                command["command"],
-                cwd=workdir,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
+            try:
+                result = subprocess.run(
+                    command["command"],
+                    cwd=workdir,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                    timeout=trial_timeout_s,
+                )
+            except subprocess.TimeoutExpired as error:
+                (workdir / "harness.log").write_text(_timeout_output(error))
+                event_handle.write(
+                    json.dumps(
+                        {
+                            "case": command["case"],
+                            "priority": command["priority"],
+                            "trial": command["trial"],
+                            "seed": command["seed"],
+                            "returncode": None,
+                            "timed_out": True,
+                            "timeout_s": trial_timeout_s,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+                rows.append(
+                    apply_kinetic_guard(
+                        {
+                            "case": command["case"],
+                            "selector": command["priority"],
+                            "trial": int(command["trial"]),
+                            "seed": int(command["seed"]),
+                            "recombined": False,
+                            "t_recombination_s": None,
+                            "censored_time_s": 0.0,
+                            "kmc_steps": 0,
+                            "detector_reason": f"timeout-{trial_timeout_s}s",
+                            "kinetic_claim_ok": False,
+                            "output_dir": str(workdir),
+                        },
+                        diagnostics=None,
+                        log_text="",
+                    )
+                )
+                continue
             (workdir / "harness.log").write_text(result.stdout)
             event_handle.write(
                 json.dumps(
@@ -468,6 +514,13 @@ def execute_trials(commands: list[dict[str, Any]], events_path: Path) -> list[di
     return rows
 
 
+def _timeout_output(error: subprocess.TimeoutExpired) -> str:
+    output = error.output or ""
+    if isinstance(output, bytes):
+        return output.decode(errors="replace")
+    return str(output)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", choices=("ni-vac-sia", "cu-vac-sia"), required=True)
@@ -487,6 +540,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--event-searches", type=int)
     parser.add_argument("--refine-thr", type=float)
+    parser.add_argument("--trial-timeout-s", type=float)
     parser.add_argument("--basin-energy-thr", type=float)
     parser.add_argument("--basin-max-expansions", type=int)
     parser.add_argument("--basin-max-closed-states", type=int)
@@ -521,6 +575,7 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         max_steps=args.max_steps,
         work_budget=args.work_budget,
+        trial_timeout_s=args.trial_timeout_s,
         basin_energy_thr=args.basin_energy_thr,
         basin_max_expansions=args.basin_max_expansions,
         basin_max_closed_states=args.basin_max_closed_states,
@@ -544,6 +599,7 @@ def main(argv: list[str] | None = None) -> int:
         "max_steps": args.max_steps,
         "event_searches": args.event_searches,
         "refine_thr": args.refine_thr,
+        "trial_timeout_s": args.trial_timeout_s,
         "basin_energy_thr": args.basin_energy_thr,
         "basin_max_expansions": args.basin_max_expansions,
         "basin_max_closed_states": args.basin_max_closed_states,
@@ -563,7 +619,11 @@ def main(argv: list[str] | None = None) -> int:
         events_path.write_text("")
         return 0
 
-    trial_rows = execute_trials(commands, events_path)
+    trial_rows = execute_trials(
+        commands,
+        events_path,
+        trial_timeout_s=args.trial_timeout_s,
+    )
     write_csv(args.out / "trials.csv", trial_rows, TRIAL_FIELDS)
     write_csv(args.out / "survival.csv", survival_rows(trial_rows), SURVIVAL_FIELDS)
     return 0
