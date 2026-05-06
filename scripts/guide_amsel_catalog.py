@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -33,11 +32,11 @@ CATALOG_COLUMNS = (
 )
 
 
-@dataclass(frozen=True)
 class ExitChannel:
-    channel_id: int
-    row_index: int
-    row: pd.Series
+    def __init__(self, channel_id: int, row_index: int, row: pd.Series) -> None:
+        self.channel_id = channel_id
+        self.row_index = row_index
+        self.row = row
 
 
 def load_connectivity(path: str | Path) -> Any:
