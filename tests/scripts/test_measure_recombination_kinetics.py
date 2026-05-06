@@ -1,4 +1,6 @@
+import configparser
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -149,11 +151,32 @@ def test_seed_schedule_is_paired_by_trial():
 def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     script = _load_script()
     out = tmp_path / "out"
+    template = tmp_path / "input.in"
+    template.write_text(
+        "[Control]\n"
+        "initial_config = ./old.xyz\n"
+        "n_steps = 1\n"
+        "[pARTn]\n"
+        "path_artnso = ./old.so\n"
+        "zseed = 0\n"
+        "[BASIN]\n"
+        "energy_thr = 0.5\n"
+    )
 
     code = script.main(
         [
             "--case",
             "ni-vac-sia",
+            "--template-input",
+            str(template),
+            "--initial-config",
+            str(tmp_path / "initial_config.xyz"),
+            "--reference-table",
+            str(tmp_path / "reference_table.pickle"),
+            "--visited-environments",
+            str(tmp_path / "visited_environments.pickle"),
+            "--partn-path",
+            str(tmp_path / "libartn-lmp.so"),
             "--priority",
             "legacy",
             "--priority",
@@ -175,3 +198,30 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert code == 0
     assert (out / "manifest.json").exists()
     assert (out / "commands.json").exists()
+    assert (out / "trials.csv").read_text().splitlines()[0] == ",".join(
+        script.TRIAL_FIELDS
+    )
+    assert (out / "survival.csv").read_text().splitlines()[0] == ",".join(
+        script.SURVIVAL_FIELDS
+    )
+    assert (out / "events.jsonl").exists()
+
+    commands = json.loads((out / "commands.json").read_text())
+    assert len(commands) == 4
+    assert commands[0]["priority"] == "legacy"
+    assert commands[1]["priority"] == "amsel"
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(out / "amsel" / "trial-0" / "input.in")
+    assert config["Control"]["initial_config"] == str(tmp_path / "initial_config.xyz")
+    assert config["Control"]["reference_table"] == str(
+        tmp_path / "reference_table.pickle"
+    )
+    assert config["Control"]["visited_environments"] == str(
+        tmp_path / "visited_environments.pickle"
+    )
+    assert config["Control"]["n_steps"] == "5"
+    assert config["pARTn"]["path_artnso"] == str(tmp_path / "libartn-lmp.so")
+    assert config["pARTn"]["zseed"] == "10"
+    assert config["BASIN"]["exploration_priority"] == "amsel"
