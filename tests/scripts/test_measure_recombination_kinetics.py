@@ -208,6 +208,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             str(template),
             "--initial-config",
             str(tmp_path / "initial_config.xyz"),
+            "--allow-preloaded-catalog",
             "--reference-table",
             str(tmp_path / "reference_table.pickle"),
             "--visited-environments",
@@ -297,6 +298,88 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     legacy.read(out / "legacy" / "trial-0" / "input.in")
     assert legacy["BASIN"]["selector"] == "legacy-fpta"
     assert legacy["BASIN"]["exploration_priority"] == "legacy"
+
+
+def test_cli_rejects_preloaded_catalog_without_explicit_opt_in(tmp_path):
+    script = _load_script()
+    template = tmp_path / "input.in"
+    template.write_text("[Control]\n[pARTn]\n[Lammps]\n[BASIN]\n")
+
+    with pytest.raises(SystemExit) as exc:
+        script.main(
+            [
+                "--case",
+                "ni-vac-sia",
+                "--template-input",
+                str(template),
+                "--initial-config",
+                str(tmp_path / "initial_config.xyz"),
+                "--reference-table",
+                str(tmp_path / "reference_table.pickle"),
+                "--partn-path",
+                str(tmp_path / "libartn-lmp.so"),
+                "--priority",
+                "amsel",
+                "--trials",
+                "1",
+                "--seed",
+                "10",
+                "--max-steps",
+                "1",
+                "--dry-run",
+                "--out",
+                str(tmp_path / "out"),
+            ]
+        )
+
+    assert exc.value.code == 2
+
+
+def test_cli_default_inputs_do_not_preload_catalog(tmp_path):
+    script = _load_script()
+    out = tmp_path / "out"
+    template = tmp_path / "input.in"
+    template.write_text(
+        "[Control]\n"
+        "initial_config = ./old.xyz\n"
+        "[pARTn]\n"
+        "path_artnso = ./old.so\n"
+        "[Lammps]\n"
+        "pair_coeff = * * ./Cu.eam Cu\n"
+        "[BASIN]\n"
+    )
+    (tmp_path / "Cu.eam").write_text("potential")
+
+    code = script.main(
+        [
+            "--case",
+            "cu-vac-sia",
+            "--template-input",
+            str(template),
+            "--initial-config",
+            str(tmp_path / "initial_config.xyz"),
+            "--partn-path",
+            str(tmp_path / "libartn-lmp.so"),
+            "--priority",
+            "amsel",
+            "--trials",
+            "1",
+            "--seed",
+            "10",
+            "--max-steps",
+            "1",
+            "--dry-run",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(out / "amsel" / "trial-0" / "input.in")
+    assert "reference_table" not in config["Control"]
+    assert "visited_environments" not in config["Control"]
 
 
 def test_render_trial_input_can_request_diverse_amsel_exploration(tmp_path):
