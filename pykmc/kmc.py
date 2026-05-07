@@ -680,11 +680,15 @@ class KMC:
         )
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
+        first_round = True
 
         while search_environments:
-            repeated_environments = set(search_environments).difference(
-                set(new_environments)
-            )
+            if first_round:
+                repeated_environments = set(search_environments).difference(
+                    set(new_environments)
+                )
+            else:
+                repeated_environments = set(search_environments)
             if repeated_environments:
                 self.loggers.info(
                     "log",
@@ -742,6 +746,7 @@ class KMC:
                 visited_environments=self.visited_environments,
                 environment_search_evidence=self.environment_search_evidence,
             )
+            first_round = False
         return all_event_search_results, all_valid_event_results
 
     def central_atoms_research(
