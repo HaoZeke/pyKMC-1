@@ -228,6 +228,12 @@ def test_kmc_reference_search_repeats_current_environment_until_process_covered(
     assert len(search_results) == 2
     assert len(valid_results) == 2
     assert any("Resampling 1 undercovered atomic environments" in message for message in log_messages)
+    assert any(
+        "attempts=2; observations=2; unique_processes=1; "
+        "singleton_processes=0; missing_process_mass=0.000000e+00" in message
+        and "needs_more_search=False" in message
+        for message in log_messages
+    )
     assert kmc.environment_search_evidence["env-a"].process_counts == Counter(
         {process_key: 2}
     )
