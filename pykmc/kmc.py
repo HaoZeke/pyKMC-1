@@ -729,8 +729,12 @@ class KMC:
                     results_is_valid_events,
                 ),
             )
+            cumulative_event_search_evidence = {
+                environment: self.environment_search_evidence[environment]
+                for environment in event_search_evidence_update
+            }
             for line in environment_search_evidence_trace_lines(
-                event_search_evidence_update
+                cumulative_event_search_evidence
             ):
                 self.loggers.info("log", line)
             self.loggers.info(
