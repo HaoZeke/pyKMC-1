@@ -164,7 +164,10 @@ def test_kmc_reference_search_repeats_current_environment_until_process_covered(
     kmc.visited_environments = set()
     kmc.environment_search_evidence = {}
     kmc.reference_table = SimpleNamespace(table=[object()])
-    kmc.loggers = SimpleNamespace(info=lambda *_args: None)
+    log_messages = []
+    kmc.loggers = SimpleNamespace(
+        info=lambda _name, message: log_messages.append(message)
+    )
     kmc._close = lambda: None
     batches = []
     process_key = (7, "env-a", "env-b")
@@ -224,6 +227,7 @@ def test_kmc_reference_search_repeats_current_environment_until_process_covered(
     assert len(batches) == 2
     assert len(search_results) == 2
     assert len(valid_results) == 2
+    assert any("Resampling 1 undercovered atomic environments" in message for message in log_messages)
     assert kmc.environment_search_evidence["env-a"].process_counts == Counter(
         {process_key: 2}
     )
