@@ -430,73 +430,12 @@ class KMC:
 
             # == Find Current atomic environments that has not been visited ==
             new_environments = self.get_new_environments()
-            search_environments = undercovered_environments_for_search(
-                current_environments=self.atomic_environment.atomic_environment_list,
-                new_environments=new_environments,
-                visited_environments=self.visited_environments,
-                environment_search_evidence=self.environment_search_evidence,
-            )
-            repeated_environments = set(search_environments).difference(
-                set(new_environments)
-            )
-            if repeated_environments:
-                self.loggers.info(
-                    "log",
-                    "\t :=> Resampling {} undercovered atomic environments".format(
-                        len(repeated_environments)
-                    ),
+            event_search_results, results_is_valid_events = (
+                self.search_reference_events_until_covered(
+                    new_environments,
+                    nsearch,
                 )
-
-            # == FIND NEW GENERIC EVENTS ==
-            ##=>List of atoms(central) on which we gonna perfom an event search
-            central_atom_research_list = self.central_atoms_research(
-                search_environments, nsearch
             )
-
-            ##=>Perform event search on each atom in central_atom_research_list
-            event_search = self.execute_event_searches(central_atom_research_list)
-
-            # == ADD NEW GENERIC EVENTS TO REFERENCE EVENT TABLE ==
-            ##=>Check if the event is valid, ie if not already present and has a valid energy barrier if yes add it to the reference table
-            event_search_outputs = event_search.get_successes_results()
-            results_is_valid_events = self.add_reference_events(
-                event_search_outputs
-            )
-
-            ##=>Close simulation if no events in the reference table
-            if len(self.reference_table.table) == 0:
-                self.loggers.error(
-                    "log",
-                    "No events have been found, empty reference events table. \n \tTry to increase nsearch or saddle point search algorithm's parameters. \n \tClosing the simulation.",
-                )
-                self._close()
-
-
-            # == Update variables ==
-            searched_environments = environments_with_cataloged_searches(
-                self.atomic_environment.atomic_environment_list,
-                event_search_outputs,
-                results_is_valid_events,
-            )
-            merge_environment_search_evidence(
-                self.environment_search_evidence,
-                event_search_evidence_update := event_search_process_evidence(
-                    self.atomic_environment.atomic_environment_list,
-                    event_search_outputs,
-                    results_is_valid_events,
-                ),
-            )
-            for line in environment_search_evidence_trace_lines(
-                event_search_evidence_update
-            ):
-                self.loggers.info("log", line)
-            self.loggers.info(
-                "log",
-                "\t :=> Marking {} atomic environments as searched".format(
-                    len(searched_environments.difference(self.visited_environments))
-                ),
-            )
-            self.visited_environments.update(searched_environments)
             # == Refinement ==
             ##=>Subset of reference_event_table with generic event that can be apply to the current step (ie event_id in atomic environment)
             subset_reference_event_table = self.reference_table.has_id_subset_table(
@@ -640,7 +579,7 @@ class KMC:
                 new_environments
             )
             reference_event_searches_info = self.get_info_reference_event_searches(
-                event_search.results
+                event_search_results
             )
             is_valid_events_info = self.get_info_is_valid_reference_events(
                 results_is_valid_events
@@ -723,6 +662,87 @@ class KMC:
             "\t :=> {} new atomic environments found".format(len(new_environments)),
         )
         return new_environments
+
+    def search_reference_events_until_covered(
+        self,
+        new_environments: list[str | bytes],
+        nsearch: int,
+    ) -> tuple[
+        list[Result[EventSearchOutput, ErrorInfo]],
+        list[Result[pd.DataFrame, ErrorInfo]],
+    ]:
+        """Search reference events until AMSEL process evidence is covered."""
+        search_environments = undercovered_environments_for_search(
+            current_environments=self.atomic_environment.atomic_environment_list,
+            new_environments=new_environments,
+            visited_environments=self.visited_environments,
+            environment_search_evidence=self.environment_search_evidence,
+        )
+        all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
+        all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
+
+        while search_environments:
+            repeated_environments = set(search_environments).difference(
+                set(new_environments)
+            )
+            if repeated_environments:
+                self.loggers.info(
+                    "log",
+                    "\t :=> Resampling {} undercovered atomic environments".format(
+                        len(repeated_environments)
+                    ),
+                )
+
+            central_atom_research_list = self.central_atoms_research(
+                search_environments, nsearch
+            )
+            event_search = self.execute_event_searches(central_atom_research_list)
+            all_event_search_results.extend(event_search.results)
+
+            event_search_outputs = event_search.get_successes_results()
+            results_is_valid_events = self.add_reference_events(
+                event_search_outputs
+            )
+            all_valid_event_results.extend(results_is_valid_events)
+
+            if len(self.reference_table.table) == 0:
+                self.loggers.error(
+                    "log",
+                    "No events have been found, empty reference events table. \n \tTry to increase nsearch or saddle point search algorithm's parameters. \n \tClosing the simulation.",
+                )
+                self._close()
+
+            searched_environments = environments_with_cataloged_searches(
+                self.atomic_environment.atomic_environment_list,
+                event_search_outputs,
+                results_is_valid_events,
+            )
+            merge_environment_search_evidence(
+                self.environment_search_evidence,
+                event_search_evidence_update := event_search_process_evidence(
+                    self.atomic_environment.atomic_environment_list,
+                    event_search_outputs,
+                    results_is_valid_events,
+                ),
+            )
+            for line in environment_search_evidence_trace_lines(
+                event_search_evidence_update
+            ):
+                self.loggers.info("log", line)
+            self.loggers.info(
+                "log",
+                "\t :=> Marking {} atomic environments as searched".format(
+                    len(searched_environments.difference(self.visited_environments))
+                ),
+            )
+            self.visited_environments.update(searched_environments)
+            search_environments = undercovered_environments_for_search(
+                current_environments=self.atomic_environment.atomic_environment_list,
+                new_environments=[],
+                visited_environments=self.visited_environments,
+                environment_search_evidence=self.environment_search_evidence,
+            )
+        return all_event_search_results, all_valid_event_results
 
     def central_atoms_research(
         self, new_environments: list[str | bytes], nsearch: int
