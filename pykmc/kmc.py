@@ -44,6 +44,7 @@ from .log import Colors
 import time
 from .utils import push_towards, compute_delr
 import copy
+import math
 from .basins.detection import DetectorThreshold
 from .basins import BasinsGenericEvents
 
@@ -197,19 +198,99 @@ def merge_environment_search_evidence(
         target_evidence.process_rates.update(evidence.process_rates)
 
 
+def environment_search_evidence_trace_lines(
+    evidence_by_environment: dict[str | bytes, EnvironmentSearchEvidence],
+) -> list[str]:
+    """Return log lines summarizing AMSEL process-coverage evidence."""
+    lines = []
+    for environment, evidence in sorted(
+        evidence_by_environment.items(),
+        key=lambda item: _environment_label(item[0]),
+    ):
+        if not evidence.process_counts:
+            continue
+        certificate = _process_search_certificate(evidence)
+        lines.append(
+            (
+                "\t :=> AMSEL process coverage env={}; "
+                "attempts={}; observations={}; unique_processes={}; "
+                "singleton_processes={}; missing_process_mass={:.6e}; "
+                "missing_rate_mass={:.6e}; needs_more_search={}"
+            ).format(
+                _environment_label(environment),
+                int(certificate["attempts"]),
+                int(certificate["observations"]),
+                int(certificate["unique_processes"]),
+                int(certificate["singleton_processes"]),
+                float(certificate["missing_process_mass"]),
+                float(certificate["missing_rate_mass"]),
+                bool(certificate["needs_more_search"]),
+            )
+        )
+    return lines
+
+
 def _needs_more_process_search(evidence: EnvironmentSearchEvidence) -> bool:
+    return bool(_process_search_certificate(evidence)["needs_more_search"])
+
+
+def _process_search_certificate(
+    evidence: EnvironmentSearchEvidence,
+) -> dict[str, object]:
     if not evidence.process_counts:
-        return False
+        return {
+            "attempts": int(evidence.attempts),
+            "observations": 0,
+            "unique_processes": 0,
+            "singleton_processes": 0,
+            "missing_process_mass": 1.0,
+            "missing_rate_mass": 0.0,
+            "needs_more_search": False,
+        }
     if _amsel is not None and hasattr(_amsel, "event_completeness"):
         certificate = _amsel.event_completeness(
             process_counts=dict(evidence.process_counts),
             process_rates=evidence.process_rates,
             attempts=evidence.attempts,
         )
-        return bool(certificate.needs_more_search)
+        return {
+            "attempts": int(certificate.attempts),
+            "observations": int(certificate.observations),
+            "unique_processes": int(certificate.unique_processes),
+            "singleton_processes": int(certificate.singleton_processes),
+            "missing_process_mass": float(certificate.unseen_process_probability),
+            "missing_rate_mass": float(certificate.missing_rate_mass_estimate),
+            "needs_more_search": bool(certificate.needs_more_search),
+        }
     observations = sum(evidence.process_counts.values())
     singleton_count = sum(1 for count in evidence.process_counts.values() if count == 1)
-    return observations > 0 and (float(singleton_count) / float(observations)) > 0.05
+    missing_process_mass = (
+        float(singleton_count) / float(observations) if observations > 0 else 1.0
+    )
+    known_rate_mass = sum(evidence.process_rates.values())
+    if known_rate_mass <= 0.0:
+        missing_rate_mass = 0.0
+    elif missing_process_mass >= 1.0:
+        missing_rate_mass = math.inf
+    else:
+        missing_rate_mass = (
+            known_rate_mass * missing_process_mass / (1.0 - missing_process_mass)
+        )
+    return {
+        "attempts": int(evidence.attempts),
+        "observations": int(observations),
+        "unique_processes": len(evidence.process_counts),
+        "singleton_processes": int(singleton_count),
+        "missing_process_mass": float(missing_process_mass),
+        "missing_rate_mass": float(missing_rate_mass),
+        "needs_more_search": missing_process_mass > 0.05,
+    }
+
+
+def _environment_label(environment) -> str:
+    if isinstance(environment, bytes):
+        return environment.hex()[:16]
+    return str(environment)
 
 
 def _process_keys_from_valid_result(valid_result):
@@ -399,12 +480,16 @@ class KMC:
             )
             merge_environment_search_evidence(
                 self.environment_search_evidence,
-                event_search_process_evidence(
+                event_search_evidence_update := event_search_process_evidence(
                     self.atomic_environment.atomic_environment_list,
                     event_search_outputs,
                     results_is_valid_events,
                 ),
             )
+            for line in environment_search_evidence_trace_lines(
+                event_search_evidence_update
+            ):
+                self.loggers.info("log", line)
             self.loggers.info(
                 "log",
                 "\t :=> Marking {} atomic environments as searched".format(
