@@ -9,6 +9,7 @@ from pykmc.kmc import (
     EnvironmentSearchEvidence,
     KMC,
     basin_exploration_trace_line,
+    environment_search_evidence_trace_lines,
     environments_with_cataloged_searches,
     event_search_process_evidence,
     undercovered_environments_for_search,
@@ -153,6 +154,23 @@ def test_undercovered_environments_for_search_skips_duplicate_saturated_environm
         visited_environments={"crystal", "env-a"},
         environment_search_evidence={"env-a": evidence},
     ) == []
+
+
+def test_environment_search_evidence_trace_lines_report_missing_process_mass():
+    evidence = {
+        b"\x01\x02long-environment-signature": EnvironmentSearchEvidence(
+            attempts=1,
+            process_counts=Counter({("process-0",): 1}),
+            process_rates={("process-0",): 4.0},
+        )
+    }
+
+    assert environment_search_evidence_trace_lines(evidence) == [
+        "\t :=> AMSEL process coverage env=01026c6f6e672d65; "
+        "attempts=1; observations=1; unique_processes=1; "
+        "singleton_processes=1; missing_process_mass=1.000000e+00; "
+        "missing_rate_mass=inf; needs_more_search=True"
+    ]
 
 
 def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
