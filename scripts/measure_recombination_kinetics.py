@@ -898,6 +898,7 @@ def write_trial_input(
     amsel_exploration_priority: str,
     amsel_duplicate_family_penalty: float,
     amsel_min_guidance: float,
+    disable_coverage_resampling: bool = False,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
