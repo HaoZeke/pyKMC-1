@@ -1035,6 +1035,119 @@ class TestBasin :
         assert result.ok_value().t_exit == 2.0
         assert result.ok_value().num_reference_event == 3
 
+    def test_execute_constrains_selector_to_refined_absorbing_exits(
+        self, monkeypatch
+    ):
+        class FakeManager:
+            def __init__(self):
+                self.mode = "global"
+
+            def use_local(self):
+                self.mode = "local"
+
+            def use_global(self):
+                self.mode = "global"
+
+        class FakeNeighbors:
+            def get_neighbors(self, *_args):
+                return np.array([0])
+
+        class FakeState:
+            def __init__(self):
+                self.system = SimpleNamespace(positions=np.array([[0.0, 0.0, 0.0]]))
+                self.neighbors_list = FakeNeighbors()
+
+            def ensure_full_state(self, config):
+                return None
+
+        seen = {"selection_table": None}
+
+        class RecordingSelector:
+            def select_from_connectivity(self, connectivity_table):
+                seen["selection_table"] = connectivity_table.df.copy()
+                absorbing = connectivity_table.df.loc[
+                    ~connectivity_table.df["transient"].astype(bool),
+                    "state_connexion",
+                ].astype(int).tolist()
+                return Ok(
+                    BasinSelectorOutput(
+                        t_exit=1.0,
+                        exit_state=int(absorbing[0]),
+                    )
+                )
+
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": connexion,
+                    "event_connexion": connexion,
+                    "central_atom": 10,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                }
+                for connexion in (1, 2, 3, 4, 5)
+            ]
+        )
+
+        def fake_initialize(self, system):
+            self.states = {0: FakeState()}
+            self.connectivity_table = table
+            self.selector = RecordingSelector()
+            self.selector_fallback = None
+            self.absorbing_saddle_positions = {
+                1: np.array([[0.0, 0.0, 0.0]]),
+                2: np.array([[0.0, 0.0, 0.0]]),
+            }
+
+        monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "construct_connexion_table",
+            lambda self, max_expansions=None, max_closed_states=None: Ok(None),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "refine_absorbing",
+            lambda self, system: Ok(None),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "system_from_state",
+            lambda self, *args: Ok(
+                SimpleNamespace(positions=np.array([[1.0, 0.0, 0.0]]))
+            ),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "_add_state",
+            lambda self, state_index, system, transient=True: self.states.update(
+                {state_index: SimpleNamespace(system=system, transient=transient)}
+            ),
+        )
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(basin=SimpleNamespace())
+        basin.manager = FakeManager()
+
+        result = basin.execute(system=object())
+
+        assert result.is_ok(), result.err_value() if not result.is_ok() else None
+        assert result.ok_value().exit_state in {1, 2}
+        recorded_absorbing = sorted(
+            int(value)
+            for value in seen["selection_table"].loc[
+                ~seen["selection_table"]["transient"].astype(bool),
+                "state_connexion",
+            ]
+        )
+        assert recorded_absorbing == [1, 2]
+
     def test_execute_uses_configured_basin_exploration_budgets(self, monkeypatch):
         calls = {}
 
