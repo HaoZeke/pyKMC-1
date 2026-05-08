@@ -1,10 +1,11 @@
-[Control] 
-initial_config = ./initial_config.xyz 
-n_steps = 100
+[Control]
+initial_config = ./initial_config.xyz
+n_steps = 1000
 engine = lammps
 verbosity = 2
 n_sessions = 7
 engine_use_rank_0 = False
+basin = True
 
 [Lammps] 
 pair_style = eam/alloy 
@@ -39,3 +40,12 @@ matching_score_thr = 0.4
 kmax_factor = 2.0
 
 [BASIN]
+energy_thr = 0.5
+selector = amsel-adaptive
+exploration_priority = amsel-diverse
+exploration_duplicate_family_penalty = 0.1
+exploration_min_guidance = 1e-12
+max_expansions = 16
+max_closed_states = 100
+max_absorbing_refinements = 4
+frontier_committor_tol = 0.1
