@@ -255,18 +255,45 @@ class BasinsGenericEvents() :
         return None
 
     def _select_from_connectivity(self):
-        result = self.selector.select_from_connectivity(self.connectivity_table)
+        selection_table = self._connectivity_for_selection()
+        result = self.selector.select_from_connectivity(selection_table)
         if result.is_ok():
             return result
         selector_fallback = getattr(self, "selector_fallback", None)
         if selector_fallback is None:
             return result
         fallback_result = selector_fallback.select_from_connectivity(
-            self.connectivity_table
+            selection_table
         )
         if fallback_result.is_ok():
             return fallback_result
         return fallback_result
+
+    def _connectivity_for_selection(self) -> "BasinStatesConnectivity":
+        """Return a connectivity view restricted to refined absorbing exits.
+
+        Transient rows are kept verbatim. Absorbing rows are kept only when
+        the destination state has a refined saddle position
+        (``absorbing_saddle_positions``). Bounded ``max_absorbing_refinements``
+        therefore narrows the selector's choice rather than letting it pick
+        an unrefined exit and trip the BASIN_TEXIT_NOT_FOUND guard at the
+        end of ``execute``.
+        """
+        from .connectivity import BasinStatesConnectivity
+
+        df = self.connectivity_table.df
+        if df.empty:
+            view = BasinStatesConnectivity()
+            view.df = df.copy()
+            return view
+        refined_states = set(self.absorbing_saddle_positions.keys())
+        transient_mask = df["transient"].astype(bool)
+        refined_mask = (~transient_mask) & df["state_connexion"].astype(int).isin(
+            refined_states
+        )
+        view = BasinStatesConnectivity()
+        view.df = df.loc[transient_mask | refined_mask].reset_index(drop=True)
+        return view
 
     def construct_connexion_table(
         self,
