@@ -171,19 +171,18 @@ class BasinsGenericEvents() :
         #Construct output KMC needs 
         t_exit = result.ok_value().t_exit
         exit_state = result.ok_value().exit_state
-        if exit_state not in self.absorbing_saddle_positions:
-            return Err(
-                ErrorInfo(
-                    type=ErrorType.BASIN_TEXIT_NOT_FOUND,
-                    message="selected basin exit was not refined",
-                    variables={
-                        "exit_state": int(exit_state),
-                        "absorbing_refinement": self.absorbing_refinement_diagnostics,
-                    },
-                )
-            )
-
         from_state, event_idx, central_atom, sym_idx, is_transient = self.connectivity_table.get_transition_to_state(target_state=exit_state)
+        if exit_state not in self.absorbing_saddle_positions:
+            self.manager.use_global()
+            saddle_result = self._ensure_catalog_saddle_for_exit(
+                exit_state=int(exit_state),
+                from_state=int(from_state),
+                event_idx=int(event_idx),
+                central_atom=int(central_atom),
+                sym_idx=int(sym_idx),
+            )
+            if not saddle_result.is_ok():
+                return saddle_result
         if exit_state not in self.states:
             self.manager.use_global()
             result_state = self.system_from_state(
@@ -255,45 +254,91 @@ class BasinsGenericEvents() :
         return None
 
     def _select_from_connectivity(self):
-        selection_table = self._connectivity_for_selection()
-        result = self.selector.select_from_connectivity(selection_table)
+        result = self.selector.select_from_connectivity(self.connectivity_table)
         if result.is_ok():
             return result
         selector_fallback = getattr(self, "selector_fallback", None)
         if selector_fallback is None:
             return result
         fallback_result = selector_fallback.select_from_connectivity(
-            selection_table
+            self.connectivity_table
         )
         if fallback_result.is_ok():
             return fallback_result
         return fallback_result
 
-    def _connectivity_for_selection(self) -> "BasinStatesConnectivity":
-        """Return a connectivity view restricted to refined absorbing exits.
+    def _ensure_catalog_saddle_for_exit(
+        self,
+        exit_state: int,
+        from_state: int,
+        event_idx: int,
+        central_atom: int,
+        sym_idx: int,
+    ):
+        """Populate absorbing_saddle_positions[exit_state] from catalog data.
 
-        Transient rows are kept verbatim. Absorbing rows are kept only when
-        the destination state has a refined saddle position
-        (``absorbing_saddle_positions``). Bounded ``max_absorbing_refinements``
-        therefore narrows the selector's choice rather than letting it pick
-        an unrefined exit and trip the BASIN_TEXIT_NOT_FOUND guard at the
-        end of ``execute``.
+        Used when the basin selector picks an absorbing exit that
+        ``refine_absorbing`` did not refine (bounded
+        ``max_absorbing_refinements``). The catalog reference event already
+        carries a saddle geometry; we apply the same PSR + symmetry chain as
+        ``system_from_state`` and store the per-neighbor saddle so the basin
+        output is well defined even without a LAMMPS refinement on that
+        channel.
         """
-        from .connectivity import BasinStatesConnectivity
-
-        df = self.connectivity_table.df
-        if df.empty:
-            view = BasinStatesConnectivity()
-            view.df = df.copy()
-            return view
-        refined_states = set(self.absorbing_saddle_positions.keys())
-        transient_mask = df["transient"].astype(bool)
-        refined_mask = (~transient_mask) & df["state_connexion"].astype(int).isin(
-            refined_states
+        if exit_state in self.absorbing_saddle_positions:
+            return Ok(None)
+        ref_event = self.reference_table.table[
+            self.reference_table.table["idx_ref"] == event_idx
+        ]
+        if ref_event.empty:
+            return Err(
+                ErrorInfo(
+                    type=ErrorType.BASIN_TEXIT_NOT_FOUND,
+                    message=(
+                        "catalog ref_event not found for unrefined basin exit "
+                        f"event_idx={int(event_idx)}"
+                    ),
+                    variables={
+                        "exit_state": int(exit_state),
+                        "event_idx": int(event_idx),
+                    },
+                )
+            )
+        ref_event = ref_event.iloc[0].copy()
+        saddle_positions = np.array(ref_event["saddle_positions"], copy=True)
+        self.states[from_state].ensure_full_state(self.config)
+        psr_result = PointSetRegistration(
+            self.config,
+            self.states[from_state].system,
+            ref_event,
+            self.states[from_state].neighbors_list,
+            central_atom,
+        ).match()
+        if not psr_result.is_ok():
+            return psr_result
+        psr_result = check_match(psr_result, self.config.psr.matching_score_thr)
+        if not psr_result.is_ok():
+            return psr_result
+        psr_output = psr_result.ok_value()
+        if sym_idx != 0:
+            sym_matrices = ref_event["sym_matrix"]
+            saddle_positions = geometry.transform_positions(
+                saddle_positions,
+                sym_matrices[sym_idx],
+                0,
+                ref_event["sym_perm"][sym_idx],
+            )
+        saddle_positions = geometry.transform_positions(
+            saddle_positions,
+            psr_output.rotation_matrix,
+            psr_output.translation_matrix,
+            psr_output.permutation_matrix,
         )
-        view = BasinStatesConnectivity()
-        view.df = df.loc[transient_mask | refined_mask].reset_index(drop=True)
-        return view
+        neighbors = self.states[from_state].neighbors_list.get_neighbors(
+            "rcut", central_atom
+        )
+        self.absorbing_saddle_positions[int(exit_state)] = saddle_positions[neighbors]
+        return Ok(None)
 
     def construct_connexion_table(
         self,

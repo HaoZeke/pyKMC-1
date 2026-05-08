@@ -1035,7 +1035,7 @@ class TestBasin :
         assert result.ok_value().t_exit == 2.0
         assert result.ok_value().num_reference_event == 3
 
-    def test_execute_constrains_selector_to_refined_absorbing_exits(
+    def test_execute_supplies_catalog_saddle_for_unrefined_exit(
         self, monkeypatch
     ):
         class FakeManager:
@@ -1060,21 +1060,9 @@ class TestBasin :
             def ensure_full_state(self, config):
                 return None
 
-        seen = {"selection_table": None}
-
-        class RecordingSelector:
+        class FakeSelector:
             def select_from_connectivity(self, connectivity_table):
-                seen["selection_table"] = connectivity_table.df.copy()
-                absorbing = connectivity_table.df.loc[
-                    ~connectivity_table.df["transient"].astype(bool),
-                    "state_connexion",
-                ].astype(int).tolist()
-                return Ok(
-                    BasinSelectorOutput(
-                        t_exit=1.0,
-                        exit_state=int(absorbing[0]),
-                    )
-                )
+                return Ok(BasinSelectorOutput(t_exit=1.0, exit_state=5))
 
         table = BasinStatesConnectivity()
         table.df = pd.DataFrame(
@@ -1095,15 +1083,25 @@ class TestBasin :
             ]
         )
 
+        catalog_saddle = np.array([[0.5, 0.0, 0.0]])
+        ensure_calls = {"count": 0}
+
         def fake_initialize(self, system):
             self.states = {0: FakeState()}
             self.connectivity_table = table
-            self.selector = RecordingSelector()
+            self.selector = FakeSelector()
             self.selector_fallback = None
+            # Refinement budget covered only state 1 and state 2.
             self.absorbing_saddle_positions = {
                 1: np.array([[0.0, 0.0, 0.0]]),
                 2: np.array([[0.0, 0.0, 0.0]]),
             }
+
+        def fake_ensure(self, exit_state, from_state, event_idx, central_atom, sym_idx):
+            ensure_calls["count"] += 1
+            ensure_calls["exit_state"] = int(exit_state)
+            self.absorbing_saddle_positions[int(exit_state)] = catalog_saddle
+            return Ok(None)
 
         monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
         monkeypatch.setattr(
@@ -1115,6 +1113,11 @@ class TestBasin :
             BasinsGenericEvents,
             "refine_absorbing",
             lambda self, system: Ok(None),
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "_ensure_catalog_saddle_for_exit",
+            fake_ensure,
         )
         monkeypatch.setattr(
             BasinsGenericEvents,
@@ -1138,15 +1141,12 @@ class TestBasin :
         result = basin.execute(system=object())
 
         assert result.is_ok(), result.err_value() if not result.is_ok() else None
-        assert result.ok_value().exit_state in {1, 2}
-        recorded_absorbing = sorted(
-            int(value)
-            for value in seen["selection_table"].loc[
-                ~seen["selection_table"]["transient"].astype(bool),
-                "state_connexion",
-            ]
+        assert result.ok_value().exit_state == 5
+        assert ensure_calls == {"count": 1, "exit_state": 5}
+        np.testing.assert_array_equal(
+            result.ok_value().saddle_positions,
+            catalog_saddle,
         )
-        assert recorded_absorbing == [1, 2]
 
     def test_execute_uses_configured_basin_exploration_budgets(self, monkeypatch):
         calls = {}
