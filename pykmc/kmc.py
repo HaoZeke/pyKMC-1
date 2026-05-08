@@ -159,8 +159,15 @@ def undercovered_environments_for_search(
     new_environments,
     visited_environments,
     environment_search_evidence,
+    disable_coverage_resampling: bool = False,
 ) -> list[str | bytes]:
-    """Return current environment IDs that should receive event-search work."""
+    """Return current environment IDs that should receive event-search work.
+
+    When ``disable_coverage_resampling`` is True, only the ``new_environments``
+    intersection survives -- the AMSEL coverage-driven resampling pass over
+    visited environments is skipped. Used by benchmark sweeps that need
+    a deterministic per-step search budget.
+    """
     current_environment_set = set(current_environments)
     searchable = []
     seen = set()
@@ -169,6 +176,9 @@ def undercovered_environments_for_search(
             continue
         searchable.append(environment)
         seen.add(environment)
+
+    if disable_coverage_resampling:
+        return searchable
 
     for environment in sorted(
         current_environment_set.intersection(visited_environments),
@@ -677,6 +687,9 @@ class KMC:
             new_environments=new_environments,
             visited_environments=self.visited_environments,
             environment_search_evidence=self.environment_search_evidence,
+            disable_coverage_resampling=bool(
+                getattr(self.config.control, "disable_coverage_resampling", False)
+            ),
         )
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []

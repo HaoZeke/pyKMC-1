@@ -105,6 +105,15 @@ class ControlConfig(BaseModel):
         description="Incorporate AV's into simulations, recommended for large systems"
     )
 
+    disable_coverage_resampling: Optional[bool] = Field(
+        default=False,
+        description=(
+            "Skip the AMSEL process-coverage resampling pass at every KMC "
+            "step. Useful for benchmark sweeps where the per-step "
+            "wall time should not include adaptive event-search re-runs."
+        ),
+    )
+
 class AtomicEnvironmentConfig(BaseModel):
     """Atomic environments parameters."""
 

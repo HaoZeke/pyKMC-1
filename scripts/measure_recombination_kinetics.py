@@ -724,6 +724,7 @@ def trial_commands(
     amsel_exploration_priority: str,
     amsel_duplicate_family_penalty: float = 1.0,
     amsel_min_guidance: float = 0.0,
+    disable_coverage_resampling: bool = False,
     mpi_ranks: int,
     mpirun: str,
     python: str,
@@ -754,6 +755,7 @@ def trial_commands(
             amsel_exploration_priority=amsel_exploration_priority,
             amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
             amsel_min_guidance=amsel_min_guidance,
+            disable_coverage_resampling=disable_coverage_resampling,
         )
         commands.append(
             {
@@ -812,6 +814,7 @@ def render_trial_input(
     amsel_exploration_priority: str,
     amsel_duplicate_family_penalty: float = 1.0,
     amsel_min_guidance: float = 0.0,
+    disable_coverage_resampling: bool = False,
 ) -> str:
     config = configparser.ConfigParser()
     config.optionxform = str
@@ -824,6 +827,8 @@ def render_trial_input(
     config[control]["n_steps"] = str(int(max_steps))
     config[control]["random_seed"] = str(int(seed))
     config[control]["basin"] = "True"
+    if disable_coverage_resampling:
+        config[control]["disable_coverage_resampling"] = "True"
     if refine_thr is not None:
         config[control]["refine_thr"] = str(float(refine_thr))
     if reference_table is not None:
@@ -917,6 +922,7 @@ def write_trial_input(
             amsel_exploration_priority=amsel_exploration_priority,
             amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
             amsel_min_guidance=amsel_min_guidance,
+            disable_coverage_resampling=disable_coverage_resampling,
         )
     )
 
@@ -1156,6 +1162,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--amsel-duplicate-family-penalty", type=float, default=1.0)
     parser.add_argument("--amsel-min-guidance", type=float, default=0.0)
+    parser.add_argument(
+        "--disable-coverage-resampling",
+        action="store_true",
+        help=(
+            "Skip the AMSEL process-coverage resampling pass at every KMC "
+            "step. Each trial input.in receives "
+            "[Control] disable_coverage_resampling=True so per-step wall "
+            "time is bounded for paired benchmark sweeps."
+        ),
+    )
     parser.add_argument("--work-budget")
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
@@ -1201,6 +1217,7 @@ def main(argv: list[str] | None = None) -> int:
         amsel_exploration_priority=args.amsel_exploration_priority,
         amsel_duplicate_family_penalty=args.amsel_duplicate_family_penalty,
         amsel_min_guidance=args.amsel_min_guidance,
+        disable_coverage_resampling=args.disable_coverage_resampling,
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
         python=args.python,
