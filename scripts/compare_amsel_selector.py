@@ -317,6 +317,15 @@ def rank1_clock_reference(
     }
 
 
+def _load_soap_clusters(path: Path | None) -> dict[str, object] | None:
+    if path is None:
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def selector_payload(
     *,
     table: StatesConnectivity,
@@ -324,6 +333,7 @@ def selector_payload(
     draws: list[float],
     entry: int = 0,
     source: str = "pickle",
+    soap_clusters: dict[str, object] | None = None,
 ) -> dict[str, object]:
     reports = [
         run_selector(
@@ -358,6 +368,21 @@ def selector_payload(
     df = table.get_table()
     states = set(df["state"]).union(set(df["state_connexion"])) if not df.empty else set()
     features = amsel_feature_report(table, entry=entry)
+    soap_summary: dict[str, object] | None = None
+    if soap_clusters is not None and isinstance(soap_clusters.get("clusters"), list):
+        cluster_by_proc: dict[int, str] = {}
+        for item in soap_clusters["clusters"]:
+            try:
+                cluster_by_proc[int(item["process_id"])] = str(item["cluster"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        soap_summary = {
+            "n_processes": int(soap_clusters.get("n_processes", len(cluster_by_proc))),
+            "n_clusters": int(soap_clusters.get("n_clusters", 0)),
+            "soap_dim": soap_clusters.get("soap_dim"),
+            "kmeans_inertia": soap_clusters.get("kmeans_inertia"),
+            "process_to_cluster": cluster_by_proc,
+        }
     return {
         "source": source,
         "draws": [float(value) for value in draws],
@@ -369,6 +394,7 @@ def selector_payload(
         "selectors": reports,
         "amsel_features": features,
         "clock_reference": rank1_clock_reference(features=features, draws=draws),
+        "soap_clusters": soap_summary,
     }
 
 
@@ -468,6 +494,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--draws", default="0.5,0.0")
     parser.add_argument("--entry", type=int, default=0)
     parser.add_argument(
+        "--soap-clusters",
+        type=Path,
+        default=None,
+        help=(
+            "Optional SOAP-cluster JSON produced by "
+            "amsel/scripts/bayes/soap_cluster_processes.py. When supplied, "
+            "the output payload includes a 'soap_clusters' summary with "
+            "process_id -> cluster id so the consolidated paper figure can "
+            "show selector wall time alongside SOAP cluster membership."
+        ),
+    )
+    parser.add_argument(
         "--live-basin",
         action="store_true",
         help="Build the Cu basin connectivity through the live LAMMPS/MPI manager.",
@@ -512,6 +550,7 @@ def main(argv: list[str] | None = None) -> int:
         case_name=args.case_name,
         draws=draws,
         entry=args.entry,
+        soap_clusters=_load_soap_clusters(args.soap_clusters),
     )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
