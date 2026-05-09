@@ -356,7 +356,13 @@ class BasinsGenericEvents() :
         neighbors = self.states[from_state].neighbors_list.get_neighbors(
             "rcut", central_atom
         )
-        self.absorbing_saddle_positions[int(exit_state)] = saddle_positions[neighbors]
+        # saddle_positions has shape (len(neighbors), 3) by the catalog
+        # ref event convention (the same shape system_from_state uses
+        # when calling update_positions with atom_idx=neighbors). Store
+        # it directly without re-indexing by global atom indices.
+        self.absorbing_saddle_positions[int(exit_state)] = np.asarray(
+            saddle_positions
+        ).copy()
         return Ok(None)
 
     def construct_connexion_table(
