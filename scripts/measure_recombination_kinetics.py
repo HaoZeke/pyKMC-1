@@ -857,6 +857,7 @@ def render_trial_input(
     amsel_duplicate_family_penalty: float = 1.0,
     amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
+    basin_search_registry_path: str | None = None,
 ) -> str:
     config = configparser.ConfigParser()
     config.optionxform = str
