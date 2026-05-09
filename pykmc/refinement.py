@@ -207,7 +207,13 @@ class Refinement:
                     # positions directly. The downstream re-slice in
                     # execute() is gated by the refined='F' flag so an
                     # already-neighbors-sliced array is not re-indexed.
-                    saddle_neighbors = new_positions_saddle[neighbors]
+                    # new_positions_saddle has shape (len(neighbors), 3) by
+                    # construction (it is the catalog reference event's
+                    # neighborhood after PSR + symmetry transform). Copy
+                    # it directly without re-indexing; the downstream
+                    # update_positions call uses the same neighbors-shape
+                    # convention.
+                    saddle_neighbors = np.asarray(new_positions_saddle).copy()
                     f = concurrent.futures.Future()
                     f.set_result(Ok(EventRefinementOutput(
                         central_atom_index=at_idx,
