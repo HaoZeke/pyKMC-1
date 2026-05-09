@@ -95,11 +95,15 @@ class Refinement:
 
             self.loggers.progress_bar("progress", total_refinements-len(future_context), total_refinements)
 
-            #update result 
-            if res.is_ok() : 
+            #update result
+            if res.is_ok() :
                 res.ok_value().min2_positions = ctx["min2_positions"]
                 res.ok_value().num_reference_event = ctx["num_reference_event"]
-                res.ok_value().saddle_positions = res.ok_value().saddle_positions[ctx["neighbors"]]
+                # Catalog-only fake futures (refined='F') already store
+                # the neighbors-only saddle slice; only re-index when the
+                # ARTn-refined path returned a full-system array.
+                if getattr(res.ok_value(), "refined", None) != 'F':
+                    res.ok_value().saddle_positions = res.ok_value().saddle_positions[ctx["neighbors"]]
                 #Now check if energy barrier consistent with generic one
                 #TODO partn should not return different things depending on AV or not. We get the total energy at the saddle point or dE, but not both.
                 #TODO and to be consistent, you should modify res.ok_value().E_saddle.
@@ -189,23 +193,35 @@ class Refinement:
                 new_positions_final = geometry.transform_positions(final_positions, output_psr.rotation_matrix, output_psr.translation_matrix, output_psr.permutation_matrix)
                 neighbors = self.neighbors_list.get_neighbors("rcut", at_idx).copy()
 
-                ###=> move the system to the saddle point
-                self.system.update_positions(new_positions=new_positions_saddle, atom_idx=neighbors)
-                if dfevent.at["energy_barrier"] > e_thr : #We dont refine, we use generic date 
-                    #create a fake future to store the result
+                if dfevent.at["energy_barrier"] > e_thr : #We dont refine, we use generic date
+                    #create a fake future to store the result.
+                    #
+                    # Performance: only the saddle positions of `neighbors`
+                    # are ever consumed downstream (see
+                    # _reconstruction_active_event in kmc.py which slices
+                    # saddle_positions[neighbors]). Skip the full-system
+                    # update + system.positions.copy(), which on Ni 4000at
+                    # +20 catalog events × ~tens of matching atoms × ~24
+                    # symmetries was allocating ~GB of throwaway arrays
+                    # per KMC step. Just store the neighbors-only saddle
+                    # positions directly. The downstream re-slice in
+                    # execute() is gated by the refined='F' flag so an
+                    # already-neighbors-sliced array is not re-indexed.
+                    saddle_neighbors = new_positions_saddle[neighbors]
                     f = concurrent.futures.Future()
-                    #TODO I don't like that we don't gibe the same information to E_saddle depending on AV or not
                     f.set_result(Ok(EventRefinementOutput(
                         central_atom_index=at_idx,
-                        saddle_positions=self.system.positions.copy(),
+                        saddle_positions=saddle_neighbors,
                         E_saddle=dfevent["energy_barrier"] if self.config.control.active_volume else total_energy + dfevent["energy_barrier"] ,
                         refined='F'
                     )))
 
                 else : #we refine
-                    #TODO : same here, we should send the same information to the partn_refine function 
+                    ###=> move the system to the saddle point (only for ARTn refinement)
+                    self.system.update_positions(new_positions=new_positions_saddle, atom_idx=neighbors)
+                    #TODO : same here, we should send the same information to the partn_refine function
                     #TODO : when AV, partn_refine needs the minimum positions to compute the initial energy with AV
-                    #TODO : but this is the third parameter here, and without AV, the third parameter is the saddle positions. 
+                    #TODO : but this is the third parameter here, and without AV, the third parameter is the saddle positions.
                     #TODO : and with AV, you only need to send saddle positions in the rcut, while without we send all saddle positions, this is just too confusing
                     if self.config.control.active_volume==True:
                         # add a job to manager queue
