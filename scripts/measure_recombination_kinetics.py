@@ -45,7 +45,10 @@ BASIN_TRACE_RE = re.compile(
     r"(?:; closed_guidance=(?P<closed_guidance>[0-9:.,eE+-]*))?"
 )
 KINETIC_GUARD_COMMITTOR_TOL = 1.0e-12
-KINETIC_GUARD_MISSING_MASS_TOL = 0.05  # AMSEL event_completeness missing_process_mass
+# The AMSEL event_completeness certificate exposes `needs_more_search` as its
+# authoritative gate (logical OR of confidence_gap > 0 and missing_mass_gap >
+# 0). The kinetic guard reads that field directly instead of duplicating the
+# tolerance here. Tune via pyKMC's [BASIN] amsel_completeness_* knobs.
 PROCESS_COVERAGE_RE = re.compile(
     r"AMSEL process coverage env=(?P<env>[^;]+); "
     r"attempts=(?P<attempts>\d+); "
@@ -380,10 +383,12 @@ def apply_kinetic_guard(
     if not guarded.get("recombined", False) and int(guarded.get("kmc_steps") or 0) == 0:
         guarded["kinetic_claim_ok"] = False
 
-    # AMSEL process-coverage certificate: when any visited environment still
-    # has missing_process_mass above tolerance OR needs_more_search=True at
-    # the last logged step, the basin's catalog is not complete enough for
-    # a kinetic claim. Tracks amsel-q83l.
+    # AMSEL process-coverage certificate. The authoritative gate is the
+    # certificate's `needs_more_search` field, which AMSEL computes as
+    # confidence_gap > 0 OR missing_mass_gap > 0 against the configured
+    # alpha / confidence_target / missing_mass_tolerance. We do not impose
+    # an additional pyKMC-side tolerance because that would silently
+    # override the certificate's user-configured policy. Tracks amsel-q83l.
     coverage_max_missing = 0.0
     coverage_needs_more = False
     coverage_envs_seen = 0
@@ -398,7 +403,7 @@ def apply_kinetic_guard(
         guarded["coverage_envs_observed"] = coverage_envs_seen
         guarded["coverage_max_missing_process_mass"] = coverage_max_missing
         guarded["coverage_needs_more_search"] = coverage_needs_more
-        if coverage_max_missing > KINETIC_GUARD_MISSING_MASS_TOL or coverage_needs_more:
+        if coverage_needs_more:
             guarded["kinetic_claim_ok"] = False
     return guarded
 
