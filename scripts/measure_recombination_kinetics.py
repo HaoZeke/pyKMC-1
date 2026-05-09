@@ -45,6 +45,17 @@ BASIN_TRACE_RE = re.compile(
     r"(?:; closed_guidance=(?P<closed_guidance>[0-9:.,eE+-]*))?"
 )
 KINETIC_GUARD_COMMITTOR_TOL = 1.0e-12
+KINETIC_GUARD_MISSING_MASS_TOL = 0.05  # AMSEL event_completeness missing_process_mass
+PROCESS_COVERAGE_RE = re.compile(
+    r"AMSEL process coverage env=(?P<env>[^;]+); "
+    r"attempts=(?P<attempts>\d+); "
+    r"observations=(?P<observations>\d+); "
+    r"unique_processes=(?P<unique>\d+); "
+    r"singleton_processes=(?P<singletons>\d+); "
+    r"missing_process_mass=(?P<missing_process>[0-9.eE+-]+); "
+    r"missing_rate_mass=(?P<missing_rate>[0-9.eE+-]+); "
+    r"needs_more_search=(?P<needs_more>True|False)"
+)
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 TRIAL_FIELDS = [
     "case",
@@ -67,6 +78,9 @@ TRIAL_FIELDS = [
     "failed_refinement_committor",
     "usable_resolved_committor",
     "kinetic_claim_ok",
+    "coverage_envs_observed",
+    "coverage_max_missing_process_mass",
+    "coverage_needs_more_search",
     "output_dir",
 ]
 SURVIVAL_FIELDS = ["selector", "time_s", "n_at_risk", "n_events", "survival"]
@@ -365,6 +379,27 @@ def apply_kinetic_guard(
         guarded["kinetic_claim_ok"] = False
     if not guarded.get("recombined", False) and int(guarded.get("kmc_steps") or 0) == 0:
         guarded["kinetic_claim_ok"] = False
+
+    # AMSEL process-coverage certificate: when any visited environment still
+    # has missing_process_mass above tolerance OR needs_more_search=True at
+    # the last logged step, the basin's catalog is not complete enough for
+    # a kinetic claim. Tracks amsel-q83l.
+    coverage_max_missing = 0.0
+    coverage_needs_more = False
+    coverage_envs_seen = 0
+    for match in PROCESS_COVERAGE_RE.finditer(log_text):
+        coverage_envs_seen += 1
+        coverage_max_missing = max(
+            coverage_max_missing, float(match.group("missing_process"))
+        )
+        if match.group("needs_more") == "True":
+            coverage_needs_more = True
+    if coverage_envs_seen > 0:
+        guarded["coverage_envs_observed"] = coverage_envs_seen
+        guarded["coverage_max_missing_process_mass"] = coverage_max_missing
+        guarded["coverage_needs_more_search"] = coverage_needs_more
+        if coverage_max_missing > KINETIC_GUARD_MISSING_MASS_TOL or coverage_needs_more:
+            guarded["kinetic_claim_ok"] = False
     return guarded
 
 
