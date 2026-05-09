@@ -114,6 +114,28 @@ class ControlConfig(BaseModel):
         ),
     )
 
+    basin_search_registry_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to a JSONL file backing the AMSEL BasinSearchRegistry. "
+            "When set, basin absorbing-refinement claims are recorded in "
+            "the registry; duplicates by mode signature are suppressed so "
+            "ARTn is not run twice on the same channel across trials. "
+            "Leave None to disable registry-based deduplication."
+        ),
+    )
+
+    basin_search_registry_similarity: Optional[float] = Field(
+        default=0.98,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Cosine-similarity threshold above which two basin saddle "
+            "search modes are treated as the same channel by the AMSEL "
+            "BasinSearchRegistry. Match the AMSEL default of 0.98."
+        ),
+    )
+
 class AtomicEnvironmentConfig(BaseModel):
     """Atomic environments parameters."""
 

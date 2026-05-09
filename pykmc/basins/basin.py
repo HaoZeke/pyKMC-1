@@ -4,6 +4,7 @@ from .connectivity import BasinStatesConnectivity
 from .selection import FPTASelector
 from .amsel_selection import AmselFPTASelector, _AMSEL_AVAILABLE
 from .amsel_guidance import amsel_rank_basin_frontier, amsel_state_guidance_scores
+from .amsel_search_registry import BasinSearchRegistryAdapter
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from pykmc import System, Config, NeighborsList, AtomicEnvironment, ReferenceEventTable, PointSetRegistration, check_match, Reconstruction
@@ -215,17 +216,19 @@ class BasinsGenericEvents() :
                               num_reference_event= event_idx))
         
 
-    def _initialize(self, system) -> None: 
-        """ 
+    def _initialize(self, system) -> None:
+        """
         Initialize necessary component after entering in basin. We always enter in state == 0.
         """
         self.current_state = 0
-        self.states_to_explore = [0] 
-        self.explored_states = [] 
+        self.states_to_explore = [0]
+        self.explored_states = []
         self.connectivity_table = BasinStatesConnectivity()
         self.explorer = BasinGenericEventExplorer(config=self.config, reference_table=self.reference_table)
         self.selector = self._make_selector()
         self.selector_fallback = self._make_selector_fallback()
+        self.basin_search_registry = self._make_basin_search_registry()
+        self.registry_suppressed_rows: list[dict[str, object]] = []
         self.exploration_order = []
         self.exploration_decisions = []
         self.absorbing_refinement_diagnostics = {}
@@ -252,6 +255,22 @@ class BasinsGenericEvents() :
         if selector == "auto" and _AMSEL_AVAILABLE:
             return FPTASelector()
         return None
+
+    def _make_basin_search_registry(self):
+        path = getattr(self.config.control, "basin_search_registry_path", None)
+        if path is None:
+            return None
+        threshold = float(
+            getattr(
+                self.config.control,
+                "basin_search_registry_similarity",
+                0.98,
+            )
+        )
+        return BasinSearchRegistryAdapter(
+            path=path,
+            similarity_threshold=threshold,
+        )
 
     def _select_from_connectivity(self):
         result = self.selector.select_from_connectivity(self.connectivity_table)
@@ -727,6 +746,31 @@ class BasinsGenericEvents() :
                 saddle_positions = geometry.transform_positions(saddle_positions, psr_output.rotation_matrix, psr_output.translation_matrix, psr_output.permutation_matrix)
                 neighbors = self.states[row["state"]].neighbors_list.get_neighbors('rcut', row["central_atom"])
 
+                # AMSEL BasinSearchRegistry deduplication: claim a search
+                # channel keyed by the mode (saddle - reactant). When the
+                # registry suppresses the claim because an equivalent mode
+                # was already searched (same trial or persisted across
+                # trials via the JSONL file), skip the ARTn call and let
+                # the catalog rate stand for this row -- the connectivity
+                # table's k_forward already carries the catalog value, so
+                # not overwriting it is the correct behaviour.
+                registry = getattr(self, "basin_search_registry", None)
+                claim = None
+                if registry is not None and registry.available:
+                    reactant_for_claim = self.states[row["state"]].system.positions[
+                        neighbors
+                    ].copy()
+                    claim = registry.claim_refinement(
+                        state=int(row["state"]),
+                        wuid=int(idx),
+                        saddle_positions=saddle_positions[neighbors],
+                        reactant_positions=reactant_for_claim,
+                        displacement_type="absorbing-refinement",
+                    )
+                if claim is not None and not claim.accepted:
+                    self._record_suppressed_refinement(int(idx), claim)
+                    self.states[row["state"]].release_heavy_objects()
+                    continue
                 if self.config.control.active_volume==True:
                     # add a job to manager queue
                     future2 = self.manager.partn_refine(self.config, row["central_atom"],
@@ -740,14 +784,15 @@ class BasinsGenericEvents() :
                     tmp_system.update_positions(saddle_positions, atom_idx = neighbors)
                     #refine
                     future2 = self.manager.partn_refine(self.config, row["central_atom"], tmp_system.positions.copy()) #send copy not reference !
-                
-                #save future in context : 
+
+                #save future in context :
                 futures_context[idx] = {
             "min": future1,
-            "saddle": future2, 
-            "neighbors": neighbors}
-                
-                #RELEASE MEMORY : 
+            "saddle": future2,
+            "neighbors": neighbors,
+            "registry_wuid": int(idx) if (claim is not None and claim.accepted) else None}
+
+                #RELEASE MEMORY :
                 self.states[row["state"]].release_heavy_objects()
 
         #modify connectivity table entry future1 hold min energy, future2 holds E_saddle
@@ -778,8 +823,25 @@ class BasinsGenericEvents() :
             # update connectivity table row
             self.connectivity_table.df.loc[idx, "dE_forward"] = dE
             self.connectivity_table.df.loc[idx, "k_forward"] = k
+            registry = getattr(self, "basin_search_registry", None)
+            wuid = ctx.get("registry_wuid")
+            if registry is not None and registry.available and wuid is not None:
+                registry.mark_completed(int(wuid), result="ok")
         self._refresh_absorbing_refinement_diagnostics()
         return Ok(None)
+
+    def _record_suppressed_refinement(self, idx: int, claim) -> None:
+        """Track BasinSearchRegistry suppressions for the diagnostics dump."""
+        if not hasattr(self, "registry_suppressed_rows"):
+            self.registry_suppressed_rows = []
+        self.registry_suppressed_rows.append(
+            {
+                "row_index": int(idx),
+                "duplicate_of": claim.duplicate_of,
+                "similarity": claim.similarity,
+                "reason": claim.reason,
+            }
+        )
 
     def _absorbing_refinement_rows(self) -> list[int]:
         df = self.connectivity_table.df
