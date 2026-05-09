@@ -765,6 +765,7 @@ def trial_commands(
     amsel_duplicate_family_penalty: float = 1.0,
     amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
+    basin_search_registry_path: str | None = None,
     mpi_ranks: int,
     mpirun: str,
     python: str,
@@ -796,6 +797,7 @@ def trial_commands(
             amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
             amsel_min_guidance=amsel_min_guidance,
             disable_coverage_resampling=disable_coverage_resampling,
+            basin_search_registry_path=basin_search_registry_path,
         )
         commands.append(
             {
@@ -869,6 +871,10 @@ def render_trial_input(
     config[control]["basin"] = "True"
     if disable_coverage_resampling:
         config[control]["disable_coverage_resampling"] = "True"
+    if basin_search_registry_path is not None:
+        config[control]["basin_search_registry_path"] = str(
+            basin_search_registry_path
+        )
     if refine_thr is not None:
         config[control]["refine_thr"] = str(float(refine_thr))
     if reference_table is not None:
@@ -939,6 +945,7 @@ def write_trial_input(
     amsel_duplicate_family_penalty: float,
     amsel_min_guidance: float,
     disable_coverage_resampling: bool = False,
+    basin_search_registry_path: str | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -964,6 +971,7 @@ def write_trial_input(
             amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
             amsel_min_guidance=amsel_min_guidance,
             disable_coverage_resampling=disable_coverage_resampling,
+            basin_search_registry_path=basin_search_registry_path,
         )
     )
 
@@ -1213,6 +1221,18 @@ def main(argv: list[str] | None = None) -> int:
             "time is bounded for paired benchmark sweeps."
         ),
     )
+    parser.add_argument(
+        "--basin-search-registry-path",
+        type=str,
+        default=None,
+        help=(
+            "Path to a JSONL file shared across trials in this run. "
+            "When set, every trial input.in receives "
+            "[Control] basin_search_registry_path so AMSEL "
+            "BasinSearchRegistry deduplicates ARTn refinement claims by "
+            "saddle-displacement mode signature."
+        ),
+    )
     parser.add_argument("--work-budget")
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
@@ -1259,6 +1279,7 @@ def main(argv: list[str] | None = None) -> int:
         amsel_duplicate_family_penalty=args.amsel_duplicate_family_penalty,
         amsel_min_guidance=args.amsel_min_guidance,
         disable_coverage_resampling=args.disable_coverage_resampling,
+        basin_search_registry_path=args.basin_search_registry_path,
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
         python=args.python,
