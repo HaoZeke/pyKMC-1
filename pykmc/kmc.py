@@ -244,7 +244,58 @@ def _needs_more_process_search(evidence: EnvironmentSearchEvidence) -> bool:
     return bool(_process_search_certificate(evidence)["needs_more_search"])
 
 
+def _evidence_signature(
+    evidence: EnvironmentSearchEvidence,
+) -> tuple:
+    """Hashable snapshot of an EnvironmentSearchEvidence.
+
+    The certificate ``_process_search_certificate`` only depends on the
+    counts, rates, and attempts on the evidence. Snapshot those into a
+    hashable tuple so the certificate computation can be memoized while
+    the underlying evidence object stays mutable. Returning a sorted
+    item view keeps the signature stable under dict ordering.
+    """
+    counts = tuple(sorted(evidence.process_counts.items())) if evidence.process_counts else ()
+    rates = (
+        tuple(sorted(evidence.process_rates.items())) if evidence.process_rates else ()
+    )
+    return (counts, rates, int(evidence.attempts))
+
+
+_PROCESS_SEARCH_CERTIFICATE_CACHE: dict[tuple, dict[str, object]] = {}
+_PROCESS_SEARCH_CERTIFICATE_CACHE_MAX = 4096
+
+
+def _process_search_certificate_cache_clear() -> None:
+    """Drop the per-evidence certificate cache.
+
+    Called by the harness at trial boundaries; not used in steady state
+    because evidence mutations bump the signature and re-key the cache
+    naturally. Exposed primarily so tests can guarantee a clean state.
+    """
+    _PROCESS_SEARCH_CERTIFICATE_CACHE.clear()
+
+
 def _process_search_certificate(
+    evidence: EnvironmentSearchEvidence,
+) -> dict[str, object]:
+    signature = _evidence_signature(evidence)
+    cached = _PROCESS_SEARCH_CERTIFICATE_CACHE.get(signature)
+    if cached is not None:
+        return cached
+    certificate = _compute_process_search_certificate(evidence)
+    if len(_PROCESS_SEARCH_CERTIFICATE_CACHE) >= _PROCESS_SEARCH_CERTIFICATE_CACHE_MAX:
+        # Bound memory: drop oldest half. Order is insertion order.
+        oldest = list(_PROCESS_SEARCH_CERTIFICATE_CACHE.keys())[
+            : _PROCESS_SEARCH_CERTIFICATE_CACHE_MAX // 2
+        ]
+        for key in oldest:
+            _PROCESS_SEARCH_CERTIFICATE_CACHE.pop(key, None)
+    _PROCESS_SEARCH_CERTIFICATE_CACHE[signature] = certificate
+    return certificate
+
+
+def _compute_process_search_certificate(
     evidence: EnvironmentSearchEvidence,
 ) -> dict[str, object]:
     if not evidence.process_counts:
