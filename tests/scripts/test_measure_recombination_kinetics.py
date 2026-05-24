@@ -346,6 +346,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     legacy.read(out / "legacy" / "trial-0" / "input.in")
     assert legacy["BASIN"]["selector"] == "legacy-fpta"
     assert legacy["BASIN"]["exploration_priority"] == "legacy"
+    assert legacy["Control"]["disable_coverage_resampling"] == "True"
+    assert "disable_coverage_resampling" not in config["Control"]
 
 
 def test_cli_rejects_preloaded_catalog_without_explicit_opt_in(tmp_path):
