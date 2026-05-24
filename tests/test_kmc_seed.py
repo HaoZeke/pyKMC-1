@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+import pykmc.kmc as kmc_module
 from pykmc.kmc import (
     EnvironmentSearchEvidence,
     KMC,
@@ -254,6 +255,43 @@ def test_environment_search_evidence_trace_lines_report_missing_process_mass():
         "singleton_processes=1; missing_process_mass=1.000000e+00; "
         "missing_rate_mass=inf; needs_more_search=True"
     ]
+
+
+def test_negligible_missing_rate_mass_does_not_trigger_more_process_search(
+    monkeypatch,
+):
+    class FakeCertificate:
+        attempts = 8
+        observations = 8
+        unique_processes = 1
+        singleton_processes = 0
+        unseen_process_probability = 0.09316770
+        missing_rate_mass_estimate = 5.0e-20
+        needs_more_search = True
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=lambda **kwargs: FakeCertificate()),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "slow-env": EnvironmentSearchEvidence(
+            attempts=8,
+            process_counts=Counter({("slow-process",): 8}),
+            process_rates={("slow-process",): 5.0e-20},
+        )
+    }
+
+    assert undercovered_environments_for_search(
+        current_environments=["slow-env"],
+        new_environments=[],
+        visited_environments={"slow-env"},
+        environment_search_evidence=evidence,
+    ) == []
+    assert "needs_more_search=False" in environment_search_evidence_trace_lines(
+        evidence
+    )[0]
 
 
 def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
