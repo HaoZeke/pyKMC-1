@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -27,6 +30,39 @@ class FakeEngine:
 
     def command(self, command):
         self.lmp.command(command)
+
+
+def test_lammps_operations_import_discovers_pypartn_from_plugin_checkout(
+    tmp_path, monkeypatch
+):
+    plugin_root = tmp_path / "artn-plugin"
+    interface = plugin_root / "interface"
+    lib = plugin_root / "lib"
+    interface.mkdir(parents=True)
+    lib.mkdir()
+    (interface / "pypARTn.py").write_text("MARKER = 'env-plugin'\n", encoding="utf-8")
+    (lib / "libartn-lmp.so").write_text("", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYKMC_ARTN_PLUGIN_DIR"] = str(plugin_root)
+    env.pop("ARTN_PLUGIN_DIR", None)
+    env["PYTHONPATH"] = os.pathsep.join(sys.path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import pykmc.enginemanager.lmpi.lammps_operations; "
+            "import pypARTn; print(pypARTn.MARKER)",
+        ],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "env-plugin"
 
 
 def test_load_partn_plugin_uses_configured_plugin_when_registered(tmp_path):
