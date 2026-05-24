@@ -57,16 +57,6 @@ def _installed_package_available() -> bool:
     return importlib.util.find_spec("ira_mod") is not None
 
 
-def _try_installed_package() -> bool:
-    if not _installed_package_available():
-        return False
-    try:
-        _smoke_test()
-    except subprocess.CalledProcessError:
-        return False
-    return True
-
-
 def _copy_source(source: Path, work_root: Path) -> Path:
     work = work_root / "ira"
     shutil.copytree(
@@ -143,7 +133,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", help="Path to an IRA checkout.")
     args = parser.parse_args()
-    if not _source_install_requested(args.source) and _try_installed_package():
+    if (
+        not _source_install_requested(args.source)
+        and _installed_package_available()
+    ):
+        _smoke_test()
         return
     install(_source_dir(args.source))
 
