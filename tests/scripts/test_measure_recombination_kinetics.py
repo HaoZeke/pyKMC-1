@@ -880,6 +880,35 @@ def test_kinetic_guard_accepts_absorbed_frontier_boundary():
     assert guarded["failed_refinement_committor"] == 0.0
 
 
+def test_kinetic_guard_uses_latest_process_coverage_certificate():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {
+            "selector": "amsel",
+            "recombined": False,
+            "kmc_steps": 1,
+            "kinetic_claim_ok": True,
+        },
+        diagnostics=None,
+        log_text=(
+            "AMSEL process coverage env=env-a; attempts=1; observations=1; "
+            "unique_processes=1; singleton_processes=1; "
+            "missing_process_mass=7.142857e-01; "
+            "missing_rate_mass=1.593874e-03; needs_more_search=True\n"
+            "AMSEL process coverage env=env-a; attempts=15; observations=15; "
+            "unique_processes=1; singleton_processes=0; "
+            "missing_process_mass=4.983389e-02; "
+            "missing_rate_mass=1.668008e-03; needs_more_search=False"
+        ),
+    )
+
+    assert guarded["kinetic_claim_ok"] is True
+    assert guarded["coverage_envs_observed"] == 1
+    assert guarded["coverage_max_missing_process_mass"] == pytest.approx(0.04983389)
+    assert guarded["coverage_needs_more_search"] is False
+
+
 def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypatch):
     script = _load_script()
     workdir = tmp_path / "legacy" / "trial-0"
