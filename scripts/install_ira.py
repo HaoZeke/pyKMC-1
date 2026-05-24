@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -43,18 +42,6 @@ def _source_dir(explicit: str | None) -> Path:
         "setup.py, interface/ira_mod.py, and src/CMakeLists.txt.\nSearched:\n"
         + searched
     )
-
-
-def _source_install_requested(explicit: str | None) -> bool:
-    return bool(
-        explicit
-        or os.environ.get("PYKMC_IRA_DIR")
-        or os.environ.get("IRA_DIR")
-    )
-
-
-def _installed_package_available() -> bool:
-    return importlib.util.find_spec("ira_mod") is not None
 
 
 def _copy_source(source: Path, work_root: Path) -> Path:
@@ -133,12 +120,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", help="Path to an IRA checkout.")
     args = parser.parse_args()
-    if (
-        not _source_install_requested(args.source)
-        and _installed_package_available()
-    ):
-        _smoke_test()
-        return
     install(_source_dir(args.source))
 
 

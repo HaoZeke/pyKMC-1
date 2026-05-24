@@ -36,17 +36,3 @@ def test_pixi_ira_feature_installs_conda_forge_package():
 
     dependencies = data["tool"]["pixi"]["feature"]["ira"]["dependencies"]
     assert "ira" in dependencies
-
-
-def test_installed_ira_package_satisfies_default_installer(monkeypatch):
-    installer = _load_installer()
-    monkeypatch.delenv("PYKMC_IRA_DIR", raising=False)
-    monkeypatch.delenv("IRA_DIR", raising=False)
-    monkeypatch.setattr(
-        installer.importlib.util,
-        "find_spec",
-        lambda name: object() if name == "ira_mod" else None,
-    )
-
-    assert not installer._source_install_requested(None)
-    assert installer._installed_package_available()
