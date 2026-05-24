@@ -71,6 +71,8 @@ TRIAL_FIELDS = [
     "kmc_steps",
     "cpu_time_s",
     "wall_time_s",
+    "total_cpu_time_s",
+    "total_wall_time_s",
     "detector_reason",
     "event_discovery_status",
     "event_searches",
@@ -301,6 +303,8 @@ def trial_row_from_outputs(
         output_rows,
     )
     final_time = output_rows[-1]["time_s"] if output_rows else 0.0
+    total_cpu_time = _sum_optional_float(row["cpu_time_s"] for row in output_rows)
+    total_wall_time = _sum_optional_float(row["wall_time_s"] for row in output_rows)
     recombined = bool(detector["recombined"])
     detector_reason = detector["detector_reason"]
     if (
@@ -321,6 +325,8 @@ def trial_row_from_outputs(
         "kmc_steps": len(output_rows),
         "cpu_time_s": output_rows[-1]["cpu_time_s"] if output_rows else None,
         "wall_time_s": output_rows[-1]["wall_time_s"] if output_rows else None,
+        "total_cpu_time_s": total_cpu_time,
+        "total_wall_time_s": total_wall_time,
         "detector_reason": detector_reason,
         "event_discovery_status": event_discovery_status_from_log(log_text),
         "event_searches": None,
@@ -335,6 +341,19 @@ def trial_row_from_outputs(
         "output_dir": str(output_dir),
     }
     return apply_kinetic_guard(row, diagnostics=None, log_text=log_text)
+
+
+def _sum_optional_float(values) -> float | None:
+    total = 0.0
+    seen = False
+    for value in values:
+        if value is None:
+            continue
+        total += float(value)
+        seen = True
+    if not seen:
+        return None
+    return total
 
 
 def apply_kinetic_guard(
@@ -1116,6 +1135,8 @@ def execute_trials(
                                 "kmc_steps": 0,
                                 "cpu_time_s": None,
                                 "wall_time_s": None,
+                                "total_cpu_time_s": None,
+                                "total_wall_time_s": None,
                                 "detector_reason": f"timeout-{trial_timeout_s}s",
                                 "event_discovery_status": "unknown",
                                 "event_searches": command.get("event_searches"),
@@ -1169,6 +1190,8 @@ def execute_trials(
                             "kmc_steps": 0,
                             "cpu_time_s": None,
                             "wall_time_s": None,
+                            "total_cpu_time_s": None,
+                            "total_wall_time_s": None,
                             "detector_reason": f"returncode-{result.returncode}",
                             "event_discovery_status": "unknown",
                             "event_searches": command.get("event_searches"),

@@ -112,6 +112,8 @@ def test_trial_row_uses_recombination_or_censor_time(tmp_path):
     assert row["kmc_steps"] == 2
     assert row["cpu_time_s"] == 0.2
     assert row["wall_time_s"] == 0.3
+    assert row["total_cpu_time_s"] == pytest.approx(0.3)
+    assert row["total_wall_time_s"] == pytest.approx(0.5)
     assert row["failed_refinements"] == 0
     assert row["failed_refinement_committor"] == 0.0
     assert row["usable_resolved_committor"] is None
