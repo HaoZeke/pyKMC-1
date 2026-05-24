@@ -329,6 +329,9 @@ def trial_row_from_outputs(
         "trajectory_recombination_frame": trajectory_summary[
             "trajectory_recombination_frame"
         ],
+        "coverage_resampling_disabled": coverage_resampling_disabled_from_input(
+            output_dir / "input.in"
+        ),
         "output_dir": str(output_dir),
     }
     return apply_kinetic_guard(row, diagnostics=None, log_text=log_text)
@@ -403,9 +406,25 @@ def apply_kinetic_guard(
         guarded["coverage_max_missing_process_mass"] = coverage_max_missing
         guarded["coverage_needs_more_search"] = coverage_needs_more
         selector = str(guarded.get("selector", ""))
-        if coverage_needs_more and not selector.startswith("legacy"):
+        if (
+            coverage_needs_more
+            and not selector.startswith("legacy")
+            and not bool(guarded.get("coverage_resampling_disabled", False))
+        ):
             guarded["kinetic_claim_ok"] = False
     return guarded
+
+
+def coverage_resampling_disabled_from_input(input_path: Path) -> bool:
+    if not input_path.exists():
+        return False
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(input_path)
+    section = _optional_section(config, "Control")
+    if section is None:
+        return False
+    return config[section].getboolean("disable_coverage_resampling", fallback=False)
 
 
 def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
