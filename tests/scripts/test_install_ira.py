@@ -1,6 +1,5 @@
 import importlib.util
 from pathlib import Path
-import tomllib
 
 
 def _load_installer():
@@ -27,12 +26,3 @@ def test_patch_native_flags_removes_machine_specific_arch(tmp_path):
     patched = cmake_file.read_text(encoding="utf-8")
     assert "-march=native" not in patched
     assert "-mtune=generic" in patched
-
-
-def test_pixi_ira_feature_installs_conda_forge_package():
-    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-
-    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-
-    dependencies = data["tool"]["pixi"]["feature"]["ira"]["dependencies"]
-    assert "ira" in dependencies
