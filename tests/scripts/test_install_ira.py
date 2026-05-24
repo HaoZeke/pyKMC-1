@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import subprocess
 import tomllib
 
 
@@ -50,3 +51,21 @@ def test_installed_ira_package_satisfies_default_installer(monkeypatch):
 
     assert not installer._source_install_requested(None)
     assert installer._installed_package_available()
+
+
+def test_installed_ira_package_must_pass_smoke_test(monkeypatch):
+    installer = _load_installer()
+    monkeypatch.setattr(
+        installer.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "ira_mod" else None,
+    )
+    monkeypatch.setattr(
+        installer,
+        "_smoke_test",
+        lambda: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(returncode=-4, cmd=["ira-smoke"])
+        ),
+    )
+
+    assert not installer._try_installed_package()
