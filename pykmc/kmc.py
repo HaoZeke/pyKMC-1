@@ -264,6 +264,7 @@ def _evidence_signature(
 
 _PROCESS_SEARCH_CERTIFICATE_CACHE: dict[tuple, dict[str, object]] = {}
 _PROCESS_SEARCH_CERTIFICATE_CACHE_MAX = 4096
+PROCESS_SEARCH_MISSING_RATE_FLOOR = 1.0e-12
 
 
 def _process_search_certificate_cache_clear() -> None:
@@ -314,14 +315,20 @@ def _compute_process_search_certificate(
             process_rates=evidence.process_rates,
             attempts=evidence.attempts,
         )
+        missing_rate_mass = float(certificate.missing_rate_mass_estimate)
+        known_rate_mass = float(sum(evidence.process_rates.values()))
         return {
             "attempts": int(certificate.attempts),
             "observations": int(certificate.observations),
             "unique_processes": int(certificate.unique_processes),
             "singleton_processes": int(certificate.singleton_processes),
             "missing_process_mass": float(certificate.unseen_process_probability),
-            "missing_rate_mass": float(certificate.missing_rate_mass_estimate),
-            "needs_more_search": bool(certificate.needs_more_search),
+            "missing_rate_mass": missing_rate_mass,
+            "needs_more_search": _needs_rate_material_process_search(
+                process_needs_more=bool(certificate.needs_more_search),
+                missing_rate_mass=missing_rate_mass,
+                known_rate_mass=known_rate_mass,
+            ),
         }
     observations = sum(evidence.process_counts.values())
     singleton_count = sum(1 for count in evidence.process_counts.values() if count == 1)
@@ -344,8 +351,27 @@ def _compute_process_search_certificate(
         "singleton_processes": int(singleton_count),
         "missing_process_mass": float(missing_process_mass),
         "missing_rate_mass": float(missing_rate_mass),
-        "needs_more_search": missing_process_mass > 0.05,
+        "needs_more_search": _needs_rate_material_process_search(
+            process_needs_more=missing_process_mass > 0.05,
+            missing_rate_mass=missing_rate_mass,
+            known_rate_mass=known_rate_mass,
+        ),
     }
+
+
+def _needs_rate_material_process_search(
+    *,
+    process_needs_more: bool,
+    missing_rate_mass: float,
+    known_rate_mass: float,
+) -> bool:
+    if not process_needs_more:
+        return False
+    if known_rate_mass <= 0.0:
+        return True
+    if math.isinf(missing_rate_mass):
+        return True
+    return float(missing_rate_mass) > PROCESS_SEARCH_MISSING_RATE_FLOOR
 
 
 def _environment_label(environment) -> str:
