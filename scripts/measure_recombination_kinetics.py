@@ -386,18 +386,20 @@ def apply_kinetic_guard(
     # AMSEL process-coverage certificates expose the controller's
     # rate-material resampling gate. A trial is not suitable for kinetic claims
     # while any logged certificate still needs more search.
-    coverage_max_missing = 0.0
-    coverage_needs_more = False
-    coverage_envs_seen = 0
+    latest_coverage_by_env: dict[str, tuple[float, bool]] = {}
     for match in PROCESS_COVERAGE_RE.finditer(log_text):
-        coverage_envs_seen += 1
-        coverage_max_missing = max(
-            coverage_max_missing, float(match.group("missing_process"))
+        latest_coverage_by_env[match.group("env")] = (
+            float(match.group("missing_process")),
+            match.group("needs_more") == "True",
         )
-        if match.group("needs_more") == "True":
-            coverage_needs_more = True
-    if coverage_envs_seen > 0:
-        guarded["coverage_envs_observed"] = coverage_envs_seen
+    if latest_coverage_by_env:
+        coverage_max_missing = max(
+            missing for missing, _needs_more in latest_coverage_by_env.values()
+        )
+        coverage_needs_more = any(
+            needs_more for _missing, needs_more in latest_coverage_by_env.values()
+        )
+        guarded["coverage_envs_observed"] = len(latest_coverage_by_env)
         guarded["coverage_max_missing_process_mass"] = coverage_max_missing
         guarded["coverage_needs_more_search"] = coverage_needs_more
         if coverage_needs_more:
