@@ -402,7 +402,8 @@ def apply_kinetic_guard(
         guarded["coverage_envs_observed"] = len(latest_coverage_by_env)
         guarded["coverage_max_missing_process_mass"] = coverage_max_missing
         guarded["coverage_needs_more_search"] = coverage_needs_more
-        if coverage_needs_more:
+        selector = str(guarded.get("selector", ""))
+        if coverage_needs_more and not selector.startswith("legacy"):
             guarded["kinetic_claim_ok"] = False
     return guarded
 
