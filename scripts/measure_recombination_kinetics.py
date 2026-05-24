@@ -383,12 +383,9 @@ def apply_kinetic_guard(
     if not guarded.get("recombined", False) and int(guarded.get("kmc_steps") or 0) == 0:
         guarded["kinetic_claim_ok"] = False
 
-    # AMSEL process-coverage certificate. The authoritative gate is the
-    # certificate's `needs_more_search` field, which AMSEL computes as
-    # confidence_gap > 0 OR missing_mass_gap > 0 against the configured
-    # alpha / confidence_target / missing_mass_tolerance. We do not impose
-    # an additional pyKMC-side tolerance because that would silently
-    # override the certificate's user-configured policy. Tracks amsel-q83l.
+    # AMSEL process-coverage certificates expose the controller's
+    # rate-material resampling gate. A trial is not suitable for kinetic claims
+    # while any logged certificate still needs more search.
     coverage_max_missing = 0.0
     coverage_needs_more = False
     coverage_envs_seen = 0
@@ -870,7 +867,7 @@ def render_trial_input(
     config[control]["n_steps"] = str(int(max_steps))
     config[control]["random_seed"] = str(int(seed))
     config[control]["basin"] = "True"
-    if disable_coverage_resampling:
+    if disable_coverage_resampling or priority == "legacy":
         config[control]["disable_coverage_resampling"] = "True"
     if basin_search_registry_path is not None:
         config[control]["basin_search_registry_path"] = str(
