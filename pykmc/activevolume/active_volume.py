@@ -2,7 +2,6 @@ from ase import Atoms, Atom
 from ase.build import bulk
 from lammps import lammps
 from ase.data import atomic_numbers, atomic_masses
-import pypARTn
 import numpy as np
 import ctypes
 from ase.geometry import find_mic

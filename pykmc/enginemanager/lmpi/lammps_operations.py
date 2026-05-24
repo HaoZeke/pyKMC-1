@@ -2,10 +2,10 @@ import numpy as np
 from ase.data import atomic_numbers, atomic_masses
 from mpi4py import MPI
 import ctypes 
-import pypARTn
 import os
 from pathlib import Path
 from ...activevolume.active_volume import reset, redefine_atoms, partn_search_AV, partn_refine_AV, position_results_AV
+from .pypartn_import import add_pypartn_interface_paths, import_pypartn
 
 from ...result import  (
     Result,
@@ -16,6 +16,8 @@ from ...result import  (
     ErrorType,
     EventRefinementOutput,
 )
+
+add_pypartn_interface_paths()
 
 
 def _partn_plugin_candidate_paths(configured_path: str) -> list[Path]:
@@ -233,7 +235,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
     engine.command("min_style fire")
 
     # INITILIZE ARTN on all ranks
-    artn = pypARTn.artn(engine="lmp")
+    artn = import_pypartn().artn(engine="lmp")
     # SETUP ARTN
     artn.reset_input()
     # Control 
@@ -385,7 +387,7 @@ def partn_refine(engine, config, central_atom_idx:int , positions = None, cell =
     # LAMMPS COMMANDS
     load_partn_plugin(engine, config)
     # INITILIZE ARTN
-    artn = pypARTn.artn(engine="lmp")
+    artn = import_pypartn().artn(engine="lmp")
     
     # SETUP ARTN
     artn.reset_input()
