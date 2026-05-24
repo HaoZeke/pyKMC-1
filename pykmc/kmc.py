@@ -314,6 +314,7 @@ def _compute_process_search_certificate(
             process_counts=dict(evidence.process_counts),
             process_rates=evidence.process_rates,
             attempts=evidence.attempts,
+            use_py_heavy_tail=False,
         )
         missing_rate_mass = float(certificate.missing_rate_mass_estimate)
         known_rate_mass = float(sum(evidence.process_rates.values()))

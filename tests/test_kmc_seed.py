@@ -359,6 +359,39 @@ def test_negligible_missing_rate_mass_does_not_trigger_more_process_search(
     )[0]
 
 
+def test_process_search_certificate_uses_finite_catalog_estimator(monkeypatch):
+    captured = {}
+
+    class FakeCertificate:
+        attempts = 2
+        observations = 2
+        unique_processes = 1
+        singleton_processes = 0
+        unseen_process_probability = 0.0
+        missing_rate_mass_estimate = 0.0
+        needs_more_search = False
+
+    def event_completeness(**kwargs):
+        captured.update(kwargs)
+        return FakeCertificate()
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=event_completeness),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+
+    evidence = EnvironmentSearchEvidence(
+        attempts=2,
+        process_counts=Counter({("hop",): 2}),
+        process_rates={("hop",): 1.0},
+    )
+
+    assert kmc_module._process_search_certificate(evidence)["needs_more_search"] is False
+    assert captured["use_py_heavy_tail"] is False
+
+
 def test_basin_exploration_trace_line_reports_order_queue_and_guidance():
     basin = SimpleNamespace(
         exploration_order=[0, 13],
