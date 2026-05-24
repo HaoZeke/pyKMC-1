@@ -759,14 +759,15 @@ class KMC:
         list[Result[pd.DataFrame, ErrorInfo]],
     ]:
         """Search reference events until AMSEL process evidence is covered."""
+        disable_coverage_resampling = bool(
+            getattr(self.config.control, "disable_coverage_resampling", False)
+        )
         search_environments = undercovered_environments_for_search(
             current_environments=self.atomic_environment.atomic_environment_list,
             new_environments=new_environments,
             visited_environments=self.visited_environments,
             environment_search_evidence=self.environment_search_evidence,
-            disable_coverage_resampling=bool(
-                getattr(self.config.control, "disable_coverage_resampling", False)
-            ),
+            disable_coverage_resampling=disable_coverage_resampling,
         )
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
@@ -839,6 +840,7 @@ class KMC:
                 new_environments=[],
                 visited_environments=self.visited_environments,
                 environment_search_evidence=self.environment_search_evidence,
+                disable_coverage_resampling=disable_coverage_resampling,
             )
             first_round = False
         return all_event_search_results, all_valid_event_results
