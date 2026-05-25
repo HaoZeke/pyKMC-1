@@ -156,6 +156,7 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
                 "trial": "0",
                 "kinetic_claim_ok": "False",
                 "wall_time_s": "12.5",
+                "total_wall_time_s": "40.0",
                 "event_discovery_status": "not-zero-event",
                 "event_searches": "5",
             }
@@ -231,6 +232,7 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
             "kinetic_claim_ok": "0",
             "recombined": "0",
             "last_wall_time_s": "12.5",
+            "last_total_wall_time_s": "40.0",
             "last_event_discovery_status": "not-zero-event",
             "last_event_searches": "5",
             "last_frontier_states": "8",
@@ -253,6 +255,7 @@ def test_aggregate_outputs_adds_budget_columns(tmp_path):
             "last_frontier_states_per_closed_process_signature": "4.0",
             "last_frontier_rate_per_closed_process_signature": "0.0075",
             "last_closed_guidance_per_wall_s": "0.06",
+            "last_closed_guidance_per_total_wall_s": "0.01875",
         }
     ]
 

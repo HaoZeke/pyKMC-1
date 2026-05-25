@@ -32,6 +32,7 @@ SUMMARY_FIELDS = [
     "kinetic_claim_ok",
     "recombined",
     "last_wall_time_s",
+    "last_total_wall_time_s",
     "last_event_discovery_status",
     "last_event_searches",
     "last_frontier_states",
@@ -54,6 +55,7 @@ SUMMARY_FIELDS = [
     "last_frontier_states_per_closed_process_signature",
     "last_frontier_rate_per_closed_process_signature",
     "last_closed_guidance_per_wall_s",
+    "last_closed_guidance_per_total_wall_s",
 ]
 
 
@@ -208,7 +210,9 @@ def write_sweep_summary(out: Path) -> None:
         frontier_states = _csv_float(last_confidence.get("frontier_states"))
         frontier_rate = _csv_float(last_confidence.get("frontier_rate"))
         closed_guidance_sum = _csv_float(last_trace.get("closed_guidance_sum"))
-        wall_time = _csv_float(_last_step_row(trials).get("wall_time_s"))
+        last_trial = _last_step_row(trials)
+        wall_time = _csv_float(last_trial.get("wall_time_s"))
+        total_wall_time = _csv_float(last_trial.get("total_wall_time_s"))
         summary_rows.append(
             {
                 "budget_label": key[0],
@@ -223,11 +227,12 @@ def write_sweep_summary(out: Path) -> None:
                 "recombined": sum(
                     1 for row in trials if _csv_bool(row.get("recombined"))
                 ),
-                "last_wall_time_s": _last_step_row(trials).get("wall_time_s"),
-                "last_event_discovery_status": _last_step_row(trials).get(
+                "last_wall_time_s": last_trial.get("wall_time_s"),
+                "last_total_wall_time_s": last_trial.get("total_wall_time_s"),
+                "last_event_discovery_status": last_trial.get(
                     "event_discovery_status"
                 ),
-                "last_event_searches": _last_step_row(trials).get("event_searches"),
+                "last_event_searches": last_trial.get("event_searches"),
                 "last_frontier_states": last_confidence.get("frontier_states"),
                 "last_frontier_committor": last_confidence.get("frontier_committor"),
                 "last_frontier_rate": last_confidence.get("frontier_rate"),
@@ -274,6 +279,10 @@ def write_sweep_summary(out: Path) -> None:
                 "last_closed_guidance_per_wall_s": _ratio(
                     closed_guidance_sum,
                     wall_time,
+                ),
+                "last_closed_guidance_per_total_wall_s": _ratio(
+                    closed_guidance_sum,
+                    total_wall_time,
                 ),
             }
         )
