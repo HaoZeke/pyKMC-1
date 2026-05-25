@@ -410,7 +410,7 @@ def _compute_process_search_certificate(
             "unique_processes": 0,
             "singleton_processes": 0,
             "missing_process_mass": 1.0,
-            "missing_rate_mass": 0.0,
+            "missing_rate_mass": math.inf,
             "needs_more_search": True,
         }
     if _amsel is not None and hasattr(_amsel, "event_completeness"):
