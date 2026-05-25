@@ -85,6 +85,10 @@ def load_partn_plugin(engine, config) -> str:
     )
 
 
+def _partn_lammps_evalf_max(config) -> int:
+    return min(int(config.partn.evalf_max), int(config.partn.nevalf_max) + 1)
+
+
 def initialize_parameters(engine) : 
     engine.command("units metal")
     engine.command("atom_style atomic")
@@ -284,14 +288,14 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
 
     #Convergence
     artn.set("forc_thr", config.partn.forc_thr)
-    artn.set("convergence_property", config.partn.convergence_property)
+    artn.set("converge_property", config.partn.convergence_property)
     artn.set("nevalf_max", config.partn.nevalf_max)
 
     #Final push 
     artn.set("push_over", config.partn.push_over)
 
     # RUN
-    engine.command(f"minimize 1e-6 1e-8 10000 {config.partn.evalf_max}")
+    engine.command(f"minimize 1e-6 1e-8 10000 {_partn_lammps_evalf_max(config)}")
     engine.command("unfix 10")
     
     # Restore original stdout (fd 1)
