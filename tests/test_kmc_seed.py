@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import pykmc.kmc as kmc_module
 from pykmc.kmc import (
@@ -500,6 +501,43 @@ def test_kmc_reference_search_counts_failed_resampling_attempts(monkeypatch):
     assert kmc.environment_search_evidence["env-a"].process_counts == Counter(
         {process_key: 1}
     )
+
+
+def test_kmc_reference_search_spends_nsearch_before_zero_event_abort():
+    kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
+    kmc.atomic_environment = SimpleNamespace(atomic_environment_list=["env-a"])
+    kmc.visited_environments = set()
+    kmc.environment_search_evidence = {}
+    kmc.reference_table = SimpleNamespace(table=[])
+    kmc.loggers = SimpleNamespace(
+        info=lambda *_args: None,
+        error=lambda *_args: None,
+    )
+    batches = []
+
+    class FakeEventSearch:
+        results = [Err(ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="not found"))]
+
+        @staticmethod
+        def get_successes_results():
+            return []
+
+    def execute_event_searches(central_atoms):
+        batches.append(list(central_atoms))
+        return FakeEventSearch()
+
+    def close():
+        raise RuntimeError("closed")
+
+    kmc.execute_event_searches = execute_event_searches
+    kmc.add_reference_events = lambda _event_outputs: []
+    kmc._close = close
+
+    with pytest.raises(RuntimeError, match="closed"):
+        kmc.search_reference_events_until_covered(["env-a"], nsearch=3)
+
+    assert batches == [[0], [0], [0]]
+    assert kmc.environment_search_evidence["env-a"].attempts == 3
 
 
 def test_environment_search_evidence_trace_lines_report_missing_process_mass():
