@@ -117,6 +117,7 @@ def test_load_partn_plugin_raises_when_loaded_plugin_does_not_register_artn(tmp_
 
 def test_partn_search_configures_artn_evaluation_limit(monkeypatch):
     created_artn = []
+    import_plugin_paths = []
 
     class FakeArtn:
         def __init__(self, engine):
@@ -135,6 +136,10 @@ def test_partn_search_configures_artn_evaluation_limit(monkeypatch):
             artn = FakeArtn(engine)
             created_artn.append(artn)
             return artn
+
+    def fake_import_pypartn(*, plugin_path=None):
+        import_plugin_paths.append(plugin_path)
+        return FakePypartn
 
     engine = FakeEngine(FakeLammps())
     config = SimpleNamespace(
@@ -170,11 +175,14 @@ def test_partn_search_configures_artn_evaluation_limit(monkeypatch):
             evalf_max=9999,
         ),
     )
-    monkeypatch.setattr(lammps_operations, "load_partn_plugin", lambda *_args: None)
-    monkeypatch.setattr(lammps_operations, "import_pypartn", lambda: FakePypartn)
+    monkeypatch.setattr(
+        lammps_operations, "load_partn_plugin", lambda *_args: config.partn.path_artnso
+    )
+    monkeypatch.setattr(lammps_operations, "import_pypartn", fake_import_pypartn)
 
     lammps_operations.partn_search(engine, config, central_atom_idx=4)
 
+    assert import_plugin_paths == [config.partn.path_artnso]
     assert ("converge_property", "norm") in created_artn[0].settings
     assert ("nevalf_max", 37) in created_artn[0].settings
     assert "minimize 1e-6 1e-8 10000 38" in engine.lmp.commands
