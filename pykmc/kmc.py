@@ -248,6 +248,8 @@ def merge_environment_search_evidence(
 
 def environment_search_evidence_trace_lines(
     evidence_by_environment: dict[str | bytes, EnvironmentSearchEvidence],
+    *,
+    known_rate_scale: float | None = None,
 ) -> list[str]:
     """Return log lines summarizing AMSEL process-coverage evidence."""
     lines = []
@@ -257,7 +259,10 @@ def environment_search_evidence_trace_lines(
     ):
         if not evidence.process_counts:
             continue
-        certificate = _process_search_certificate(evidence)
+        certificate = _process_search_certificate_with_rate_scale(
+            evidence,
+            known_rate_scale=known_rate_scale,
+        )
         lines.append(
             (
                 "\t :=> AMSEL process coverage env={}; "
@@ -915,7 +920,11 @@ class KMC:
                 for environment in event_search_evidence_update
             }
             for line in environment_search_evidence_trace_lines(
-                cumulative_event_search_evidence
+                cumulative_event_search_evidence,
+                known_rate_scale=current_known_process_rate_mass(
+                    self.atomic_environment.atomic_environment_list,
+                    self.environment_search_evidence,
+                ),
             ):
                 self.loggers.info("log", line)
             self.loggers.info(
