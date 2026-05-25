@@ -276,6 +276,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "5",
             "--event-searches",
             "3",
+            "--partn-search-evals",
+            "41",
             "--refine-thr",
             "0.0",
             "--basin-energy-thr",
@@ -335,6 +337,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert config["EventSearch"]["nsearch"] == "3"
     assert config["pARTn"]["path_artnso"] == str(tmp_path / "libartn-lmp.so")
     assert config["pARTn"]["zseed"] == "10"
+    assert config["pARTn"]["nevalf_max"] == "41"
     assert config["Lammps"]["pair_coeff"] == f"* * {tmp_path / 'Ni.eam'} Ni"
     assert config["BASIN"]["selector"] == "amsel-adaptive"
     assert config["BASIN"]["exploration_priority"] == "amsel"
@@ -350,6 +353,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert legacy["BASIN"]["exploration_priority"] == "legacy"
     assert legacy["Control"]["disable_coverage_resampling"] == "True"
     assert "disable_coverage_resampling" not in config["Control"]
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["partn_search_evals"] == 41
 
 
 def test_cli_rejects_preloaded_catalog_without_explicit_opt_in(tmp_path):
