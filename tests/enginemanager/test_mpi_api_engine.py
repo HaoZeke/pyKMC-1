@@ -113,6 +113,6 @@ def test_partn_search_error_envelope_returns_failed_search_result():
         positions=None,
     )
 
-    assert result.is_err()
+    assert not result.is_ok()
     assert result.err_value().type is ErrorType.EVENT_NOT_FOUND
     assert "pARTn failed" in result.err_value().message
