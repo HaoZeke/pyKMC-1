@@ -655,6 +655,40 @@ def test_rate_immaterial_missing_mass_does_not_resample_environment(monkeypatch)
     ) == []
 
 
+def test_zero_observation_environment_is_not_rate_scaled_away(monkeypatch):
+    class CompleteCertificate:
+        attempts = 2
+        observations = 2
+        unique_processes = 1
+        singleton_processes = 0
+        unseen_process_probability = 0.0
+        missing_rate_mass_estimate = 0.0
+        needs_more_search = False
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=lambda **kwargs: CompleteCertificate()),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "zero-env": EnvironmentSearchEvidence(attempts=1),
+        "known-env": EnvironmentSearchEvidence(
+            attempts=2,
+            process_counts=Counter({("known",): 2}),
+            process_rates={("known",): 1.0},
+        ),
+    }
+
+    assert undercovered_environments_for_search(
+        current_environments=["zero-env", "known-env"],
+        new_environments=[],
+        visited_environments={"known-env"},
+        environment_search_evidence=evidence,
+        zero_observation_attempt_limit=10,
+    ) == ["zero-env"]
+
+
 def test_rate_scaled_trace_reports_effective_process_search_decision(monkeypatch):
     class FakeCertificate:
         attempts = 34
