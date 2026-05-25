@@ -866,82 +866,92 @@ class KMC:
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
         first_round = True
+        searches_per_environment = max(1, int(nsearch))
 
         while search_environments:
-            if first_round:
-                repeated_environments = set(search_environments).difference(
-                    set(new_environments)
-                )
+            if disable_coverage_resampling:
+                round_count = 1
+                round_nsearch = searches_per_environment
             else:
-                repeated_environments = set(search_environments)
-            if repeated_environments:
-                self.loggers.info(
-                    "log",
-                    "\t :=> Resampling {} undercovered atomic environments".format(
-                        len(repeated_environments)
+                round_count = searches_per_environment
+                round_nsearch = 1
+            for _search_round in range(round_count):
+                if not search_environments:
+                    break
+                if first_round:
+                    repeated_environments = set(search_environments).difference(
+                        set(new_environments)
+                    )
+                else:
+                    repeated_environments = set(search_environments)
+                if repeated_environments:
+                    self.loggers.info(
+                        "log",
+                        "\t :=> Resampling {} undercovered atomic environments".format(
+                            len(repeated_environments)
+                        ),
+                    )
+
+                central_atom_research_list = self.central_atoms_research(
+                    search_environments, round_nsearch
+                )
+                event_search = self.execute_event_searches(central_atom_research_list)
+                all_event_search_results.extend(event_search.results)
+
+                event_search_outputs = event_search.get_successes_results()
+                results_is_valid_events = self.add_reference_events(
+                    event_search_outputs
+                )
+                all_valid_event_results.extend(results_is_valid_events)
+
+                if len(self.reference_table.table) == 0:
+                    self.loggers.error(
+                        "log",
+                        "No events have been found, empty reference events table. \n \tTry to increase nsearch or saddle point search algorithm's parameters. \n \tClosing the simulation.",
+                    )
+                    self._close()
+
+                searched_environments = environments_with_cataloged_searches(
+                    self.atomic_environment.atomic_environment_list,
+                    event_search_outputs,
+                    results_is_valid_events,
+                )
+                merge_environment_search_evidence(
+                    self.environment_search_evidence,
+                    event_search_evidence_update := event_search_attempt_evidence(
+                        self.atomic_environment.atomic_environment_list,
+                        central_atom_research_list,
+                        event_search.results,
+                        results_is_valid_events,
                     ),
                 )
-
-            central_atom_research_list = self.central_atoms_research(
-                search_environments, nsearch
-            )
-            event_search = self.execute_event_searches(central_atom_research_list)
-            all_event_search_results.extend(event_search.results)
-
-            event_search_outputs = event_search.get_successes_results()
-            results_is_valid_events = self.add_reference_events(
-                event_search_outputs
-            )
-            all_valid_event_results.extend(results_is_valid_events)
-
-            if len(self.reference_table.table) == 0:
-                self.loggers.error(
+                cumulative_event_search_evidence = {
+                    environment: self.environment_search_evidence[environment]
+                    for environment in event_search_evidence_update
+                }
+                for line in environment_search_evidence_trace_lines(
+                    cumulative_event_search_evidence,
+                    known_rate_scale=current_known_process_rate_mass(
+                        self.atomic_environment.atomic_environment_list,
+                        self.environment_search_evidence,
+                    ),
+                ):
+                    self.loggers.info("log", line)
+                self.loggers.info(
                     "log",
-                    "No events have been found, empty reference events table. \n \tTry to increase nsearch or saddle point search algorithm's parameters. \n \tClosing the simulation.",
+                    "\t :=> Marking {} atomic environments as searched".format(
+                        len(searched_environments.difference(self.visited_environments))
+                    ),
                 )
-                self._close()
-
-            searched_environments = environments_with_cataloged_searches(
-                self.atomic_environment.atomic_environment_list,
-                event_search_outputs,
-                results_is_valid_events,
-            )
-            merge_environment_search_evidence(
-                self.environment_search_evidence,
-                event_search_evidence_update := event_search_attempt_evidence(
-                    self.atomic_environment.atomic_environment_list,
-                    central_atom_research_list,
-                    event_search.results,
-                    results_is_valid_events,
-                ),
-            )
-            cumulative_event_search_evidence = {
-                environment: self.environment_search_evidence[environment]
-                for environment in event_search_evidence_update
-            }
-            for line in environment_search_evidence_trace_lines(
-                cumulative_event_search_evidence,
-                known_rate_scale=current_known_process_rate_mass(
-                    self.atomic_environment.atomic_environment_list,
-                    self.environment_search_evidence,
-                ),
-            ):
-                self.loggers.info("log", line)
-            self.loggers.info(
-                "log",
-                "\t :=> Marking {} atomic environments as searched".format(
-                    len(searched_environments.difference(self.visited_environments))
-                ),
-            )
-            self.visited_environments.update(searched_environments)
-            search_environments = undercovered_environments_for_search(
-                current_environments=self.atomic_environment.atomic_environment_list,
-                new_environments=[],
-                visited_environments=self.visited_environments,
-                environment_search_evidence=self.environment_search_evidence,
-                disable_coverage_resampling=disable_coverage_resampling,
-            )
-            first_round = False
+                self.visited_environments.update(searched_environments)
+                search_environments = undercovered_environments_for_search(
+                    current_environments=self.atomic_environment.atomic_environment_list,
+                    new_environments=[],
+                    visited_environments=self.visited_environments,
+                    environment_search_evidence=self.environment_search_evidence,
+                    disable_coverage_resampling=disable_coverage_resampling,
+                )
+                first_round = False
         return all_event_search_results, all_valid_event_results
 
     def central_atoms_research(
