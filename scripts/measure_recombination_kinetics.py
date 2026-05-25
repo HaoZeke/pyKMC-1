@@ -804,6 +804,7 @@ def trial_commands(
     visited_environments: Path | None,
     partn_path: Path,
     event_searches: int | None,
+    partn_search_evals: int | None = None,
     refine_thr: float | None,
     priorities: list[str],
     trials: int,
@@ -842,6 +843,7 @@ def trial_commands(
             refine_thr=refine_thr,
             priority=str(item["priority"]),
             partn_path=partn_path,
+            partn_search_evals=partn_search_evals,
             seed=int(item["seed"]),
             basin_energy_thr=basin_energy_thr,
             basin_max_expansions=basin_max_expansions,
@@ -864,6 +866,7 @@ def trial_commands(
                 "max_steps": int(max_steps),
                 "work_budget": work_budget,
                 "event_searches": event_searches,
+                "partn_search_evals": partn_search_evals,
                 "trial_timeout_s": trial_timeout_s,
                 "basin_energy_thr": basin_energy_thr,
                 "basin_max_expansions": basin_max_expansions,
@@ -902,6 +905,7 @@ def render_trial_input(
     refine_thr: float | None,
     priority: str,
     partn_path: Path,
+    partn_search_evals: int | None = None,
     seed: int,
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
@@ -943,6 +947,8 @@ def render_trial_input(
         config[event_search]["nsearch"] = str(int(event_searches))
     config[partn]["path_artnso"] = str(partn_path)
     config[partn]["zseed"] = str(int(seed))
+    if partn_search_evals is not None:
+        config[partn]["nevalf_max"] = str(int(partn_search_evals))
     config[basin]["exploration_priority"] = _exploration_priority_for_priority(
         priority=priority,
         amsel_exploration_priority=amsel_exploration_priority,
@@ -991,6 +997,7 @@ def write_trial_input(
     refine_thr: float | None,
     priority: str,
     partn_path: Path,
+    partn_search_evals: int | None = None,
     seed: int,
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
@@ -1017,6 +1024,7 @@ def write_trial_input(
             refine_thr=refine_thr,
             priority=priority,
             partn_path=partn_path,
+            partn_search_evals=partn_search_evals,
             seed=seed,
             basin_energy_thr=basin_energy_thr,
             basin_max_expansions=basin_max_expansions,
@@ -1253,6 +1261,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--event-searches", type=int)
+    parser.add_argument("--partn-search-evals", type=int)
     parser.add_argument("--refine-thr", type=float)
     parser.add_argument("--trial-timeout-s", type=float)
     parser.add_argument("--basin-energy-thr", type=float)
@@ -1323,6 +1332,7 @@ def main(argv: list[str] | None = None) -> int:
         visited_environments=args.visited_environments,
         partn_path=args.partn_path,
         event_searches=args.event_searches,
+        partn_search_evals=args.partn_search_evals,
         refine_thr=args.refine_thr,
         priorities=args.priority,
         trials=args.trials,
@@ -1360,6 +1370,7 @@ def main(argv: list[str] | None = None) -> int:
         "seed": args.seed,
         "max_steps": args.max_steps,
         "event_searches": args.event_searches,
+        "partn_search_evals": args.partn_search_evals,
         "refine_thr": args.refine_thr,
         "trial_timeout_s": args.trial_timeout_s,
         "basin_energy_thr": args.basin_energy_thr,
