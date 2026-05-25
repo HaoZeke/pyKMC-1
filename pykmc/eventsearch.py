@@ -55,7 +55,16 @@ class EventSearch:
             futures = self.manager.partn_search(config=self.config, central_atom=central_atom_research_list,
                                                 positions=self.system.positions.copy())
         for f in futures :
-            self.results.append(f.result())
+            result = f.result()
+            self.results.append(result)
+            if not result.is_ok():
+                error = result.err_value()
+                self.loggers.info(
+                    "log",
+                    "\t :=> Event search failed: {}".format(
+                        getattr(error, "message", error)
+                    ),
+                )
 
             self.loggers.progress_bar("progress", len(self.results), len(central_atom_research_list))
         #self.results = [f.result() for f in futures]
