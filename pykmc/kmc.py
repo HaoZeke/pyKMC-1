@@ -211,6 +211,10 @@ def undercovered_environments_for_search(
     if disable_coverage_resampling:
         return searchable
 
+    known_rate_scale = current_known_process_rate_mass(
+        current_environments,
+        environment_search_evidence,
+    )
     for environment in sorted(
         current_environment_set.intersection(visited_environments),
         key=str,
@@ -218,7 +222,10 @@ def undercovered_environments_for_search(
         if environment == "crystal" or environment in seen:
             continue
         evidence = environment_search_evidence.get(environment)
-        if evidence is None or not _needs_more_process_search(evidence):
+        if evidence is None or not _needs_more_process_search(
+            evidence,
+            known_rate_scale=known_rate_scale,
+        ):
             continue
         searchable.append(environment)
         seen.add(environment)
@@ -271,8 +278,57 @@ def environment_search_evidence_trace_lines(
     return lines
 
 
-def _needs_more_process_search(evidence: EnvironmentSearchEvidence) -> bool:
-    return bool(_process_search_certificate(evidence)["needs_more_search"])
+def current_known_process_rate_mass(
+    current_environments,
+    evidence_by_environment: dict[str | bytes, EnvironmentSearchEvidence],
+) -> float:
+    """Return the current active-state rate scale from observed processes."""
+    environment_counts = Counter(current_environments)
+    total_rate_mass = 0.0
+    for environment, multiplicity in environment_counts.items():
+        if environment == "crystal":
+            continue
+        evidence = evidence_by_environment.get(environment)
+        if evidence is None:
+            continue
+        total_rate_mass += float(multiplicity) * sum(
+            float(rate) for rate in evidence.process_rates.values()
+        )
+    return float(total_rate_mass)
+
+
+def _needs_more_process_search(
+    evidence: EnvironmentSearchEvidence,
+    *,
+    known_rate_scale: float | None = None,
+) -> bool:
+    return bool(
+        _process_search_certificate_with_rate_scale(
+            evidence,
+            known_rate_scale=known_rate_scale,
+        )["needs_more_search"]
+    )
+
+
+def _process_search_certificate_with_rate_scale(
+    evidence: EnvironmentSearchEvidence,
+    *,
+    known_rate_scale: float | None = None,
+) -> dict[str, object]:
+    certificate = dict(_process_search_certificate(evidence))
+    if not certificate["needs_more_search"]:
+        return certificate
+    if known_rate_scale is None or float(known_rate_scale) <= 0.0:
+        return certificate
+    missing_rate_mass = float(certificate["missing_rate_mass"])
+    if math.isinf(missing_rate_mass):
+        return certificate
+    if (
+        missing_rate_mass
+        <= PROCESS_SEARCH_MISSING_RATE_FRACTION * float(known_rate_scale)
+    ):
+        certificate["needs_more_search"] = False
+    return certificate
 
 
 def _evidence_signature(
@@ -296,6 +352,7 @@ def _evidence_signature(
 _PROCESS_SEARCH_CERTIFICATE_CACHE: dict[tuple, dict[str, object]] = {}
 _PROCESS_SEARCH_CERTIFICATE_CACHE_MAX = 4096
 PROCESS_SEARCH_MISSING_RATE_FLOOR = 1.0e-12
+PROCESS_SEARCH_MISSING_RATE_FRACTION = 0.05
 
 
 def _process_search_certificate_cache_clear() -> None:
