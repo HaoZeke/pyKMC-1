@@ -977,6 +977,27 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
     (workdir / "pykmc.log").write_text("Step : 2\n")
     (workdir / "trajkmc.xyz").write_text("trajectory placeholder\n")
 
+    class FakeTimedOutProcess:
+        pid = 4321
+        returncode = None
+
+        def __init__(self):
+            self.communicate_calls = 0
+
+        def communicate(self, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                raise subprocess.TimeoutExpired(
+                    cmd=["python", "-m", "pykmc"],
+                    timeout=timeout,
+                    output="partial stdout",
+                )
+            self.returncode = -15
+            return ("", None)
+
+    def fake_popen(*_args, **_kwargs):
+        return FakeTimedOutProcess()
+
     def fake_run(*args, **kwargs):
         raise subprocess.TimeoutExpired(
             cmd=kwargs.get("args") or args[0],
@@ -984,7 +1005,24 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             output="partial stdout",
         )
 
+    kill_calls = []
+    monkeypatch.setattr(script.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(script.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        script,
+        "os",
+        SimpleNamespace(
+            getpgid=lambda pid: pid,
+            killpg=lambda pgid, sig: kill_calls.append((pgid, sig)),
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        script,
+        "signal",
+        SimpleNamespace(SIGTERM=15),
+        raising=False,
+    )
     monkeypatch.setattr(
         script,
         "trajectory_noncrystal_counts",
@@ -1035,6 +1073,7 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "output_dir": str(workdir),
         }
     ]
+    assert kill_calls == [(4321, 15)]
     assert "partial stdout" in (workdir / "harness.log").read_text()
     events = [
         json.loads(line)
@@ -1059,14 +1098,24 @@ def test_execute_trials_runs_child_in_isolated_session(tmp_path, monkeypatch):
     workdir.mkdir(parents=True)
     observed = {}
 
-    def fake_run(*args, **kwargs):
+    class FakeProcess:
+        returncode = 125
+
+        def communicate(self, timeout=None):
+            return ("child aborted", None)
+
+    def fake_popen(*args, **kwargs):
         observed.update(kwargs)
+        return FakeProcess()
+
+    def fake_run(*_args, **_kwargs):
         return subprocess.CompletedProcess(
-            args=args[0],
+            args=["python", "-m", "pykmc"],
             returncode=125,
             stdout="child aborted",
         )
 
+    monkeypatch.setattr(script.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(script.subprocess, "run", fake_run)
 
     rows = script.execute_trials(
