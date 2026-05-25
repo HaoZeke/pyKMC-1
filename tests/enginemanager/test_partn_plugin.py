@@ -27,6 +27,8 @@ class FakeLammps:
 class FakeEngine:
     def __init__(self, lammps):
         self.lmp = lammps
+        self.engine_id = 0
+        self.rank = 1
 
     def command(self, command):
         self.lmp.command(command)
@@ -111,3 +113,67 @@ def test_load_partn_plugin_raises_when_loaded_plugin_does_not_register_artn(tmp_
 
     with pytest.raises(RuntimeError, match="fix artn"):
         lammps_operations.load_partn_plugin(engine, config)
+
+
+def test_partn_search_configures_artn_evaluation_limit(monkeypatch):
+    created_artn = []
+
+    class FakeArtn:
+        def __init__(self, engine):
+            self.engine = engine
+            self.settings = []
+
+        def reset_input(self):
+            self.settings.append(("reset_input", None))
+
+        def set(self, name, value):
+            self.settings.append((name, value))
+
+    class FakePypartn:
+        @staticmethod
+        def artn(engine):
+            artn = FakeArtn(engine)
+            created_artn.append(artn)
+            return artn
+
+    engine = FakeEngine(FakeLammps())
+    config = SimpleNamespace(
+        control=SimpleNamespace(active_volume=False),
+        eventsearch=SimpleNamespace(delr_thr=0.5),
+        atomicenvironment=SimpleNamespace(rcut=6.5),
+        partn=SimpleNamespace(
+            path_artnso="/unused/libartn-lmp.so",
+            dmax=6.0,
+            verbosity=2,
+            delr_thr=0.1,
+            zseed=1000,
+            push_mode="rad",
+            push_dist_thr=1.0,
+            push_step_size=0.4,
+            ninit=2,
+            lanczos_min_size=10,
+            lanczos_max_size=20,
+            lanczos_disp=0.0005,
+            lanczos_eval_conv_thr=0.001,
+            eigval_thr=-0.01,
+            eigen_step_size=0.2,
+            nsmooth=3,
+            neigen=1,
+            alpha_mix_cr=0.2,
+            nnewchance=0,
+            nperp=3,
+            nperp_limitation=None,
+            forc_thr=0.001,
+            convergence_property="norm",
+            nevalf_max=37,
+            push_over=1.0,
+            evalf_max=9999,
+        ),
+    )
+    monkeypatch.setattr(lammps_operations, "load_partn_plugin", lambda *_args: None)
+    monkeypatch.setattr(lammps_operations, "import_pypartn", lambda: FakePypartn)
+
+    lammps_operations.partn_search(engine, config, central_atom_idx=4)
+
+    assert ("convergence_property", "norm") in created_artn[0].settings
+    assert ("nevalf_max", 37) in created_artn[0].settings
