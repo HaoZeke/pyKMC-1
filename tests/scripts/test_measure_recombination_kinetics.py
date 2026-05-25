@@ -1051,3 +1051,39 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "trial": 0,
         }
     ]
+
+
+def test_execute_trials_runs_child_in_isolated_session(tmp_path, monkeypatch):
+    script = _load_script()
+    workdir = tmp_path / "amsel" / "trial-0"
+    workdir.mkdir(parents=True)
+    observed = {}
+
+    def fake_run(*args, **kwargs):
+        observed.update(kwargs)
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=125,
+            stdout="child aborted",
+        )
+
+    monkeypatch.setattr(script.subprocess, "run", fake_run)
+
+    rows = script.execute_trials(
+        [
+            {
+                "case": "ni-vac-sia",
+                "priority": "amsel",
+                "trial": 0,
+                "seed": 1000,
+                "event_searches": 2,
+                "workdir": str(workdir),
+                "command": ["python", "-m", "pykmc"],
+            }
+        ],
+        tmp_path / "events.jsonl",
+    )
+
+    assert observed["start_new_session"] is True
+    assert (workdir / "harness.log").read_text() == "child aborted"
+    assert rows[0]["detector_reason"] == "returncode-125"
