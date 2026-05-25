@@ -1115,6 +1115,7 @@ def execute_trials(
                     stderr=subprocess.STDOUT,
                     check=False,
                     timeout=trial_timeout_s,
+                    start_new_session=True,
                 )
             except subprocess.TimeoutExpired as error:
                 (workdir / "harness.log").write_text(_timeout_output(error))
