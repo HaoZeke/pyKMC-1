@@ -16,6 +16,7 @@ from pykmc.kmc import (
     event_search_process_evidence,
     undercovered_environments_for_search,
 )
+from pykmc.eventsearch import EventSearch
 from pykmc.result import Err, ErrorInfo, ErrorType, Ok
 
 
@@ -40,6 +41,36 @@ def test_central_atoms_research_covers_distinct_atoms_before_resampling():
     central_atoms = kmc.central_atoms_research(["env-a"], nsearch=3)
 
     assert sorted(central_atoms) == [0, 1, 2]
+
+
+def test_event_search_logs_failed_search_reason():
+    class FinishedFuture:
+        def result(self):
+            return Err(
+                ErrorInfo(
+                    type=ErrorType.EVENT_NOT_FOUND,
+                    message="partn_search: pARTn failed",
+                )
+            )
+
+    class FakeManager:
+        def partn_search(self, **_kwargs):
+            return [FinishedFuture()]
+
+    log_messages = []
+    event_search = EventSearch(
+        config=SimpleNamespace(control=SimpleNamespace(active_volume=False)),
+        system=SimpleNamespace(positions=np.zeros((1, 3))),
+        manager=FakeManager(),
+        loggers=SimpleNamespace(
+            info=lambda _name, message: log_messages.append(message),
+            progress_bar=lambda *_args: None,
+        ),
+    )
+
+    event_search.execute([0])
+
+    assert any("partn_search: pARTn failed" in message for message in log_messages)
 
 
 def test_environments_with_cataloged_searches_tracks_valid_search_centers():
