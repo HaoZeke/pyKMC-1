@@ -907,7 +907,10 @@ def test_kinetic_guard_uses_latest_process_coverage_certificate():
 
     assert guarded["kinetic_claim_ok"] is True
     assert guarded["coverage_envs_observed"] == 1
+    assert guarded["coverage_total_attempts"] == 15
+    assert guarded["coverage_total_observations"] == 15
     assert guarded["coverage_max_missing_process_mass"] == pytest.approx(0.04983389)
+    assert guarded["coverage_max_missing_rate_mass"] == pytest.approx(1.668008e-03)
     assert guarded["coverage_needs_more_search"] is False
 
 
@@ -1011,12 +1014,15 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "kmc_steps": 2,
             "cpu_time_s": 0.3,
             "wall_time_s": 0.4,
+            "total_cpu_time_s": pytest.approx(0.4),
+            "total_wall_time_s": pytest.approx(0.6),
             "detector_reason": "timeout-7.5s",
             "event_discovery_status": "not-zero-event",
             "event_searches": 2,
             "final_noncrystal_atoms": 25,
             "min_noncrystal_atoms": 25,
             "trajectory_recombination_frame": None,
+            "coverage_resampling_disabled": False,
             "failed_refinements": 0,
             "failed_refinement_committor": 0.0,
             "usable_resolved_committor": None,

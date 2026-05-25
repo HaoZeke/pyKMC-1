@@ -84,7 +84,10 @@ TRIAL_FIELDS = [
     "usable_resolved_committor",
     "kinetic_claim_ok",
     "coverage_envs_observed",
+    "coverage_total_attempts",
+    "coverage_total_observations",
     "coverage_max_missing_process_mass",
+    "coverage_max_missing_rate_mass",
     "coverage_needs_more_search",
     "output_dir",
 ]
@@ -408,21 +411,36 @@ def apply_kinetic_guard(
     # AMSEL process-coverage certificates expose the controller's
     # rate-material resampling gate. A trial is not suitable for kinetic claims
     # while any logged certificate still needs more search.
-    latest_coverage_by_env: dict[str, tuple[float, bool]] = {}
+    latest_coverage_by_env: dict[str, dict[str, object]] = {}
     for match in PROCESS_COVERAGE_RE.finditer(log_text):
-        latest_coverage_by_env[match.group("env")] = (
-            float(match.group("missing_process")),
-            match.group("needs_more") == "True",
-        )
+        latest_coverage_by_env[match.group("env")] = {
+            "attempts": int(match.group("attempts")),
+            "observations": int(match.group("observations")),
+            "missing_process": float(match.group("missing_process")),
+            "missing_rate": float(match.group("missing_rate")),
+            "needs_more": match.group("needs_more") == "True",
+        }
     if latest_coverage_by_env:
         coverage_max_missing = max(
-            missing for missing, _needs_more in latest_coverage_by_env.values()
+            float(item["missing_process"])
+            for item in latest_coverage_by_env.values()
+        )
+        coverage_max_missing_rate = max(
+            float(item["missing_rate"])
+            for item in latest_coverage_by_env.values()
         )
         coverage_needs_more = any(
-            needs_more for _missing, needs_more in latest_coverage_by_env.values()
+            bool(item["needs_more"]) for item in latest_coverage_by_env.values()
         )
         guarded["coverage_envs_observed"] = len(latest_coverage_by_env)
+        guarded["coverage_total_attempts"] = sum(
+            int(item["attempts"]) for item in latest_coverage_by_env.values()
+        )
+        guarded["coverage_total_observations"] = sum(
+            int(item["observations"]) for item in latest_coverage_by_env.values()
+        )
         guarded["coverage_max_missing_process_mass"] = coverage_max_missing
+        guarded["coverage_max_missing_rate_mass"] = coverage_max_missing_rate
         guarded["coverage_needs_more_search"] = coverage_needs_more
         selector = str(guarded.get("selector", ""))
         if (
