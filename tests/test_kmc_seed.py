@@ -12,6 +12,7 @@ from pykmc.kmc import (
     basin_exploration_trace_line,
     environment_search_evidence_trace_lines,
     environments_with_cataloged_searches,
+    event_search_attempt_evidence,
     event_search_process_evidence,
     undercovered_environments_for_search,
 )
@@ -126,6 +127,39 @@ def test_event_search_process_evidence_counts_new_and_duplicate_processes():
 
     assert evidence["env-b"].attempts == 2
     assert evidence["env-b"].process_counts == Counter({process_key: 2})
+    assert evidence["env-b"].process_rates == {process_key: 2.5}
+
+
+def test_event_search_attempt_evidence_counts_failed_searches():
+    process_key = (7, "env-b", "env-c")
+    event_search_results = [
+        Err(ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="No event found")),
+        Ok(SimpleNamespace(central_atom_index=1)),
+    ]
+    valid_results = [
+        Err(
+            ErrorInfo(
+                type=ErrorType.EVENT_NOT_NEW,
+                message="duplicate catalog event",
+                variables={
+                    "matched_idx_ref": 7,
+                    "event_id": "env-b",
+                    "id_final": "env-c",
+                    "k": 2.5,
+                },
+            )
+        )
+    ]
+
+    evidence = event_search_attempt_evidence(
+        ["crystal", "env-b"],
+        [1, 1],
+        event_search_results,
+        valid_results,
+    )
+
+    assert evidence["env-b"].attempts == 2
+    assert evidence["env-b"].process_counts == Counter({process_key: 1})
     assert evidence["env-b"].process_rates == {process_key: 2.5}
 
 
@@ -300,6 +334,73 @@ def test_kmc_reference_search_respects_disabled_coverage_resampling():
     assert len(batches) == 1
     assert len(search_results) == 1
     assert len(valid_results) == 1
+    assert kmc.environment_search_evidence["env-a"].process_counts == Counter(
+        {process_key: 1}
+    )
+
+
+def test_kmc_reference_search_counts_failed_resampling_attempts(monkeypatch):
+    class FakeCertificate:
+        def __init__(self, attempts):
+            self.attempts = attempts
+            self.observations = 1
+            self.unique_processes = 1
+            self.singleton_processes = 1
+            self.unseen_process_probability = 1.0 if attempts < 2 else 0.0
+            self.missing_rate_mass_estimate = 1.0 if attempts < 2 else 0.0
+            self.needs_more_search = attempts < 2
+
+    def event_completeness(**kwargs):
+        return FakeCertificate(int(kwargs["attempts"]))
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=event_completeness),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
+    kmc.atomic_environment = SimpleNamespace(
+        atomic_environment_list=["env-a", "env-a"]
+    )
+    process_key = (7, "env-a", "env-b")
+    kmc.visited_environments = {"env-a"}
+    kmc.environment_search_evidence = {
+        "env-a": EnvironmentSearchEvidence(
+            attempts=1,
+            process_counts=Counter({process_key: 1}),
+            process_rates={process_key: 2.5},
+        )
+    }
+    kmc.reference_table = SimpleNamespace(table=[object()])
+    kmc.loggers = SimpleNamespace(info=lambda *_args: None)
+    kmc._close = lambda: None
+    batches = []
+
+    class FakeEventSearch:
+        def __init__(self):
+            self.results = [
+                Err(ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="No event found"))
+            ]
+
+        def get_successes_results(self):
+            return []
+
+    def execute_event_searches(central_atoms):
+        batches.append(list(central_atoms))
+        return FakeEventSearch()
+
+    kmc.execute_event_searches = execute_event_searches
+    kmc.add_reference_events = lambda _event_outputs: []
+
+    search_results, valid_results = kmc.search_reference_events_until_covered(
+        [], nsearch=1
+    )
+
+    assert len(batches) == 1
+    assert len(search_results) == 1
+    assert len(valid_results) == 0
+    assert kmc.environment_search_evidence["env-a"].attempts == 2
     assert kmc.environment_search_evidence["env-a"].process_counts == Counter(
         {process_key: 1}
     )

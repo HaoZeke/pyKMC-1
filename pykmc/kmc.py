@@ -153,6 +153,37 @@ def event_search_process_evidence(
     return evidence
 
 
+def event_search_attempt_evidence(
+    atomic_environment_list,
+    central_atom_research_list,
+    event_search_results,
+    valid_event_results,
+) -> dict[str | bytes, EnvironmentSearchEvidence]:
+    """Return process evidence while counting failed event-search attempts."""
+    evidence: dict[str | bytes, EnvironmentSearchEvidence] = {}
+    valid_result_iter = iter(valid_event_results)
+    for central_atom_index, search_result in zip(
+        central_atom_research_list,
+        event_search_results,
+    ):
+        if search_result.is_ok():
+            event_output = search_result.ok_value()
+            environment = atomic_environment_list[int(event_output.central_atom_index)]
+            process_results = _process_keys_from_valid_result(next(valid_result_iter))
+        else:
+            environment = atomic_environment_list[int(central_atom_index)]
+            process_results = []
+        if environment not in evidence:
+            evidence[environment] = EnvironmentSearchEvidence()
+        environment_evidence = evidence[environment]
+        environment_evidence.attempts += 1
+        for process_key, rate in process_results:
+            environment_evidence.process_counts[process_key] += 1
+            if rate is not None:
+                environment_evidence.process_rates[process_key] = float(rate)
+    return evidence
+
+
 def undercovered_environments_for_search(
     *,
     current_environments,
@@ -815,9 +846,10 @@ class KMC:
             )
             merge_environment_search_evidence(
                 self.environment_search_evidence,
-                event_search_evidence_update := event_search_process_evidence(
+                event_search_evidence_update := event_search_attempt_evidence(
                     self.atomic_environment.atomic_environment_list,
-                    event_search_outputs,
+                    central_atom_research_list,
+                    event_search.results,
                     results_is_valid_events,
                 ),
             )
