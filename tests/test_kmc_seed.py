@@ -460,6 +460,118 @@ def test_negligible_missing_rate_mass_does_not_trigger_more_process_search(
     )[0]
 
 
+def test_rate_immaterial_missing_mass_does_not_resample_environment(monkeypatch):
+    class FakeCertificate:
+        attempts = 34
+        observations = 10
+        unique_processes = 3
+        singleton_processes = 1
+        unseen_process_probability = 0.02941176
+        missing_rate_mass_estimate = 1.5e-3
+        needs_more_search = True
+
+    class CompleteCertificate:
+        attempts = 2
+        observations = 2
+        unique_processes = 1
+        singleton_processes = 0
+        unseen_process_probability = 0.0
+        missing_rate_mass_estimate = 0.0
+        needs_more_search = False
+
+    def event_completeness(**kwargs):
+        if ("fast",) in kwargs["process_counts"]:
+            return CompleteCertificate()
+        return FakeCertificate()
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=event_completeness),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "slow-gap-env": EnvironmentSearchEvidence(
+            attempts=34,
+            process_counts=Counter(
+                {
+                    ("slow-a",): 8,
+                    ("slow-b",): 1,
+                    ("slow-c",): 1,
+                }
+            ),
+            process_rates={
+                ("slow-a",): 1.0e-3,
+                ("slow-b",): 7.0e-4,
+                ("slow-c",): 5.0e-4,
+            },
+        ),
+        "fast-env": EnvironmentSearchEvidence(
+            attempts=2,
+            process_counts=Counter({("fast",): 2}),
+            process_rates={("fast",): 1.0},
+        ),
+    }
+
+    assert undercovered_environments_for_search(
+        current_environments=["slow-gap-env", "fast-env", "fast-env"],
+        new_environments=[],
+        visited_environments={"slow-gap-env", "fast-env"},
+        environment_search_evidence=evidence,
+    ) == []
+
+
+def test_rate_material_missing_mass_still_resamples_environment(monkeypatch):
+    class FakeCertificate:
+        attempts = 4
+        observations = 2
+        unique_processes = 1
+        singleton_processes = 1
+        unseen_process_probability = 0.25
+        missing_rate_mass_estimate = 2.0e-1
+        needs_more_search = True
+
+    class CompleteCertificate:
+        attempts = 2
+        observations = 2
+        unique_processes = 1
+        singleton_processes = 0
+        unseen_process_probability = 0.0
+        missing_rate_mass_estimate = 0.0
+        needs_more_search = False
+
+    def event_completeness(**kwargs):
+        if ("known",) in kwargs["process_counts"]:
+            return CompleteCertificate()
+        return FakeCertificate()
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=event_completeness),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "gap-env": EnvironmentSearchEvidence(
+            attempts=4,
+            process_counts=Counter({("gap",): 1}),
+            process_rates={("gap",): 0.2},
+        ),
+        "known-env": EnvironmentSearchEvidence(
+            attempts=2,
+            process_counts=Counter({("known",): 2}),
+            process_rates={("known",): 1.0},
+        ),
+    }
+
+    assert undercovered_environments_for_search(
+        current_environments=["gap-env", "known-env"],
+        new_environments=[],
+        visited_environments={"gap-env", "known-env"},
+        environment_search_evidence=evidence,
+    ) == ["gap-env"]
+
+
 def test_process_search_certificate_uses_finite_catalog_estimator(monkeypatch):
     captured = {}
 
