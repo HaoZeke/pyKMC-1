@@ -6,8 +6,16 @@ import sys
 from pathlib import Path
 
 
-def pypartn_interface_paths() -> list[Path]:
+def pypartn_interface_path_for_plugin(plugin_path) -> Path:
+    plugin = Path(plugin_path).expanduser().resolve(strict=False)
+    return plugin.parent.parent / "interface"
+
+
+def pypartn_interface_paths(plugin_path=None) -> list[Path]:
     candidates: list[Path] = []
+
+    if plugin_path is not None:
+        candidates.append(pypartn_interface_path_for_plugin(plugin_path))
 
     conda_prefix = os.environ.get("CONDA_PREFIX")
     if conda_prefix:
@@ -34,8 +42,8 @@ def pypartn_interface_paths() -> list[Path]:
     return unique_candidates
 
 
-def add_pypartn_interface_paths() -> None:
-    for candidate in reversed(pypartn_interface_paths()):
+def add_pypartn_interface_paths(plugin_path=None) -> None:
+    for candidate in reversed(pypartn_interface_paths(plugin_path=plugin_path)):
         if not (candidate / "pypARTn.py").is_file():
             continue
         candidate_str = str(candidate)
@@ -43,17 +51,19 @@ def add_pypartn_interface_paths() -> None:
             sys.path.insert(0, candidate_str)
 
 
-def import_pypartn():
-    add_pypartn_interface_paths()
+def import_pypartn(*, plugin_path=None):
+    add_pypartn_interface_paths(plugin_path=plugin_path)
     try:
         return importlib.import_module("pypARTn")
     except ModuleNotFoundError as exc:
         if exc.name != "pypARTn":
             raise
-        searched = "\n".join(f"  - {path}" for path in pypartn_interface_paths())
+        searched = "\n".join(
+            f"  - {path}" for path in pypartn_interface_paths(plugin_path=plugin_path)
+        )
         raise ModuleNotFoundError(
-            "Could not import pypARTn. Set PYKMC_ARTN_PLUGIN_DIR or "
-            "ARTN_PLUGIN_DIR to an artn-plugin checkout containing "
-            "interface/pypARTn.py.\nSearched:\n"
+            "Could not import pypARTn. Provide a pARTn plugin library from an "
+            "artn-plugin checkout, or set PYKMC_ARTN_PLUGIN_DIR or ARTN_PLUGIN_DIR "
+            "to a checkout containing interface/pypARTn.py.\nSearched:\n"
             + searched
         ) from exc

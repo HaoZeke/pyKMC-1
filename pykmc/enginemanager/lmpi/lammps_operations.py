@@ -234,12 +234,12 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
     delr_threshold = config.eventsearch.delr_thr
 
     # LAMMPS COMMANDS
-    load_partn_plugin(engine, config)
+    plugin_path = load_partn_plugin(engine, config)
     engine.command("fix 10 all artn dmax {}".format(config.partn.dmax))
     engine.command("min_style fire")
 
     # INITILIZE ARTN on all ranks
-    artn = import_pypartn().artn(engine="lmp")
+    artn = import_pypartn(plugin_path=plugin_path).artn(engine="lmp")
     # SETUP ARTN
     artn.reset_input()
     # Control 
@@ -391,9 +391,9 @@ def partn_refine(engine, config, central_atom_idx:int , positions = None, cell =
                 minimize_freeze_core(engine, positions[central_atom_idx], config.atomicenvironment.rcut, maxiter = 10)
 
     # LAMMPS COMMANDS
-    load_partn_plugin(engine, config)
+    plugin_path = load_partn_plugin(engine, config)
     # INITILIZE ARTN
-    artn = import_pypartn().artn(engine="lmp")
+    artn = import_pypartn(plugin_path=plugin_path).artn(engine="lmp")
     
     # SETUP ARTN
     artn.reset_input()
