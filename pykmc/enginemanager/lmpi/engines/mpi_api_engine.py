@@ -5,6 +5,8 @@ import queue
 from ..lammps_operations import initialize_parameters, initialize_system, initialize_potential, minimize, get_total_energy, get_positions, set_positions, partn_search, partn_refine, minimize_with_results, get_potential_energy
 from ...messenger import QueueMessenger, MpiMessenger
 
+ENGINE_ERROR_KEY = "__pykmc_error__"
+
 class MpiApiEngine() : 
     """ 
     """
@@ -187,6 +189,12 @@ class MpiApiEngine() :
                 return result
             except Exception as e:
                 print(f"[Engine Rank {self.rank}] Error in handler {msg_type}: {e}")
+                return {
+                    ENGINE_ERROR_KEY: {
+                        "handler": msg_type,
+                        "message": str(e),
+                    }
+                }
             finally : 
                 entry_engine_comm.barrier()
 

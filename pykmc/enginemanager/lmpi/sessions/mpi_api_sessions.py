@@ -1,6 +1,7 @@
 from mpi4py import MPI 
 import numpy as np
 from ...messenger import MpiMessenger
+from ....result import Err, ErrorInfo, ErrorType
 from threading import RLock  
 from functools import wraps
 #TODO more general way to deal with operations 
@@ -17,6 +18,32 @@ def session_locked(method):
             finally:
                 self._is_busy = False
     return wrapper
+
+
+ENGINE_ERROR_KEY = "__pykmc_error__"
+
+
+def _engine_error_message(value) -> str | None:
+    if not isinstance(value, dict) or ENGINE_ERROR_KEY not in value:
+        return None
+    payload = value[ENGINE_ERROR_KEY]
+    if isinstance(payload, dict):
+        handler = payload.get("handler", "engine")
+        message = payload.get("message", "unknown engine error")
+        return f"{handler}: {message}"
+    return str(payload)
+
+
+def _failed_event_search(value):
+    message = _engine_error_message(value)
+    if message is None:
+        return None
+    return Err(
+        ErrorInfo(
+            type=ErrorType.EVENT_NOT_FOUND,
+            message=message,
+        )
+    )
 
 class MpiApiSession :
     """A class to manage an MPI API session for LAMMPS.
@@ -232,6 +259,9 @@ class MpiApiSession :
             self.send_message({"type": "partn_search", "value": {"config": config, "central_atom_idx": central_atom_idx, "positions": positions, "cell": cell, "type": type}})
             msg = self.messenger.recv(source=self.engine_master_rank, tag=1)
             if msg.get("type") == "result" : 
+                result = _failed_event_search(msg["value"])
+                if result is not None:
+                    return result
                 return msg["value"]
             else : 
                 raise RuntimeError(f"Unexpected message type: {msg}")
@@ -246,6 +276,9 @@ class MpiApiSession :
             self.send_message({"type": "partn_refine", "value": {"config": config, "central_atom_idx": central_atom_idx, "positions": positions, "cell":cell, "type":type, "saddle_idx":saddle_idx, "saddle_positions":saddle_positions}})
             msg = self.messenger.recv(source=self.engine_master_rank, tag=1)
             if msg.get("type") == "result" : 
+                result = _failed_event_search(msg["value"])
+                if result is not None:
+                    return result
                 return msg["value"]
             else : 
                 raise RuntimeError(f"Unexpected message type: {msg}")
