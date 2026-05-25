@@ -175,5 +175,6 @@ def test_partn_search_configures_artn_evaluation_limit(monkeypatch):
 
     lammps_operations.partn_search(engine, config, central_atom_idx=4)
 
-    assert ("convergence_property", "norm") in created_artn[0].settings
+    assert ("converge_property", "norm") in created_artn[0].settings
     assert ("nevalf_max", 37) in created_artn[0].settings
+    assert "minimize 1e-6 1e-8 10000 38" in engine.lmp.commands
