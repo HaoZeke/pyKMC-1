@@ -6,7 +6,9 @@ import argparse
 import configparser
 import csv
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 from collections import Counter
@@ -1095,6 +1097,43 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
+def run_trial_subprocess(
+    command: list[str],
+    *,
+    cwd: Path,
+    timeout: float | None,
+) -> subprocess.CompletedProcess:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        stdout, _stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        stdout_after_kill, _stderr = process.communicate()
+        output = _timeout_output(error)
+        if stdout_after_kill:
+            output += stdout_after_kill
+        raise subprocess.TimeoutExpired(
+            cmd=error.cmd,
+            timeout=error.timeout,
+            output=output,
+        ) from error
+    return subprocess.CompletedProcess(
+        args=command,
+        returncode=process.returncode,
+        stdout=stdout,
+    )
+
+
 def execute_trials(
     commands: list[dict[str, Any]],
     events_path: Path,
@@ -1107,15 +1146,10 @@ def execute_trials(
         for command in commands:
             workdir = Path(command["workdir"])
             try:
-                result = subprocess.run(
+                result = run_trial_subprocess(
                     command["command"],
                     cwd=workdir,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    check=False,
                     timeout=trial_timeout_s,
-                    start_new_session=True,
                 )
             except subprocess.TimeoutExpired as error:
                 (workdir / "harness.log").write_text(_timeout_output(error))
