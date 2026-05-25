@@ -191,6 +191,7 @@ def undercovered_environments_for_search(
     visited_environments,
     environment_search_evidence,
     disable_coverage_resampling: bool = False,
+    zero_observation_attempt_limit: int | None = None,
 ) -> list[str | bytes]:
     """Return current environment IDs that should receive event-search work.
 
@@ -215,13 +216,23 @@ def undercovered_environments_for_search(
         current_environments,
         environment_search_evidence,
     )
+    attempted_or_visited_environments = set(visited_environments).union(
+        environment_search_evidence
+    )
     for environment in sorted(
-        current_environment_set.intersection(visited_environments),
+        current_environment_set.intersection(attempted_or_visited_environments),
         key=str,
     ):
         if environment == "crystal" or environment in seen:
             continue
         evidence = environment_search_evidence.get(environment)
+        if (
+            evidence is not None
+            and zero_observation_attempt_limit is not None
+            and not evidence.process_counts
+            and int(evidence.attempts) >= int(zero_observation_attempt_limit)
+        ):
+            continue
         if evidence is None or not _needs_more_process_search(
             evidence,
             known_rate_scale=known_rate_scale,
@@ -400,7 +411,7 @@ def _compute_process_search_certificate(
             "singleton_processes": 0,
             "missing_process_mass": 1.0,
             "missing_rate_mass": 0.0,
-            "needs_more_search": False,
+            "needs_more_search": True,
         }
     if _amsel is not None and hasattr(_amsel, "event_completeness"):
         certificate = _amsel.event_completeness(
@@ -856,17 +867,18 @@ class KMC:
         disable_coverage_resampling = bool(
             getattr(self.config.control, "disable_coverage_resampling", False)
         )
+        searches_per_environment = max(1, int(nsearch))
         search_environments = undercovered_environments_for_search(
             current_environments=self.atomic_environment.atomic_environment_list,
             new_environments=new_environments,
             visited_environments=self.visited_environments,
             environment_search_evidence=self.environment_search_evidence,
             disable_coverage_resampling=disable_coverage_resampling,
+            zero_observation_attempt_limit=searches_per_environment,
         )
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
         first_round = True
-        searches_per_environment = max(1, int(nsearch))
 
         while search_environments:
             if disable_coverage_resampling:
@@ -903,13 +915,6 @@ class KMC:
                     event_search_outputs
                 )
                 all_valid_event_results.extend(results_is_valid_events)
-
-                if len(self.reference_table.table) == 0:
-                    self.loggers.error(
-                        "log",
-                        "No events have been found, empty reference events table. \n \tTry to increase nsearch or saddle point search algorithm's parameters. \n \tClosing the simulation.",
-                    )
-                    self._close()
 
                 searched_environments = environments_with_cataloged_searches(
                     self.atomic_environment.atomic_environment_list,
@@ -950,7 +955,14 @@ class KMC:
                     visited_environments=self.visited_environments,
                     environment_search_evidence=self.environment_search_evidence,
                     disable_coverage_resampling=disable_coverage_resampling,
+                    zero_observation_attempt_limit=searches_per_environment,
                 )
+                if len(self.reference_table.table) == 0 and not search_environments:
+                    self.loggers.error(
+                        "log",
+                        "No events have been found, empty reference events table. \n \tTry to increase nsearch or saddle point search algorithm's parameters. \n \tClosing the simulation.",
+                    )
+                    self._close()
                 first_round = False
         return all_event_search_results, all_valid_event_results
 
