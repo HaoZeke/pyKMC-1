@@ -339,6 +339,71 @@ def test_kmc_reference_search_respects_disabled_coverage_resampling():
     )
 
 
+def test_kmc_reference_search_checks_amsel_between_search_rounds(monkeypatch):
+    class CompleteCertificate:
+        attempts = 1
+        observations = 1
+        unique_processes = 1
+        singleton_processes = 0
+        unseen_process_probability = 0.0
+        missing_rate_mass_estimate = 0.0
+        needs_more_search = False
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=lambda **_kwargs: CompleteCertificate()),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
+    kmc.atomic_environment = SimpleNamespace(atomic_environment_list=["env-a"])
+    kmc.visited_environments = set()
+    kmc.environment_search_evidence = {}
+    kmc.reference_table = SimpleNamespace(table=[object()])
+    kmc.loggers = SimpleNamespace(info=lambda *_args: None)
+    kmc._close = lambda: None
+    batches = []
+    process_key = (7, "env-a", "env-b")
+
+    class FakeEventSearch:
+        results = [Ok(SimpleNamespace(central_atom_index=0))]
+
+        @staticmethod
+        def get_successes_results():
+            return [SimpleNamespace(central_atom_index=0)]
+
+    def execute_event_searches(central_atoms):
+        batches.append(list(central_atoms))
+        return FakeEventSearch()
+
+    def add_reference_events(_event_outputs):
+        return [
+            Ok(
+                pd.DataFrame(
+                    [
+                        {
+                            "idx_ref": process_key[0],
+                            "event_id": process_key[1],
+                            "id_final": process_key[2],
+                            "k": 2.5,
+                        }
+                    ]
+                )
+            )
+        ]
+
+    kmc.execute_event_searches = execute_event_searches
+    kmc.add_reference_events = add_reference_events
+
+    search_results, valid_results = kmc.search_reference_events_until_covered(
+        ["env-a"], nsearch=2
+    )
+
+    assert batches == [[0]]
+    assert len(search_results) == 1
+    assert len(valid_results) == 1
+
+
 def test_kmc_reference_search_counts_failed_resampling_attempts(monkeypatch):
     class FakeCertificate:
         def __init__(self, attempts):
