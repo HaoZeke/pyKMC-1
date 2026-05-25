@@ -284,6 +284,8 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
 
     #Convergence
     artn.set("forc_thr", config.partn.forc_thr)
+    artn.set("convergence_property", config.partn.convergence_property)
+    artn.set("nevalf_max", config.partn.nevalf_max)
 
     #Final push 
     artn.set("push_over", config.partn.push_over)
