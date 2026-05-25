@@ -521,6 +521,46 @@ def test_rate_immaterial_missing_mass_does_not_resample_environment(monkeypatch)
     ) == []
 
 
+def test_rate_scaled_trace_reports_effective_process_search_decision(monkeypatch):
+    class FakeCertificate:
+        attempts = 34
+        observations = 10
+        unique_processes = 3
+        singleton_processes = 1
+        unseen_process_probability = 0.02941176
+        missing_rate_mass_estimate = 1.5e-3
+        needs_more_search = True
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=lambda **kwargs: FakeCertificate()),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "slow-gap-env": EnvironmentSearchEvidence(
+            attempts=34,
+            process_counts=Counter(
+                {
+                    ("slow-a",): 8,
+                    ("slow-b",): 1,
+                    ("slow-c",): 1,
+                }
+            ),
+            process_rates={
+                ("slow-a",): 1.0e-3,
+                ("slow-b",): 7.0e-4,
+                ("slow-c",): 5.0e-4,
+            },
+        )
+    }
+
+    assert "needs_more_search=False" in environment_search_evidence_trace_lines(
+        evidence,
+        known_rate_scale=2.0,
+    )[0]
+
+
 def test_rate_material_missing_mass_still_resamples_environment(monkeypatch):
     class FakeCertificate:
         attempts = 4
