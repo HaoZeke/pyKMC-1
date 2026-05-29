@@ -90,7 +90,10 @@ def detect_recomb(
         clusters = defect_clusters(pos_list, cell_list, idx_set, cutoff, codes, 1)
         if not clusters:
             return None, None
-        biggest = max(clusters, key=len)
+        # defect_clusters returns members as indices INTO idx_set (local),
+        # not global atom indices -- map them back through idx_set.
+        local = max(clusters, key=len)
+        biggest = [int(idx_set[k]) for k in local]
         cpos = pos[np.asarray(biggest, dtype=int)]
         ref = cpos[0]
         d = cpos - ref
