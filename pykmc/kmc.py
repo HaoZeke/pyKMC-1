@@ -622,6 +622,11 @@ class KMC:
 
             # == Find Current atomic environments that has not been visited ==
             new_environments = self.get_new_environments()
+            # amsel KDB reuse: inject cached events for environments already
+            # in the persistent catalogue and drop them from the search list
+            # (skip pARTn). This is what stops the kMC starving when fresh
+            # pARTn searches return "no event found".
+            new_environments = self._reuse_events_from_kdb(new_environments)
             event_search_results, results_is_valid_events = (
                 self.search_reference_events_until_covered(
                     new_environments,
@@ -836,6 +841,37 @@ class KMC:
             return
         random.seed(int(seed))
         np.random.seed(int(seed))
+
+    def _reuse_events_from_kdb(self, new_environments: list) -> list:
+        """For each new environment, query the amsel KDB; on a HIT inject
+        the cached reference events and mark the environment visited so
+        pARTn does not re-search it. Returns the environments still needing
+        a search."""
+        kdb = getattr(self.reference_table, "kdb", None)
+        if kdb is None:
+            return new_environments
+        remaining = []
+        reused_envs = 0
+        reused_events = 0
+        for env in new_environments:
+            rows = kdb.lookup_rows(env)
+            if rows:
+                self.reference_table.ingest_rows(rows)
+                try:
+                    self.visited_environments.add(env)
+                except AttributeError:
+                    self.visited_environments = set(self.visited_environments) | {env}
+                reused_envs += 1
+                reused_events += len(rows)
+            else:
+                remaining.append(env)
+        if reused_events:
+            self.loggers.info(
+                "log",
+                "\t :=> Reused {} events from amsel KDB for {} environments "
+                "(skipped pARTn search)".format(reused_events, reused_envs),
+            )
+        return remaining
 
     def get_new_environments(self) -> list[str | bytes]:
         """Get atomic environments of the current system that has not been already explored.

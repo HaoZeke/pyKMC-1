@@ -49,8 +49,17 @@ class ControlConfig(BaseModel):
     )
 
     visited_environments: Optional[str] = Field(
-        default=None, 
+        default=None,
         description="Path to a list of visited environment generated from a previous simulation."
+    )
+
+    kdb_path: Optional[str] = Field(
+        default=None,
+        description="Path to an amsel KDB (LMDB) used as the persistent, "
+        "cross-chain process catalogue. Discovered reference events are "
+        "stored keyed by event_id; each new environment is looked up there "
+        "first and a HIT reuses the cached events instead of re-running "
+        "pARTn. Shared across chains.",
     )
 
     restart_file: Optional[str] = Field( 

@@ -68,6 +68,17 @@ class ReferenceEventTable:
     def __init__(self, config: Config) -> None:
         self.config = config
         self._initialize_table()
+        # Optional amsel KDB: persistent, cross-chain process catalogue.
+        self.kdb = None
+        kdb_path = getattr(config.control, "kdb_path", None)
+        if kdb_path:
+            try:
+                from .basins.amsel_kdb_catalog import AmselKdbCatalog
+                self.kdb = AmselKdbCatalog(
+                    kdb_path, float(getattr(config.rateconstant, "T", 0.0) or 0.0)
+                )
+            except Exception:
+                self.kdb = None
 
     def add_events(
         self, events: list[EventSearchOutput]
@@ -337,27 +348,37 @@ class ReferenceEventTable:
         """
         return [e.ok_value() for e in results_is_valid_event if e.is_ok()]
 
-    def add(self, dfevent: pd.Series) -> None:
+    def add(self, dfevent: pd.Series, persist: bool = True) -> None:
         """Add on event series to the table.
 
         Parameters
         ----------
         dfevent : pd.Series
             The event series.
+        persist : bool
+            When True (default) and an amsel KDB is configured, also store
+            the event(s) in the persistent catalogue. Reused (KDB-sourced)
+            events pass persist=False to avoid re-storing them.
 
         """
         #Check if only one or two events (if event is its own backard or not)
         ref = self.max_idx_ref()
-        if len(dfevent) == 1 : 
+        if len(dfevent) == 1 :
             dfevent["idx_ref"] = ref
-            dfevent["idx_backward"] = ref 
-        else : 
+            dfevent["idx_backward"] = ref
+        else :
             dfevent.loc[0].at["idx_ref"] = ref
             dfevent.loc[0].at["idx_backward"] = ref+1
             dfevent.loc[1].at["idx_ref"] = ref +1
             dfevent.loc[1].at["idx_backward"] = ref
 
         self.table = pd.concat([self.table, dfevent], ignore_index=True)
+        if persist and self.kdb is not None:
+            try:
+                for _, row in dfevent.iterrows():
+                    self.kdb.store_row(row)
+            except Exception:
+                pass
 
     def has_id_subset_table(self, ids: list[str | bytes]) -> pd.DataFrame:
         """Return subset table with event having id in ids.
@@ -519,7 +540,20 @@ class ReferenceEventTable:
 
         return dfevent_forward, dfevent_backward
     
-    def max_idx_ref(self) -> int : 
+    def ingest_rows(self, rows) -> None:
+        """Append externally-sourced reference rows (e.g. reused from the
+        amsel KDB) with fresh idx_ref, WITHOUT re-persisting them to the
+        KDB. Each row applies to its own event_id environment."""
+        for row in rows:
+            ref = self.max_idx_ref()
+            d = dict(row)
+            d["idx_ref"] = ref
+            d["idx_backward"] = ref
+            self.table = pd.concat(
+                [self.table, pd.DataFrame([d])], ignore_index=True
+            )
+
+    def max_idx_ref(self) -> int :
         """ Return max value of idx_ref"""
         if len(self.table) == 0 : 
             return 0 
