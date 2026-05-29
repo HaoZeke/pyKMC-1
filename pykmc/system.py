@@ -73,9 +73,16 @@ class System:
             If the file cannot be read or parsed into an ASE Atoms object.
 
         """
-        # Create ase.Atoms from file
+        # Create ase.Atoms from file. eOn .con files (the native amsel /
+        # eOn format, incl. con_spec_version 2 with extra columns) are read
+        # via readcon-core, which round-trips them exactly; everything else
+        # goes through ASE.
         try:
-            atoms = read(file_path, parallel=False, index=-1)
+            if str(file_path).endswith(".con"):
+                import readcon as _rc
+                atoms = _rc.read_con_as_ase(str(file_path))
+            else:
+                atoms = read(file_path, parallel=False, index=-1)
         except Exception as e:
             raise ValueError(f"Can't create System from file {file_path}: {e}") from e
 
