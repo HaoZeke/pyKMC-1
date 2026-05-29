@@ -58,7 +58,7 @@ def detect_recomb(
     coordination deviation).
     """
     try:
-        from amsel import estimate_nn_spacing
+        from amsel import defect_clusters, estimate_nn_spacing
     except ImportError:
         return None
     pos = np.asarray(positions, dtype=float)
@@ -67,23 +67,44 @@ def detect_recomb(
     if n == 0:
         return None
     nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0) or 2.56
-    cn = _coordination(pos, celld, cutoff_mult * nn)
+    cutoff = cutoff_mult * nn
+    cn = _coordination(pos, celld, cutoff)
     if cn.size == 0:
         return None
     bulk_cn = int(Counter(int(c) for c in cn).most_common(1)[0][0])
-    under = np.where(cn < bulk_cn)[0]
-    over = np.where(cn > bulk_cn)[0]
-    if under.size == 0 or over.size == 0:
+    under = [int(i) for i in np.where(cn < bulk_cn)[0]]
+    over = [int(i) for i in np.where(cn > bulk_cn)[0]]
+    if not under or not over:
         return None
-    # PBC-aware vacancy centroid from the under-coordinated ring.
-    ref = pos[under[0]]
-    d = pos[under] - ref
-    for ax in range(3):
-        if celld[ax] > 0:
-            d[:, ax] -= celld[ax] * np.round(d[:, ax] / celld[ax])
-    v_centroid = ref + d.mean(axis=0)
-    # Nearest over-coordinated SIA atom to the vacancy.
-    dd = pos[over] - v_centroid
+    pos_list = pos.tolist()
+    cell_list = celld.tolist()
+
+    def _largest_cluster_centroid(idx_set):
+        # Cluster only idx_set via amsel.defect_clusters (synthetic codes:
+        # selected atoms -> non-bulk 8, rest -> bulk 1), take the largest
+        # cluster -- the real defect (the vacancy ring / the SIA cage) --
+        # NOT the mean of all deviant atoms, which a stray neighbour skews.
+        codes = [1] * n
+        for i in idx_set:
+            codes[i] = 8
+        clusters = defect_clusters(pos_list, cell_list, idx_set, cutoff, codes, 1)
+        if not clusters:
+            return None, None
+        biggest = max(clusters, key=len)
+        cpos = pos[np.asarray(biggest, dtype=int)]
+        ref = cpos[0]
+        d = cpos - ref
+        for ax in range(3):
+            if celld[ax] > 0:
+                d[:, ax] -= celld[ax] * np.round(d[:, ax] / celld[ax])
+        return ref + d.mean(axis=0), biggest
+
+    v_centroid, _v_cluster = _largest_cluster_centroid(under)
+    if v_centroid is None:
+        return None
+    # Nearest over-coordinated SIA atom to the vacancy site.
+    over_arr = np.asarray(over, dtype=int)
+    dd = pos[over_arr] - v_centroid
     for ax in range(3):
         if celld[ax] > 0:
             dd[:, ax] -= celld[ax] * np.round(dd[:, ax] / celld[ax])
@@ -91,7 +112,7 @@ def detect_recomb(
     j = int(np.argmin(dist))
     if dist[j] > capture_mult * nn:
         return None  # SIA not yet within the capture radius
-    return int(over[j]), v_centroid.tolist()
+    return int(over_arr[j]), v_centroid.tolist()
 
 
 def build_product(positions, cell, source_atom: int, target_centroid):
