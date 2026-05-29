@@ -80,7 +80,10 @@ class System:
         try:
             if str(file_path).endswith(".con"):
                 import readcon as _rc
-                atoms = _rc.read_con_as_ase(str(file_path))
+                frames = _rc.read_con_as_ase(str(file_path))
+                # read_con_as_ase returns a list of frames; take the last
+                # (matches ASE's index=-1 single-frame convention).
+                atoms = frames[-1] if isinstance(frames, (list, tuple)) else frames
             else:
                 atoms = read(file_path, parallel=False, index=-1)
         except Exception as e:
