@@ -6,7 +6,7 @@ verbosity = 1
 n_sessions = 7
 engine_use_rank_0 = False
 basin = True
-active_volume = False
+active_volume = True
 #reference_table = ./reference_table.pickle 
 #visited_environments = ./visited_environments.pickle
 
@@ -32,9 +32,11 @@ r_nnewchance = 3
 path_artnso = /root/programs/artn-plugin-1501/lib/libartn-lmp.so
 forc_thr = 0.001
 
-[RateConstant] 
-style = constant
-k0 = 10.0
+[RateConstant]
+style = amsel-vtst
+prefactor = 5.0e12
+saddle_freq_invcm = 0.0
+friction_inv_s = 0.0
 T = 300.0
 
 [PSR] 
