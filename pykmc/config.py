@@ -53,6 +53,14 @@ class ControlConfig(BaseModel):
         description="Path to a list of visited environment generated from a previous simulation."
     )
 
+    amsel_recomb_inject: bool = Field(
+        default=False,
+        description="When True, apply the barrierless V/SIA capture directly "
+        "as a downhill kMC step when the pair is within the spontaneous "
+        "capture radius (validated by minimizing the amsel recomb product). "
+        "Supplies the saddle-less recombination transition that pARTn cannot "
+        "find; metastable separations fall through to normal migration.",
+    )
     kdb_path: Optional[str] = Field(
         default=None,
         description="Path to an amsel KDB (LMDB) used as the persistent, "

@@ -620,6 +620,35 @@ class KMC:
                 ),
             )
 
+            # == amsel barrierless capture (recombination sink) ==
+            # The final V/SIA capture is downhill with no saddle, so neither
+            # pARTn nor any min-mode search ever proposes it. When the defect
+            # pair is within the SPONTANEOUS capture radius (the amsel
+            # recomb product minimizes to a defect-free lower-energy state),
+            # apply it directly as one downhill kMC step instead of searching.
+            if getattr(self.config.control, "amsel_recomb_inject", False):
+                dt_cap = self._try_amsel_capture()
+                if dt_cap is not None:
+                    total_time += dt_cap
+                    self._save()
+                    self._append_snapshot_to_trajectory()
+                    self.neighbors_list = NeighborsList(
+                        self.system,
+                        self.config.atomicenvironment.rnei,
+                        self.config.atomicenvironment.rcut,
+                    )
+                    self.atomic_environment = AtomicEnvironment(
+                        self.config.atomicenvironment.style,
+                        self.neighbors_list.neighbors_list["rnei"],
+                        self.neighbors_list.neighbors_list["rcut"],
+                        self.config.atomicenvironment.neighbors_add,
+                    )
+                    if set(self.atomic_environment.atomic_environment_list) == {"crystal"}:
+                        self.loggers.info("log", ":=> Only atoms with cristalline environment")
+                        self._close()
+                        break
+                    continue
+
             # == Find Current atomic environments that has not been visited ==
             new_environments = self.get_new_environments()
             # amsel KDB reuse: inject cached events for environments already
@@ -872,6 +901,65 @@ class KMC:
                 "(skipped pARTn search)".format(reused_events, reused_envs),
             )
         return remaining
+
+    def _try_amsel_capture(self):
+        """Apply the barrierless V/SIA recombination directly when the pair
+        is within the spontaneous capture radius. Returns dt (seconds) on
+        capture, else None.
+
+        Validated by minimizing the amsel recomb product: fires ONLY when
+        the product is defect-free AND lower in energy than the current
+        state (a true downhill sink), so metastable separations fall
+        through to normal saddle-based migration. This supplies the one
+        transition no saddle search can find (the sink has no saddle)."""
+        try:
+            from .basins.amsel_recomb import (
+                build_product, detect_recomb, n_defects,
+            )
+        except Exception:
+            return None
+        pos = self.system.positions
+        cell = self.system.cell
+        cap = float(getattr(self.config.partn, "amsel_recomb_capture_mult", 1.6))
+        det = detect_recomb(pos, cell, capture_mult=cap)
+        if det is None:
+            return None
+        source, v_centroid = det
+        try:
+            product = build_product(pos, cell, source, v_centroid)
+        except Exception:
+            return None
+        nd_cur = n_defects(pos, cell)
+        self.manager.use_global()
+        try:
+            res = self.manager.minimize_with_results(
+                self.config, positions=np.asarray(product, dtype=float)
+            ).result()
+        except Exception:
+            return None
+        if res is None:
+            return None
+        min_pos, e_prod = res
+        nd_prod = n_defects(min_pos, cell)
+        absorb = max(2, int(0.4 * nd_cur))
+        e_cur = self.total_energy
+        if nd_prod > absorb:
+            return None  # product still defected -> not a capture, migrate
+        if e_cur is not None and e_prod is not None and e_prod >= e_cur:
+            return None  # not downhill -> metastable, migrate
+        # Apply the downhill capture as one kMC step.
+        self.system.update_positions(min_pos)
+        self.total_energy = e_prod
+        self.manager.use_local()
+        self.manager.set_all_positions(positions=self.system.positions)
+        pref = float(getattr(self.config.rateconstant, "prefactor", 1.0e13))
+        dt = (1.0 / pref) if pref > 0 else 1.0e-13
+        self.loggers.info(
+            "log",
+            "\t :=> amsel barrierless capture applied (downhill sink, "
+            "n_defects {}->{}); dt={:.3e}s".format(nd_cur, nd_prod, dt),
+        )
+        return dt
 
     def get_new_environments(self) -> list[str | bytes]:
         """Get atomic environments of the current system that has not been already explored.
