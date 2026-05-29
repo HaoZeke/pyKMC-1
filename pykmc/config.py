@@ -495,9 +495,12 @@ class PartnConfig(BaseModel):
 class RateConstantConfig(BaseModel):
     """Rate constant computation parameters."""
 
-    style: Literal["constant"] = Field(
-        default=...,
-        description="Method used to compute the prefactor of the rate constant. ",
+    style: Literal["constant", "eyring", "amsel-vtst"] = Field(
+        default="constant",
+        description="Method used to compute the rate constant. 'constant'/"
+        "'eyring' use k0*exp(-dE/kT). 'amsel-vtst' uses a physical prefactor "
+        "plus amsel Wigner/Eckart/Kramers anharmonic corrections (closes the "
+        "harmonic-TST gap that under-predicts migration rates).",
     )
     k0: float = Field(
         default=1.0,
@@ -505,6 +508,27 @@ class RateConstantConfig(BaseModel):
         "\n"
         "$$ k = k_{0} \\exp\\left(-\\frac{\\Delta E}{k_{b}T}\\right) $$"
         "\n",
+    )
+    prefactor: float = Field(
+        default=1.0e13,
+        description="Physical attempt frequency (1/s) used as the harmonic "
+        "prefactor for `style='amsel-vtst'`. Replaces the placeholder k0.",
+    )
+    saddle_freq_invcm: float = Field(
+        default=0.0,
+        description="Magnitude of the saddle imaginary frequency (cm^-1) for "
+        "the amsel-vtst Wigner+Eckart factors. 0 disables them (Cu: quantum "
+        "tunnelling negligible).",
+    )
+    friction_inv_s: float = Field(
+        default=0.0,
+        description="Friction (1/s) for the amsel-vtst Kramers-Grote-Hynes "
+        "turnover factor. 0 disables Kramers (gamma_K = 1).",
+    )
+    barrier_omega_rad_per_s: float = Field(
+        default=0.0,
+        description="Barrier-top angular frequency (rad/s) for the amsel-vtst "
+        "Kramers factor.",
     )
     T: float = Field(
         default=300,

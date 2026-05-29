@@ -2,7 +2,7 @@
 
 import pandas as pd
 from typing import Any
-from .rate_constant import compute_rate_Eyring
+from .rate_constant import compute_rate_Eyring, compute_rate
 from .config import Config
 import numpy as np
 from .environments.graph_nauty import graph
@@ -482,7 +482,7 @@ class ReferenceEventTable:
                 "saddle_positions": saddle_positions[neighbor_list_forwward],
                 "final_positions": min2_positions[neighbor_list_forwward],
                 "energy_barrier": dE_forward,
-                "k": compute_rate_Eyring(dE_forward, self.config),
+                "k": compute_rate(dE_forward, dE_backward, self.config),
                 "id_saddle": id_saddle,
                 "id_final": id_min2,
                 "move_atom_idx": np.where(neighbor_list_forwward == index_move)[0][0],
@@ -506,7 +506,7 @@ class ReferenceEventTable:
                 "saddle_positions": saddle_positions[neighbor_list_backward],
                 "final_positions": min1_positions[neighbor_list_backward],
                 "energy_barrier": dE_backward,
-                "k": compute_rate_Eyring(dE_backward, self.config),
+                "k": compute_rate(dE_backward, dE_forward, self.config),
                 "id_saddle": id_saddle,
                 "id_final": id_min1,
                 "move_atom_idx": np.where(neighbor_list_backward == index_move)[0][0],
@@ -698,7 +698,12 @@ class ActiveEventTable:
                 "saddle_positions": event_refinement_output.saddle_positions,
                 "final_positions": event_refinement_output.min2_positions,
                 "energy_barrier": event_refinement_output.dE_forward,
-                "k": compute_rate_Eyring(event_refinement_output.dE_forward, self.config),
+                "k": compute_rate(
+                    event_refinement_output.dE_forward,
+                    getattr(event_refinement_output, "dE_backward",
+                            event_refinement_output.dE_forward),
+                    self.config,
+                ),
                 "num_reference_event": event_refinement_output.num_reference_event,
                 "refined": event_refinement_output.refined
             }
