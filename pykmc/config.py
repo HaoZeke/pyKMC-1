@@ -240,8 +240,8 @@ class PartnConfig(BaseModel):
         "central atom is an SIA filler within the capture radius of a "
         "vacancy. The push is amsel.build_recomb_product_positions minus the "
         "reactant, set via ARTn push_mode=input. Makes the otherwise "
-        "saddle-invisible capture event discoverable. (Currently applied "
-        "only without active_volume; AV remapping is a follow-on.)",
+        "saddle-invisible capture event discoverable. In active-volume mode "
+        "the push is remapped onto the active atom set (atom_map).",
     )
     amsel_recomb_capture_mult: float = Field(
         default=1.6,

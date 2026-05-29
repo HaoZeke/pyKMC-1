@@ -264,18 +264,22 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
     _seed = None
     if (
         getattr(config.partn, "amsel_recomb_seed", False)
-        and not config.control.active_volume
         and positions is not None
         and cell is not None
     ):
         try:
             from ...basins.amsel_recomb import recomb_push
-            _seed = recomb_push(
+            _g = recomb_push(
                 positions, cell, central_atom_idx,
                 push_step_size=config.partn.push_step_size,
                 capture_mult=getattr(
                     config.partn, "amsel_recomb_capture_mult", 1.6),
             )
+            if _g is not None:
+                # Restrict the full-system push to the atoms pARTn sees.
+                # In active-volume mode pARTn operates on positions[atom_map]
+                # (av_idx order), so the push must be remapped the same way.
+                _seed = _g if atom_map is None else _g[np.asarray(atom_map, dtype=int)]
         except Exception:
             _seed = None
     if _seed is not None:
