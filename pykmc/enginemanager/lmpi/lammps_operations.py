@@ -256,13 +256,39 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
     )  # if true fortran runtime error when event not found
     artn.set("zseed", config.partn.zseed)
 
-    #Initial push 
-    artn.set("push_mode", config.partn.push_mode)
-    if config.partn.push_mode == "rad":
-        artn.set("push_dist_thr", config.partn.push_dist_thr)
-    artn.set("push_step_size", config.partn.push_step_size)
-    artn.set("push_ids", central_lammps_id)
-    artn.set("ninit", config.partn.ninit)
+    #Initial push (optionally amsel-seeded toward the recombination sink)
+    # The recombined crystal is a barrierless attractive sink; a random
+    # min-mode push never finds the capture. When the central atom is the
+    # SIA filler, seed pARTn's initial push along (product - reactant)
+    # toward the vacancy via set("push", ...) (forces push_mode=input).
+    _seed = None
+    if (
+        getattr(config.partn, "amsel_recomb_seed", False)
+        and not config.control.active_volume
+        and positions is not None
+        and cell is not None
+    ):
+        try:
+            from ...basins.amsel_recomb import recomb_push
+            _seed = recomb_push(
+                positions, cell, central_atom_idx,
+                push_step_size=config.partn.push_step_size,
+                capture_mult=getattr(
+                    config.partn, "amsel_recomb_capture_mult", 1.6),
+            )
+        except Exception:
+            _seed = None
+    if _seed is not None:
+        artn.set("push_step_size", config.partn.push_step_size)
+        artn.set("ninit", config.partn.ninit)
+        artn.set("push", np.ascontiguousarray(_seed, dtype=np.float64))
+    else:
+        artn.set("push_mode", config.partn.push_mode)
+        if config.partn.push_mode == "rad":
+            artn.set("push_dist_thr", config.partn.push_dist_thr)
+        artn.set("push_step_size", config.partn.push_step_size)
+        artn.set("push_ids", central_lammps_id)
+        artn.set("ninit", config.partn.ninit)
 
     #Lanczos
     artn.set("lanczos_min_size", config.partn.lanczos_min_size)

@@ -233,6 +233,22 @@ class PartnConfig(BaseModel):
         "- **'rad'**: The push is applied to *all atoms* within a specified radial distance (`push_dist_thr`) "
         "from the central atom.",
     )
+    amsel_recomb_seed: bool = Field(
+        default=False,
+        description="When True, seed the pARTn initial push toward the "
+        "recombined crystal (the barrierless attractive sink) whenever the "
+        "central atom is an SIA filler within the capture radius of a "
+        "vacancy. The push is amsel.build_recomb_product_positions minus the "
+        "reactant, set via ARTn push_mode=input. Makes the otherwise "
+        "saddle-invisible capture event discoverable. (Currently applied "
+        "only without active_volume; AV remapping is a follow-on.)",
+    )
+    amsel_recomb_capture_mult: float = Field(
+        default=1.6,
+        description="Capture radius for amsel recomb seeding, as a multiple "
+        "of the nearest-neighbour spacing. The seed fires only when an SIA "
+        "sits within this distance of a vacancy.",
+    )
 
     push_dist_thr: float = Field(
         default=1.0,
