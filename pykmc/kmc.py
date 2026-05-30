@@ -414,10 +414,15 @@ def _compute_process_search_certificate(
             "needs_more_search": True,
         }
     if _amsel is not None and hasattr(_amsel, "event_completeness"):
+        # A single search can register several process observations, so the
+        # observation total may exceed the attempt count; attempts is a lower
+        # bound on the search budget and must cover every observation.
+        observation_total = int(sum(evidence.process_counts.values()))
+        attempts = max(int(evidence.attempts), observation_total)
         certificate = _amsel.event_completeness(
             process_counts=dict(evidence.process_counts),
             process_rates=evidence.process_rates,
-            attempts=evidence.attempts,
+            attempts=attempts,
             use_py_heavy_tail=False,
         )
         missing_rate_mass = float(certificate.missing_rate_mass_estimate)
