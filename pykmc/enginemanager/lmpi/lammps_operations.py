@@ -19,6 +19,12 @@ from ...result import  (
 
 add_pypartn_interface_paths()
 
+# A saddle whose two relaxed minima differ by more than this (eV) is treated as
+# a transition to a strong sink (e.g. V/SIA recombination, which releases
+# ~5 eV) and accepted even when neither minimum sits within delr_threshold of
+# the search origin. Ordinary migrations have small |dE| and are unaffected.
+_RECOMB_SINK_DE_EV = 2.0
+
 
 def _partn_plugin_candidate_paths(configured_path: str) -> list[Path]:
     candidates = [Path(configured_path).expanduser()]
@@ -342,12 +348,20 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
             # Results
             delr1 = artn.extract("delr_min1")
             delr2 = artn.extract("delr_min2")
-            # Checks if one minimum is close to the original configuration
-            if delr1 < delr_threshold or delr2 < delr_threshold:
-                E_sad = artn.extract("etot_sad")
-                E_min1 = artn.extract("etot_min1")
-                E_min2 = artn.extract("etot_min2")
-
+            E_sad = artn.extract("etot_sad")
+            E_min1 = artn.extract("etot_min1")
+            E_min2 = artn.extract("etot_min2")
+            # Ordinarily a process is accepted when one relaxed minimum sits
+            # within delr_threshold of the search origin. A V/SIA recombination
+            # saddle does not: its product is the recombined crystal, a distant
+            # NEW minimum (delr large on the product side), and the shallow
+            # metastable reactant relaxes collectively (delr also > threshold).
+            # Such a transition is physical when one minimum is strongly
+            # downhill -- the recombination sink releases ~5 eV. Accept it even
+            # though neither relaxed minimum is within delr_threshold of origin.
+            connected = (delr1 < delr_threshold or delr2 < delr_threshold)
+            strong_downhill = abs(E_min1 - E_min2) > _RECOMB_SINK_DE_EV
+            if connected or strong_downhill:
                 dE_forward = E_sad - E_min1
                 dE_backward = E_sad - E_min2
 
@@ -366,7 +380,12 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
                         0  # if atom moves more that rcutevent, consider that it crosses the cell (happens with lammps), so distance = 0 to not consider it as the one that moves the most
                     )
                     index_move = np.argmax(dist)
-                if delr1 < delr2:  # necessary for no reconstruction option
+                # Orient reactant = the state we leave. When a relaxed minimum
+                # connects to origin, keep the delr ordering; for a disconnected
+                # strong-sink transition the reactant is the higher-energy
+                # (metastable) minimum and the product is the downhill sink.
+                reactant_is_min1 = (delr1 < delr2) if connected else (E_min1 > E_min2)
+                if reactant_is_min1:  # necessary for no reconstruction option
                     return Ok(
                         EventSearchOutput(
                             central_atom_index=central_atom_idx,
@@ -394,8 +413,11 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
                 return Err(
                     ErrorInfo(
                         type=ErrorType.EVENT_MINIMA_NOT_MATCH_POSITIONS,
-                        message="delr1 and delr2 > at {}".format(delr_threshold),
-                        variables={"delr1": delr1, "delr2": delr2},
+                        message="delr1 and delr2 > at {} and |dE_min|={:.3f} < {} (not a sink)".format(
+                            delr_threshold, abs(E_min1 - E_min2), _RECOMB_SINK_DE_EV
+                        ),
+                        variables={"delr1": delr1, "delr2": delr2,
+                                   "E_min1": E_min1, "E_min2": E_min2},
                     )
                 )
         else:
