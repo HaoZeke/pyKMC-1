@@ -1,9 +1,36 @@
 """Module defining function used to compute the rate constant."""
 
+from dataclasses import dataclass
+
 from .config import PhysicalConstants, Config
 import math as m
 
 PS_PER_S = 1.0e12
+
+
+@dataclass(frozen=True)
+class RateConstantDetails:
+    """Rate value and provenance for a transition-rate calculation."""
+
+    style: str
+    rate_inv_s: float
+    rate_ps_inv: float
+    rate_unit: str
+    harmonic_rate_inv_s: float
+    prefactor_inv_s: float
+    prefactor_source: str
+    temperature_K: float
+    dE_forward_ev: float
+    dE_backward_ev: float
+    saddle_freq_invcm: float
+    friction_inv_s: float
+    barrier_omega_rad_per_s: float
+    wigner_factor: float
+    eckart_factor: float
+    kramers_factor: float
+    anharmonic_corrections_active: bool
+    rate_model_ok: bool
+    rate_model_reason: str
 
 
 def compute_rate_Eyring(dE: float, config: Config) -> float:
@@ -33,6 +60,116 @@ def compute_rate_Eyring(dE: float, config: Config) -> float:
     return k0 * m.exp(-dE / (p.kb * T))
 
 
+def _rate_model_reason(
+    prefactor_source: str,
+    *,
+    anharmonic_corrections_active: bool,
+    amsel_available: bool,
+) -> str:
+    if not amsel_available:
+        return "amsel-unavailable"
+    if prefactor_source == "rateconstant.prefactor":
+        if not anharmonic_corrections_active:
+            return "configured-prefactor-no-curvature"
+        return "configured-prefactor"
+    if not anharmonic_corrections_active:
+        return "event-prefactor-no-curvature"
+    return "event-prefactor-vtst"
+
+
+def _rate_model_ok(reason: str) -> bool:
+    return reason == "event-prefactor-vtst"
+
+
+def compute_rate_amsel_vtst_details(
+    dE_forward: float, dE_backward: float, config: Config
+) -> RateConstantDetails:
+    """Return AMSEL-VTST rate value, units, correction factors, and provenance."""
+    rc = config.rateconstant
+    prefactor = float(getattr(rc, "prefactor", 1.0e13))
+    prefactor_source = str(getattr(rc, "prefactor_source", "rateconstant.prefactor"))
+    T = float(rc.T)
+    saddle_freq_invcm = float(getattr(rc, "saddle_freq_invcm", 0.0))
+    friction_inv_s = float(getattr(rc, "friction_inv_s", 0.0))
+    barrier_omega_rad_per_s = float(getattr(rc, "barrier_omega_rad_per_s", 0.0))
+    correction_inputs_active = saddle_freq_invcm > 0.0 or (
+        friction_inv_s > 0.0 and barrier_omega_rad_per_s > 0.0
+    )
+    p = PhysicalConstants()
+    harmonic_rate = prefactor * m.exp(-float(dE_forward) / (p.kb * T))
+    try:
+        import amsel as _amsel
+    except ImportError:
+        reason = _rate_model_reason(
+            prefactor_source,
+            anharmonic_corrections_active=False,
+            amsel_available=False,
+        )
+        return RateConstantDetails(
+            style="amsel-vtst",
+            rate_inv_s=harmonic_rate,
+            rate_ps_inv=harmonic_rate / PS_PER_S,
+            rate_unit="ps^-1",
+            harmonic_rate_inv_s=harmonic_rate,
+            prefactor_inv_s=prefactor,
+            prefactor_source=prefactor_source,
+            temperature_K=T,
+            dE_forward_ev=float(dE_forward),
+            dE_backward_ev=float(dE_backward),
+            saddle_freq_invcm=saddle_freq_invcm,
+            friction_inv_s=friction_inv_s,
+            barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+            wigner_factor=1.0,
+            eckart_factor=1.0,
+            kramers_factor=1.0,
+            anharmonic_corrections_active=False,
+            rate_model_ok=_rate_model_ok(reason),
+            rate_model_reason=reason,
+        )
+    result = _amsel.vtst_corrected_rate(
+        prefactor,
+        float(dE_forward),
+        float(dE_backward),
+        saddle_freq_invcm,
+        T,
+        friction_inv_s,
+        barrier_omega_rad_per_s,
+    )
+    wigner = float(result.get("wigner_factor", 1.0))
+    eckart = float(result.get("eckart_factor", 1.0))
+    kramers = float(result.get("kramers_factor", 1.0))
+    rate_inv_s = float(result["corrected_rate_inv_s"])
+    anharmonic_corrections_active = correction_inputs_active and (
+        wigner != 1.0 or eckart != 1.0 or kramers != 1.0 or saddle_freq_invcm > 0.0
+    )
+    reason = _rate_model_reason(
+        prefactor_source,
+        anharmonic_corrections_active=anharmonic_corrections_active,
+        amsel_available=True,
+    )
+    return RateConstantDetails(
+        style="amsel-vtst",
+        rate_inv_s=rate_inv_s,
+        rate_ps_inv=rate_inv_s / PS_PER_S,
+        rate_unit="ps^-1",
+        harmonic_rate_inv_s=float(result.get("harmonic_rate_inv_s", harmonic_rate)),
+        prefactor_inv_s=prefactor,
+        prefactor_source=prefactor_source,
+        temperature_K=T,
+        dE_forward_ev=float(dE_forward),
+        dE_backward_ev=float(dE_backward),
+        saddle_freq_invcm=saddle_freq_invcm,
+        friction_inv_s=friction_inv_s,
+        barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+        wigner_factor=wigner,
+        eckart_factor=eckart,
+        kramers_factor=kramers,
+        anharmonic_corrections_active=anharmonic_corrections_active,
+        rate_model_ok=_rate_model_ok(reason),
+        rate_model_reason=reason,
+    )
+
+
 def compute_rate_amsel_vtst(
     dE_forward: float, dE_backward: float, config: Config
 ) -> float:
@@ -53,24 +190,9 @@ def compute_rate_amsel_vtst(
 
     Falls back to a physical-prefactor Eyring rate if amsel is unavailable.
     """
-    rc = config.rateconstant
-    prefactor = float(getattr(rc, "prefactor", 1.0e13))
-    T = rc.T
-    try:
-        import amsel as _amsel
-    except ImportError:
-        p = PhysicalConstants()
-        return prefactor * m.exp(-dE_forward / (p.kb * T)) / PS_PER_S
-    result = _amsel.vtst_corrected_rate(
-        prefactor,
-        float(dE_forward),
-        float(dE_backward),
-        float(getattr(rc, "saddle_freq_invcm", 0.0)),
-        float(T),
-        float(getattr(rc, "friction_inv_s", 0.0)),
-        float(getattr(rc, "barrier_omega_rad_per_s", 0.0)),
-    )
-    return float(result["corrected_rate_inv_s"]) / PS_PER_S
+    return compute_rate_amsel_vtst_details(
+        dE_forward, dE_backward, config
+    ).rate_ps_inv
 
 
 def compute_rate(dE_forward: float, dE_backward: float, config: Config) -> float:

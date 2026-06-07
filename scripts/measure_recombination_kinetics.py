@@ -96,6 +96,12 @@ TRIAL_FIELDS = [
     "failed_refinement_committor",
     "usable_resolved_committor",
     "kinetic_claim_ok",
+    "rate_style",
+    "rate_prefactor_inv_s",
+    "rate_prefactor_source",
+    "rate_anharmonic_corrections_active",
+    "rate_model_ok",
+    "rate_model_reason",
     "coverage_envs_observed",
     "coverage_total_attempts",
     "coverage_total_observations",
@@ -122,6 +128,11 @@ RECOMBINATION_VOLUME_FIELDS = [
     "n_recombined",
     "n_censored",
     "kinetic_claim_ok_trials",
+    "rate_model_ok_trials",
+    "physical_kinetic_claim_ok_trials",
+    "rate_anharmonic_corrections_active_trials",
+    "rate_prefactor_sources",
+    "rate_model_reasons",
     "exposure_time_ps",
     "event_rate_ps_inv",
     "rate_coefficient_A3_per_ps",
@@ -271,6 +282,7 @@ def trial_metadata_from_input(input_path: Path) -> dict[str, Any]:
         metadata["temperature_K"] = config[rate_section].getfloat(
             "T", fallback=None
         )
+        metadata.update(rate_model_metadata(config[rate_section]))
 
     control_section = _optional_section(config, "Control")
     if control_section is None:
@@ -282,6 +294,49 @@ def trial_metadata_from_input(input_path: Path) -> dict[str, Any]:
     if not initial_config_path.is_absolute():
         initial_config_path = input_path.parent / initial_config_path
     metadata["box_volume_A3"] = structure_volume_A3(initial_config_path)
+    return metadata
+
+
+def rate_model_metadata(rate_section: configparser.SectionProxy) -> dict[str, Any]:
+    style = rate_section.get("style", fallback="constant")
+    metadata: dict[str, Any] = {
+        "rate_style": style,
+        "rate_anharmonic_corrections_active": False,
+        "rate_model_ok": False,
+    }
+    if style == "amsel-vtst":
+        saddle_freq_invcm = rate_section.getfloat("saddle_freq_invcm", fallback=0.0)
+        friction_inv_s = rate_section.getfloat("friction_inv_s", fallback=0.0)
+        barrier_omega_rad_per_s = rate_section.getfloat(
+            "barrier_omega_rad_per_s", fallback=0.0
+        )
+        correction_inputs_active = saddle_freq_invcm > 0.0 or (
+            friction_inv_s > 0.0 and barrier_omega_rad_per_s > 0.0
+        )
+        metadata.update(
+            {
+                "rate_prefactor_inv_s": rate_section.getfloat(
+                    "prefactor", fallback=1.0e13
+                ),
+                "rate_prefactor_source": rate_section.get(
+                    "prefactor_source", fallback="rateconstant.prefactor"
+                ),
+                "rate_anharmonic_corrections_active": correction_inputs_active,
+                "rate_model_reason": (
+                    "configured-prefactor"
+                    if correction_inputs_active
+                    else "configured-prefactor-no-curvature"
+                ),
+            }
+        )
+        return metadata
+    metadata.update(
+        {
+            "rate_prefactor_inv_s": rate_section.getfloat("k0", fallback=1.0),
+            "rate_prefactor_source": "rateconstant.k0",
+            "rate_model_reason": f"{style}-rate-model",
+        }
+    )
     return metadata
 
 
@@ -444,6 +499,16 @@ def trial_row_from_outputs(
         ),
         "output_dir": str(output_dir),
     }
+    for field in (
+        "rate_style",
+        "rate_prefactor_inv_s",
+        "rate_prefactor_source",
+        "rate_anharmonic_corrections_active",
+        "rate_model_ok",
+        "rate_model_reason",
+    ):
+        if field in metadata:
+            row[field] = metadata[field]
     return apply_kinetic_guard(row, diagnostics=None, log_text=log_text)
 
 
@@ -622,6 +687,17 @@ def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _joined_unique_strings(values) -> str:
+    entries = sorted(
+        {
+            str(value)
+            for value in values
+            if value is not None and str(value) != ""
+        }
+    )
+    return ";".join(entries)
+
+
 def recombination_volume_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     group_keys = sorted(
@@ -699,6 +775,24 @@ def recombination_volume_rows(trials: list[dict[str, Any]]) -> list[dict[str, An
                 "n_censored": int(n_trials - n_recombined),
                 "kinetic_claim_ok_trials": sum(
                     bool(trial.get("kinetic_claim_ok")) for trial in group
+                ),
+                "rate_model_ok_trials": sum(
+                    bool(trial.get("rate_model_ok")) for trial in group
+                ),
+                "physical_kinetic_claim_ok_trials": sum(
+                    bool(trial.get("kinetic_claim_ok"))
+                    and bool(trial.get("rate_model_ok"))
+                    for trial in group
+                ),
+                "rate_anharmonic_corrections_active_trials": sum(
+                    bool(trial.get("rate_anharmonic_corrections_active"))
+                    for trial in group
+                ),
+                "rate_prefactor_sources": _joined_unique_strings(
+                    trial.get("rate_prefactor_source") for trial in group
+                ),
+                "rate_model_reasons": _joined_unique_strings(
+                    trial.get("rate_model_reason") for trial in group
                 ),
                 "exposure_time_ps": exposure_time_ps,
                 "event_rate_ps_inv": event_rate,
