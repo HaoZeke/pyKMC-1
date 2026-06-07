@@ -178,6 +178,43 @@ def test_trial_row_records_temperature_and_box_volume(tmp_path, monkeypatch):
     assert row["box_volume_A3"] == 128.0
 
 
+def test_trial_row_records_rate_model_provenance(tmp_path, monkeypatch):
+    script = _load_script()
+    initial_config = tmp_path / "initial.xyz"
+    initial_config.write_text("placeholder\n")
+    (tmp_path / "input.in").write_text(
+        "[Control]\n"
+        f"initial_config = {initial_config}\n"
+        "[RateConstant]\n"
+        "style = amsel-vtst\n"
+        "T = 500.0\n"
+        "prefactor = 6.0e12\n"
+        "saddle_freq_invcm = 120.0\n"
+        "friction_inv_s = 0.0\n"
+        "barrier_omega_rad_per_s = 2.0e13\n"
+    )
+    (tmp_path / "pykmc.out").write_text(
+        "1 1.0e-12 1.0e-12 3 0.4 2.0 5.0 -1000.0 0.1 0.2\n"
+    )
+    (tmp_path / "pykmc.log").write_text("Step : 1\n:=> End of simulation\n")
+    monkeypatch.setattr(script, "structure_volume_A3", lambda path: 128.0)
+
+    row = script.trial_row_from_outputs(
+        case="cu-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=11,
+        output_dir=tmp_path,
+    )
+
+    assert row["rate_style"] == "amsel-vtst"
+    assert row["rate_prefactor_inv_s"] == pytest.approx(6.0e12)
+    assert row["rate_prefactor_source"] == "rateconstant.prefactor"
+    assert row["rate_anharmonic_corrections_active"] is True
+    assert row["rate_model_ok"] is False
+    assert row["rate_model_reason"] == "configured-prefactor"
+
+
 def test_trial_row_rejects_zero_step_censored_run(tmp_path):
     script = _load_script()
     (tmp_path / "pykmc.out").write_text("")
@@ -284,6 +321,10 @@ def test_recombination_volume_rows_use_survival_exposure_for_cu():
             "t_recombination_s": 1.0e-12,
             "censored_time_s": None,
             "kinetic_claim_ok": True,
+            "rate_model_ok": True,
+            "rate_model_reason": "event-prefactor-vtst",
+            "rate_prefactor_source": "event-prefactor",
+            "rate_anharmonic_corrections_active": True,
         },
         {
             "case": "cu-vac-sia",
@@ -294,6 +335,10 @@ def test_recombination_volume_rows_use_survival_exposure_for_cu():
             "t_recombination_s": None,
             "censored_time_s": 2.0e-12,
             "kinetic_claim_ok": True,
+            "rate_model_ok": False,
+            "rate_model_reason": "configured-prefactor",
+            "rate_prefactor_source": "rateconstant.prefactor",
+            "rate_anharmonic_corrections_active": True,
         },
         {
             "case": "cu-vac-sia",
@@ -304,6 +349,10 @@ def test_recombination_volume_rows_use_survival_exposure_for_cu():
             "t_recombination_s": 0.5e-12,
             "censored_time_s": None,
             "kinetic_claim_ok": False,
+            "rate_model_ok": False,
+            "rate_model_reason": "legacy-rate-model",
+            "rate_prefactor_source": "rateconstant.k0",
+            "rate_anharmonic_corrections_active": False,
         },
     ]
 
@@ -316,6 +365,15 @@ def test_recombination_volume_rows_use_survival_exposure_for_cu():
     assert rows[0]["n_recombined"] == 1
     assert rows[0]["n_censored"] == 1
     assert rows[0]["kinetic_claim_ok_trials"] == 2
+    assert rows[0]["rate_model_ok_trials"] == 1
+    assert rows[0]["physical_kinetic_claim_ok_trials"] == 1
+    assert rows[0]["rate_anharmonic_corrections_active_trials"] == 2
+    assert rows[0]["rate_prefactor_sources"] == (
+        "event-prefactor;rateconstant.prefactor"
+    )
+    assert rows[0]["rate_model_reasons"] == (
+        "configured-prefactor;event-prefactor-vtst"
+    )
     assert rows[0]["exposure_time_ps"] == pytest.approx(3.0)
     assert rows[0]["event_rate_ps_inv"] == pytest.approx(1.0 / 3.0)
     assert rows[0]["rate_coefficient_A3_per_ps"] == pytest.approx(100.0 / 3.0)
@@ -333,6 +391,8 @@ def test_recombination_volume_rows_use_survival_exposure_for_cu():
     assert rows[1]["n_trials"] == 1
     assert rows[1]["n_recombined"] == 1
     assert rows[1]["kinetic_claim_ok_trials"] == 0
+    assert rows[1]["rate_model_ok_trials"] == 0
+    assert rows[1]["physical_kinetic_claim_ok_trials"] == 0
 
 
 def test_seed_schedule_is_paired_by_trial():
