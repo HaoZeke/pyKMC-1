@@ -1164,7 +1164,26 @@ class KMC:
             if int(nsearch) > n_unique:
                 tmp2 += [random.choice(tmp1) for _i in range(int(nsearch) - n_unique)]
             central_atom_research_list += tmp2
+        recomb_center = self._amsel_recomb_search_center()
+        if (
+            recomb_center is not None
+            and int(recomb_center) not in central_atom_research_list
+        ):
+            central_atom_research_list.insert(0, int(recomb_center))
         return central_atom_research_list
+
+    def _amsel_recomb_search_center(self):
+        partn = getattr(self.config, "partn", None)
+        if not bool(getattr(partn, "amsel_recomb_seed", False)):
+            return None
+        try:
+            from .basins.amsel_recomb import recombination_search_center
+        except Exception:
+            return None
+        try:
+            return recombination_search_center(self.system.positions, self.system.cell)
+        except Exception:
+            return None
 
     def execute_event_searches(
         self, central_atom_research_list: list[int]

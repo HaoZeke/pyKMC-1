@@ -46,17 +46,8 @@ def _coordination(pos: np.ndarray, cell: np.ndarray, cutoff: float) -> np.ndarra
     return cn
 
 
-def detect_recomb(
-    positions, cell, cutoff_mult: float = 1.08, capture_mult: float = 1.6
-):
-    """Detect a recombinable V/SIA topology.
-
-    Returns (source_sia_atom_index, vacancy_centroid_xyz) when an
-    over-coordinated SIA atom sits within ``capture_mult * nn`` of the
-    under-coordinated vacancy site, else None. amsel-only (estimate_nn
-    + coordination; CNA-tolerant point defects are caught by the
-    coordination deviation).
-    """
+def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
+    """Return the nearest SIA filler and vacancy centroid for a V/SIA topology."""
     try:
         from amsel import defect_clusters, estimate_nn_spacing
     except ImportError:
@@ -113,9 +104,36 @@ def detect_recomb(
             dd[:, ax] -= celld[ax] * np.round(dd[:, ax] / celld[ax])
     dist = np.sqrt((dd * dd).sum(axis=1))
     j = int(np.argmin(dist))
-    if dist[j] > capture_mult * nn:
-        return None  # SIA not yet within the capture radius
-    return int(over_arr[j]), v_centroid.tolist()
+    return int(over_arr[j]), v_centroid.tolist(), float(dist[j]), float(nn)
+
+
+def detect_recomb(
+    positions, cell, cutoff_mult: float = 1.08, capture_mult: float = 1.6
+):
+    """Detect a recombinable V/SIA topology.
+
+    Returns (source_sia_atom_index, vacancy_centroid_xyz) when an
+    over-coordinated SIA atom sits within ``capture_mult * nn`` of the
+    under-coordinated vacancy site, else None. amsel-only (estimate_nn
+    + coordination; CNA-tolerant point defects are caught by the
+    coordination deviation).
+    """
+    topology = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
+    if topology is None:
+        return None
+    source_atom, v_centroid, distance, nn = topology
+    if distance > capture_mult * nn:
+        return None
+    return int(source_atom), v_centroid
+
+
+def recombination_search_center(positions, cell, cutoff_mult: float = 1.08):
+    """Return the SIA filler atom that should receive a recombination seed."""
+    topology = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
+    if topology is None:
+        return None
+    source_atom, _v_centroid, _distance, _nn = topology
+    return int(source_atom)
 
 
 def build_product(positions, cell, source_atom: int, target_centroid):
@@ -152,10 +170,10 @@ def recomb_push(
     sink instead of a random direction. numpy (nat, 3) C-order maps to
     ARTn's fortran (3, nat).
     """
-    det = detect_recomb(positions, cell, cutoff_mult, capture_mult)
+    det = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
     if det is None:
         return None
-    source_atom, v_centroid = det
+    source_atom, v_centroid, _distance, _nn = det
     # Only seed when the search is centred on the SIA filler itself.
     if int(central_atom_idx) != int(source_atom):
         return None
