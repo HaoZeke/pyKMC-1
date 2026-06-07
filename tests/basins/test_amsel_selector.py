@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from collections import Counter
+
 import pandas as pd
 import pytest
 
 amsel = pytest.importorskip("amsel")
 
 from pykmc.basins import AmselFPTASelector, StatesConnectivity
+from pykmc.kmc import (
+    EnvironmentSearchEvidence,
+    undercovered_environments_for_search,
+)
 
 
 class SequenceRng:
@@ -168,3 +174,22 @@ def test_adaptive_selector_samples_when_diagnostics_reject_mean_clock():
     assert result.is_ok()
     assert selector.last_clock_mode == "sampled"
     assert result.ok_value().exit_state == 10
+
+
+def test_singleton_process_evidence_remains_undercovered_with_large_rate_scale():
+    environment = "mobile-defect"
+    evidence = EnvironmentSearchEvidence(
+        attempts=5,
+        process_counts=Counter({"hop-a": 1}),
+        process_rates={"hop-a": 2.0},
+    )
+
+    undercovered = undercovered_environments_for_search(
+        current_environments=[environment] * 1000,
+        new_environments=[],
+        visited_environments={environment},
+        environment_search_evidence={environment: evidence},
+        zero_observation_attempt_limit=10,
+    )
+
+    assert undercovered == [environment]
