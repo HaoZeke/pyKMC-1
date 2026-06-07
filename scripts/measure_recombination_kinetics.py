@@ -6,6 +6,7 @@ import argparse
 import configparser
 import csv
 import json
+import math
 import os
 import re
 import signal
@@ -62,11 +63,21 @@ PROCESS_COVERAGE_RE = re.compile(
     r"needs_more_search=(?P<needs_more>True|False)"
 )
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
+CU_SIA_MIGRATION_ALPHA = 2.0 / 3.0
+CU_RECOMBINATION_TRANSPORT = {
+    300.0: {"lattice_parameter_A": 3.631, "diffusivity_A2_per_ps": 0.143},
+    400.0: {"lattice_parameter_A": 3.637, "diffusivity_A2_per_ps": 0.327},
+    500.0: {"lattice_parameter_A": 3.643, "diffusivity_A2_per_ps": 0.526},
+    600.0: {"lattice_parameter_A": 3.649, "diffusivity_A2_per_ps": 0.728},
+    700.0: {"lattice_parameter_A": 3.655, "diffusivity_A2_per_ps": 0.910},
+}
 TRIAL_FIELDS = [
     "case",
     "selector",
     "trial",
     "seed",
+    "temperature_K",
+    "box_volume_A3",
     "recombined",
     "t_recombination_s",
     "censored_time_s",
@@ -93,7 +104,35 @@ TRIAL_FIELDS = [
     "coverage_needs_more_search",
     "output_dir",
 ]
-SURVIVAL_FIELDS = ["selector", "time_s", "n_at_risk", "n_events", "survival"]
+SURVIVAL_FIELDS = [
+    "case",
+    "selector",
+    "temperature_K",
+    "time_s",
+    "n_at_risk",
+    "n_events",
+    "survival",
+]
+RECOMBINATION_VOLUME_FIELDS = [
+    "case",
+    "selector",
+    "temperature_K",
+    "box_volume_A3",
+    "n_trials",
+    "n_recombined",
+    "n_censored",
+    "kinetic_claim_ok_trials",
+    "exposure_time_ps",
+    "event_rate_ps_inv",
+    "rate_coefficient_A3_per_ps",
+    "recombined_fraction",
+    "lattice_parameter_A",
+    "diffusivity_A2_per_ps",
+    "alpha",
+    "atomic_volume_A3",
+    "recombination_volume_A3",
+    "recombination_volume_atomic",
+]
 BASIN_CONFIDENCE_FIELDS = [
     "case",
     "selector",
@@ -216,6 +255,63 @@ def atomic_environment_settings(input_path: Path) -> dict[str, Any]:
     return settings
 
 
+def trial_metadata_from_input(input_path: Path) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "temperature_K": None,
+        "box_volume_A3": None,
+    }
+    if not input_path.exists():
+        return metadata
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(input_path)
+
+    rate_section = _optional_section(config, "RateConstant")
+    if rate_section is not None:
+        metadata["temperature_K"] = config[rate_section].getfloat(
+            "T", fallback=None
+        )
+
+    control_section = _optional_section(config, "Control")
+    if control_section is None:
+        return metadata
+    initial_config = config[control_section].get("initial_config")
+    if not initial_config:
+        return metadata
+    initial_config_path = Path(initial_config)
+    if not initial_config_path.is_absolute():
+        initial_config_path = input_path.parent / initial_config_path
+    metadata["box_volume_A3"] = structure_volume_A3(initial_config_path)
+    return metadata
+
+
+def structure_volume_A3(path: Path) -> float | None:
+    if not path.exists():
+        return None
+    try:
+        if path.suffix.lower() == ".con":
+            import readcon as _readcon
+
+            frames = _readcon.read_con_as_ase(str(path))
+            atoms = frames[-1] if isinstance(frames, (list, tuple)) else frames
+        else:
+            from ase.io import read
+
+            atoms = read(str(path), parallel=False, index=-1)
+        return float(atoms.get_volume())
+    except Exception:
+        return None
+
+
+def cu_transport_at_temperature(temperature_K: float | None) -> dict[str, float] | None:
+    if temperature_K is None:
+        return None
+    for tabulated_temperature, values in CU_RECOMBINATION_TRANSPORT.items():
+        if math.isclose(float(temperature_K), tabulated_temperature, rel_tol=0.0, abs_tol=1.0e-9):
+            return values
+    return None
+
+
 def trajectory_recombination_summary(
     noncrystal_counts: list[int],
     output_rows: list[dict[str, Any]],
@@ -302,6 +398,7 @@ def trial_row_from_outputs(
 ) -> dict[str, Any]:
     output_rows = parse_pykmc_out(output_dir / "pykmc.out")
     log_text = (output_dir / "pykmc.log").read_text()
+    metadata = trial_metadata_from_input(output_dir / "input.in")
     detector = detect_recombination_from_log(log_text)
     trajectory_summary = trajectory_recombination_summary(
         trajectory_noncrystal_counts(output_dir / "trajkmc.xyz"),
@@ -324,6 +421,8 @@ def trial_row_from_outputs(
         "selector": selector,
         "trial": int(trial),
         "seed": int(seed),
+        "temperature_K": metadata["temperature_K"],
+        "box_volume_A3": metadata["box_volume_A3"],
         "recombined": recombined,
         "t_recombination_s": final_time if recombined else None,
         "censored_time_s": None if recombined else final_time,
@@ -468,9 +567,28 @@ def coverage_resampling_disabled_from_input(input_path: Path) -> bool:
 
 def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
-    selectors = sorted({str(trial["selector"]) for trial in trials})
-    for selector in selectors:
-        group = [trial for trial in trials if str(trial["selector"]) == selector]
+    group_keys = sorted(
+        {
+            (
+                str(trial.get("case", "")),
+                str(trial["selector"]),
+                trial.get("temperature_K"),
+            )
+            for trial in trials
+        },
+        key=_group_sort_key,
+    )
+    for case, selector, temperature_K in group_keys:
+        group = [
+            trial
+            for trial in trials
+            if (
+                str(trial.get("case", "")),
+                str(trial["selector"]),
+                trial.get("temperature_K"),
+            )
+            == (case, selector, temperature_K)
+        ]
         event_times = sorted(
             {
                 float(trial["t_recombination_s"])
@@ -492,7 +610,9 @@ def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
             survival *= Fraction(n_at_risk - n_events, n_at_risk)
             rows.append(
                 {
+                    "case": case,
                     "selector": selector,
+                    "temperature_K": temperature_K,
                     "time_s": event_time,
                     "n_at_risk": int(n_at_risk),
                     "n_events": int(n_events),
@@ -500,6 +620,128 @@ def survival_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def recombination_volume_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    group_keys = sorted(
+        {
+            (
+                str(trial.get("case", "")),
+                str(trial["selector"]),
+                trial.get("temperature_K"),
+            )
+            for trial in trials
+        },
+        key=_group_sort_key,
+    )
+    for case, selector, temperature_K in group_keys:
+        group = [
+            trial
+            for trial in trials
+            if (
+                str(trial.get("case", "")),
+                str(trial["selector"]),
+                trial.get("temperature_K"),
+            )
+            == (case, selector, temperature_K)
+        ]
+        if not group:
+            continue
+        n_trials = len(group)
+        n_recombined = sum(bool(trial.get("recombined")) for trial in group)
+        exposure_time_ps = sum(float(_trial_time(trial)) * 1.0e12 for trial in group)
+        box_volume = _mean_optional_float(
+            trial.get("box_volume_A3") for trial in group
+        )
+        event_rate = (
+            float(n_recombined) / exposure_time_ps if exposure_time_ps > 0.0 else None
+        )
+        rate_coefficient = (
+            event_rate * box_volume
+            if event_rate is not None and box_volume is not None
+            else None
+        )
+        transport = (
+            cu_transport_at_temperature(float(temperature_K))
+            if case == "cu-vac-sia" and temperature_K is not None
+            else None
+        )
+        lattice_parameter = (
+            transport["lattice_parameter_A"] if transport is not None else None
+        )
+        diffusivity = (
+            transport["diffusivity_A2_per_ps"] if transport is not None else None
+        )
+        alpha = CU_SIA_MIGRATION_ALPHA if transport is not None else None
+        atomic_volume = (
+            lattice_parameter**3 / 4.0 if lattice_parameter is not None else None
+        )
+        recombination_volume = (
+            rate_coefficient * alpha * lattice_parameter**2 / diffusivity
+            if (
+                rate_coefficient is not None
+                and alpha is not None
+                and lattice_parameter is not None
+                and diffusivity is not None
+                and diffusivity > 0.0
+            )
+            else None
+        )
+        rows.append(
+            {
+                "case": case,
+                "selector": selector,
+                "temperature_K": temperature_K,
+                "box_volume_A3": box_volume,
+                "n_trials": int(n_trials),
+                "n_recombined": int(n_recombined),
+                "n_censored": int(n_trials - n_recombined),
+                "kinetic_claim_ok_trials": sum(
+                    bool(trial.get("kinetic_claim_ok")) for trial in group
+                ),
+                "exposure_time_ps": exposure_time_ps,
+                "event_rate_ps_inv": event_rate,
+                "rate_coefficient_A3_per_ps": rate_coefficient,
+                "recombined_fraction": float(n_recombined) / float(n_trials),
+                "lattice_parameter_A": lattice_parameter,
+                "diffusivity_A2_per_ps": diffusivity,
+                "alpha": alpha,
+                "atomic_volume_A3": atomic_volume,
+                "recombination_volume_A3": recombination_volume,
+                "recombination_volume_atomic": (
+                    recombination_volume / atomic_volume
+                    if recombination_volume is not None
+                    and atomic_volume is not None
+                    and atomic_volume > 0.0
+                    else None
+                ),
+            }
+        )
+    return rows
+
+
+def _group_sort_key(key: tuple[str, str, object]) -> tuple[str, str, bool, float]:
+    case, selector, temperature = key
+    return (
+        case,
+        selector,
+        temperature is None,
+        float(temperature) if temperature is not None else 0.0,
+    )
+
+
+def _mean_optional_float(values) -> float | None:
+    total = 0.0
+    count = 0
+    for value in values:
+        if value is None:
+            continue
+        total += float(value)
+        count += 1
+    if count == 0:
+        return None
+    return total / float(count)
 
 
 def basin_confidence_rows_from_log(
@@ -809,6 +1051,7 @@ def trial_commands(
     partn_search_evals: int | None = None,
     refine_thr: float | None,
     priorities: list[str],
+    temperatures: list[float],
     trials: int,
     seed: int,
     max_steps: int,
@@ -831,68 +1074,80 @@ def trial_commands(
 ) -> list[dict[str, Any]]:
     commands = []
     template_text = template_input.read_text()
+    use_temperature_dirs = len(temperatures) > 1
     for item in seed_schedule(base_seed=seed, trials=trials, priorities=priorities):
-        trial_dir = out / str(item["priority"]) / f"trial-{item['trial']}"
-        write_trial_input(
-            trial_dir / "input.in",
-            template_text=template_text,
-            template_dir=template_input.parent,
-            initial_config=initial_config,
-            reference_table=reference_table,
-            visited_environments=visited_environments,
-            max_steps=max_steps,
-            event_searches=event_searches,
-            refine_thr=refine_thr,
-            priority=str(item["priority"]),
-            partn_path=partn_path,
-            partn_search_evals=partn_search_evals,
-            seed=int(item["seed"]),
-            basin_energy_thr=basin_energy_thr,
-            basin_max_expansions=basin_max_expansions,
-            basin_max_closed_states=basin_max_closed_states,
-            basin_max_absorbing_refinements=basin_max_absorbing_refinements,
-            basin_frontier_committor_tol=basin_frontier_committor_tol,
-            amsel_selector=amsel_selector,
-            amsel_exploration_priority=amsel_exploration_priority,
-            amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
-            amsel_min_guidance=amsel_min_guidance,
-            disable_coverage_resampling=disable_coverage_resampling,
-            basin_search_registry_path=basin_search_registry_path,
-        )
-        commands.append(
-            {
-                "case": case,
-                "priority": item["priority"],
-                "trial": item["trial"],
-                "seed": item["seed"],
-                "max_steps": int(max_steps),
-                "work_budget": work_budget,
-                "event_searches": event_searches,
-                "partn_search_evals": partn_search_evals,
-                "trial_timeout_s": trial_timeout_s,
-                "basin_energy_thr": basin_energy_thr,
-                "basin_max_expansions": basin_max_expansions,
-                "basin_max_closed_states": basin_max_closed_states,
-                "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
-                "basin_frontier_committor_tol": basin_frontier_committor_tol,
-                "amsel_selector": amsel_selector,
-                "amsel_exploration_priority": amsel_exploration_priority,
-                "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
-                "amsel_min_guidance": amsel_min_guidance,
-                "workdir": str(trial_dir),
-                "command": [
-                    mpirun,
-                    "-np",
-                    str(int(mpi_ranks)),
-                    python,
-                    "-m",
-                    "pykmc",
-                    "-in",
-                    "input.in",
-                ],
-            }
-        )
+        for temperature_K in temperatures:
+            trial_dir = out / str(item["priority"])
+            if use_temperature_dirs:
+                trial_dir = trial_dir / temperature_label(temperature_K)
+            trial_dir = trial_dir / f"trial-{item['trial']}"
+            write_trial_input(
+                trial_dir / "input.in",
+                template_text=template_text,
+                template_dir=template_input.parent,
+                initial_config=initial_config,
+                reference_table=reference_table,
+                visited_environments=visited_environments,
+                max_steps=max_steps,
+                event_searches=event_searches,
+                refine_thr=refine_thr,
+                priority=str(item["priority"]),
+                partn_path=partn_path,
+                partn_search_evals=partn_search_evals,
+                seed=int(item["seed"]),
+                temperature_K=float(temperature_K),
+                basin_energy_thr=basin_energy_thr,
+                basin_max_expansions=basin_max_expansions,
+                basin_max_closed_states=basin_max_closed_states,
+                basin_max_absorbing_refinements=basin_max_absorbing_refinements,
+                basin_frontier_committor_tol=basin_frontier_committor_tol,
+                amsel_selector=amsel_selector,
+                amsel_exploration_priority=amsel_exploration_priority,
+                amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
+                amsel_min_guidance=amsel_min_guidance,
+                disable_coverage_resampling=disable_coverage_resampling,
+                basin_search_registry_path=basin_search_registry_path,
+            )
+            commands.append(
+                {
+                    "case": case,
+                    "priority": item["priority"],
+                    "trial": item["trial"],
+                    "seed": item["seed"],
+                    "temperature_K": float(temperature_K),
+                    "max_steps": int(max_steps),
+                    "work_budget": work_budget,
+                    "event_searches": event_searches,
+                    "partn_search_evals": partn_search_evals,
+                    "trial_timeout_s": trial_timeout_s,
+                    "basin_energy_thr": basin_energy_thr,
+                    "basin_max_expansions": basin_max_expansions,
+                    "basin_max_closed_states": basin_max_closed_states,
+                    "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
+                    "basin_frontier_committor_tol": basin_frontier_committor_tol,
+                    "amsel_selector": amsel_selector,
+                    "amsel_exploration_priority": amsel_exploration_priority,
+                    "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
+                    "amsel_min_guidance": amsel_min_guidance,
+                    "workdir": str(trial_dir),
+                    "command": [
+                        mpirun,
+                        "-np",
+                        str(int(mpi_ranks)),
+                        python,
+                        "-m",
+                        "pykmc",
+                        "-in",
+                        "input.in",
+                    ],
+                }
+            )
     return commands
+
+
+def temperature_label(temperature_K: float) -> str:
+    text = "{:g}".format(float(temperature_K)).replace(".", "p")
+    return f"T{text}"
 
 
 def render_trial_input(
@@ -909,6 +1164,7 @@ def render_trial_input(
     partn_path: Path,
     partn_search_evals: int | None = None,
     seed: int,
+    temperature_K: float | None = None,
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
@@ -927,6 +1183,7 @@ def render_trial_input(
     control = _section(config, "Control")
     partn = _section(config, "pARTn")
     basin = _section(config, "BASIN")
+    rateconstant = _section(config, "RateConstant")
 
     config[control]["initial_config"] = str(initial_config)
     config[control]["n_steps"] = str(int(max_steps))
@@ -951,6 +1208,8 @@ def render_trial_input(
     config[partn]["zseed"] = str(int(seed))
     if partn_search_evals is not None:
         config[partn]["nevalf_max"] = str(int(partn_search_evals))
+    if temperature_K is not None:
+        config[rateconstant]["T"] = str(float(temperature_K))
     config[basin]["exploration_priority"] = _exploration_priority_for_priority(
         priority=priority,
         amsel_exploration_priority=amsel_exploration_priority,
@@ -1001,6 +1260,7 @@ def write_trial_input(
     partn_path: Path,
     partn_search_evals: int | None = None,
     seed: int,
+    temperature_K: float | None = None,
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
@@ -1028,6 +1288,7 @@ def write_trial_input(
             partn_path=partn_path,
             partn_search_evals=partn_search_evals,
             seed=seed,
+            temperature_K=temperature_K,
             basin_energy_thr=basin_energy_thr,
             basin_max_expansions=basin_max_expansions,
             basin_max_closed_states=basin_max_closed_states,
@@ -1160,6 +1421,7 @@ def execute_trials(
                             "priority": command["priority"],
                             "trial": command["trial"],
                             "seed": command["seed"],
+                            "temperature_K": command.get("temperature_K"),
                             "returncode": None,
                             "timed_out": True,
                             "timeout_s": trial_timeout_s,
@@ -1190,6 +1452,8 @@ def execute_trials(
                                 "selector": command["priority"],
                                 "trial": int(command["trial"]),
                                 "seed": int(command["seed"]),
+                                "temperature_K": command.get("temperature_K"),
+                                "box_volume_A3": None,
                                 "recombined": False,
                                 "t_recombination_s": None,
                                 "censored_time_s": 0.0,
@@ -1220,6 +1484,7 @@ def execute_trials(
                         "priority": command["priority"],
                         "trial": command["trial"],
                         "seed": command["seed"],
+                        "temperature_K": command.get("temperature_K"),
                         "returncode": result.returncode,
                     },
                     sort_keys=True,
@@ -1245,6 +1510,8 @@ def execute_trials(
                             "selector": command["priority"],
                             "trial": int(command["trial"]),
                             "seed": int(command["seed"]),
+                            "temperature_K": command.get("temperature_K"),
+                            "box_volume_A3": None,
                             "recombined": False,
                             "t_recombination_s": None,
                             "censored_time_s": 0.0,
@@ -1295,6 +1562,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trials", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--max-steps", type=int, required=True)
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        action="append",
+        help=(
+            "Temperature in Kelvin for the trial input. Repeat to run a "
+            "temperature sweep. Defaults to [RateConstant] T from the template."
+        ),
+    )
     parser.add_argument("--event-searches", type=int)
     parser.add_argument("--partn-search-evals", type=int)
     parser.add_argument("--refine-thr", type=float)
@@ -1357,6 +1633,9 @@ def main(argv: list[str] | None = None) -> int:
     initial_config = args.initial_config or defaults.get("initial_config")
     if template_input is None or initial_config is None:
         parser.error("--template-input and --initial-config are required for generic-defect")
+    temperatures = args.temperature or [
+        template_temperature_K(template_input.read_text())
+    ]
 
     commands = trial_commands(
         out=args.out,
@@ -1370,6 +1649,7 @@ def main(argv: list[str] | None = None) -> int:
         partn_search_evals=args.partn_search_evals,
         refine_thr=args.refine_thr,
         priorities=args.priority,
+        temperatures=temperatures,
         trials=args.trials,
         seed=args.seed,
         max_steps=args.max_steps,
@@ -1401,6 +1681,7 @@ def main(argv: list[str] | None = None) -> int:
         "allow_preloaded_catalog": bool(args.allow_preloaded_catalog),
         "partn_path": str(args.partn_path),
         "priorities": args.priority,
+        "temperatures_K": temperatures,
         "trials": args.trials,
         "seed": args.seed,
         "max_steps": args.max_steps,
@@ -1430,6 +1711,11 @@ def main(argv: list[str] | None = None) -> int:
         write_csv(args.out / "trials.csv", [], TRIAL_FIELDS)
         write_csv(args.out / "survival.csv", [], SURVIVAL_FIELDS)
         write_csv(
+            args.out / "recombination_volumes.csv",
+            [],
+            RECOMBINATION_VOLUME_FIELDS,
+        )
+        write_csv(
             args.out / "basin_confidence.csv",
             [],
             BASIN_CONFIDENCE_FIELDS,
@@ -1445,6 +1731,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     write_csv(args.out / "trials.csv", trial_rows, TRIAL_FIELDS)
     write_csv(args.out / "survival.csv", survival_rows(trial_rows), SURVIVAL_FIELDS)
+    write_csv(
+        args.out / "recombination_volumes.csv",
+        recombination_volume_rows(trial_rows),
+        RECOMBINATION_VOLUME_FIELDS,
+    )
     write_csv(
         args.out / "basin_confidence.csv",
         collect_basin_confidence_rows(commands),
@@ -1481,6 +1772,16 @@ def _section(config: configparser.ConfigParser, name: str) -> str:
             return section
     config.add_section(name)
     return name
+
+
+def template_temperature_K(template_text: str) -> float:
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(template_text)
+    section = _optional_section(config, "RateConstant")
+    if section is None:
+        return 300.0
+    return config[section].getfloat("T", fallback=300.0)
 
 
 def _optional_section(config: configparser.ConfigParser, name: str) -> str | None:
