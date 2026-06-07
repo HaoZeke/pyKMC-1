@@ -2,8 +2,12 @@ import pandas as pd
 import numpy as np
 from types import SimpleNamespace
 
-from pykmc.event_table import ReferenceEventTable, duplicate_event_error_info
-from pykmc.result import ErrorType
+from pykmc.event_table import (
+    ActiveEventTable,
+    ReferenceEventTable,
+    duplicate_event_error_info,
+)
+from pykmc.result import ErrorType, EventRefinementOutput
 
 
 def test_duplicate_event_error_info_preserves_matched_process_identity():
@@ -81,3 +85,40 @@ def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch
     assert calls[1][2]["prefactor_inv_s"] == 2.2e13
     assert calls[0][2]["saddle_freq_invcm"] == 120.0
     assert calls[1][2]["barrier_omega_rad_per_s"] == 2.4e13
+
+
+def test_active_event_series_uses_vineyard_prefactor(monkeypatch):
+    calls = []
+
+    def fake_compute_rate(dE_forward, dE_backward, config, **kwargs):
+        calls.append((dE_forward, dE_backward, kwargs))
+        return kwargs["prefactor_inv_s"] / 1.0e12
+
+    import pykmc.event_table as event_table
+
+    monkeypatch.setattr(event_table, "compute_rate", fake_compute_rate)
+    table = ActiveEventTable.__new__(ActiveEventTable)
+    table.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(style="amsel-vtst", T=300.0),
+    )
+    event = EventRefinementOutput(
+        central_atom_index=0,
+        saddle_positions=np.array([[0.1, 0.0, 0.0]], dtype=float),
+        E_saddle=0.2,
+        min2_positions=np.array([[0.2, 0.0, 0.0]], dtype=float),
+        dE_forward=0.2,
+        num_reference_event=3,
+        refined="F",
+        prefactor_inv_s=1.1e13,
+        prefactor_source="vineyard-finite-difference",
+        saddle_freq_invcm=120.0,
+        barrier_omega_rad_per_s=2.4e13,
+    )
+
+    row = table.build_event_series(event)
+
+    assert row["k"] == 11.0
+    assert row["prefactor_inv_s"] == 1.1e13
+    assert row["prefactor_source"] == "vineyard-finite-difference"
+    assert calls[0][2]["prefactor_inv_s"] == 1.1e13
+    assert calls[0][2]["saddle_freq_invcm"] == 120.0
