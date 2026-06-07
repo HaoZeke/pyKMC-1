@@ -1204,6 +1204,13 @@ class KMC:
                     forces = np.asarray(forces, dtype=float)
                     if forces.ndim == 1 and forces.size == positions.size:
                         forces = forces.reshape(positions.shape)
+                    if forces.shape != positions.shape:
+                        raise ValueError(
+                            "force shape {} does not match positions shape {}".format(
+                                forces.shape,
+                                positions.shape,
+                            )
+                        )
                     return forces
 
                 prefactors = vineyard_event_prefactors_from_forces(
