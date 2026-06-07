@@ -1355,6 +1355,9 @@ def render_trial_input(
     config[control]["n_steps"] = str(int(max_steps))
     config[control]["random_seed"] = str(int(seed))
     config[control]["basin"] = "True"
+    if priority != "legacy":
+        config[control]["amsel_recomb_inject"] = "True"
+        config[partn]["amsel_recomb_seed"] = "True"
     if disable_coverage_resampling or priority == "legacy":
         config[control]["disable_coverage_resampling"] = "True"
     if basin_search_registry_path is not None:
