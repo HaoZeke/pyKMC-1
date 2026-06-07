@@ -1263,6 +1263,7 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "priority": "legacy",
             "returncode": None,
             "seed": 1000,
+            "temperature_K": None,
             "timed_out": True,
             "timeout_s": 7.5,
             "trial": 0,
