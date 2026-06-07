@@ -219,6 +219,8 @@ def undercovered_environments_for_search(
     attempted_or_visited_environments = set(visited_environments).union(
         environment_search_evidence
     )
+    productive_searchable = []
+    zero_yield_searchable = []
     for environment in sorted(
         current_environment_set.intersection(attempted_or_visited_environments),
         key=str,
@@ -238,8 +240,15 @@ def undercovered_environments_for_search(
             known_rate_scale=known_rate_scale,
         ):
             continue
-        searchable.append(environment)
+        if evidence.process_counts:
+            productive_searchable.append(environment)
+        else:
+            zero_yield_searchable.append(environment)
         seen.add(environment)
+    if productive_searchable:
+        searchable.extend(productive_searchable)
+    else:
+        searchable.extend(zero_yield_searchable)
     return searchable
 
 
