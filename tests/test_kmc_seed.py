@@ -61,7 +61,11 @@ def test_event_search_logs_failed_search_reason():
     log_messages = []
     event_search = EventSearch(
         config=SimpleNamespace(control=SimpleNamespace(active_volume=False)),
-        system=SimpleNamespace(positions=np.zeros((1, 3))),
+        system=SimpleNamespace(
+            positions=np.zeros((1, 3)),
+            cell=np.eye(3),
+            types=["Cu"],
+        ),
         manager=FakeManager(),
         loggers=SimpleNamespace(
             info=lambda _name, message: log_messages.append(message),
@@ -650,7 +654,7 @@ def test_negligible_missing_rate_mass_does_not_trigger_more_process_search(
     )[0]
 
 
-def test_rate_immaterial_missing_mass_does_not_resample_environment(monkeypatch):
+def test_missing_process_mass_resamples_environment_even_when_rate_mass_is_small(monkeypatch):
     class FakeCertificate:
         attempts = 34
         observations = 10
@@ -708,7 +712,7 @@ def test_rate_immaterial_missing_mass_does_not_resample_environment(monkeypatch)
         new_environments=[],
         visited_environments={"slow-gap-env", "fast-env"},
         environment_search_evidence=evidence,
-    ) == []
+    ) == ["slow-gap-env"]
 
 
 def test_zero_observation_environment_is_not_rate_scaled_away(monkeypatch):
@@ -745,7 +749,7 @@ def test_zero_observation_environment_is_not_rate_scaled_away(monkeypatch):
     ) == ["zero-env"]
 
 
-def test_rate_scaled_trace_reports_effective_process_search_decision(monkeypatch):
+def test_process_coverage_trace_reports_strict_search_decision(monkeypatch):
     class FakeCertificate:
         attempts = 34
         observations = 10
@@ -779,7 +783,7 @@ def test_rate_scaled_trace_reports_effective_process_search_decision(monkeypatch
         )
     }
 
-    assert "needs_more_search=False" in environment_search_evidence_trace_lines(
+    assert "needs_more_search=True" in environment_search_evidence_trace_lines(
         evidence,
         known_rate_scale=2.0,
     )[0]
