@@ -11,6 +11,7 @@ from pykmc.rate_constant import (
     compute_rate_amsel_vtst_details,
     finite_difference_hessian_from_forces,
     mass_weighted_hessian_eigenvalues,
+    vineyard_event_prefactors_from_forces,
     vineyard_prefactor_from_eigenvalues,
     vineyard_prefactor_from_hessians,
 )
@@ -176,3 +177,47 @@ def test_vineyard_prefactor_from_hessians_mass_weights_before_ratio():
 
     expected = np.sqrt(16.0 * EV_PER_A2_AMU_TO_RAD2_PER_S2) / (2.0 * np.pi)
     assert prefactor == pytest.approx(expected)
+
+
+def test_vineyard_event_prefactors_from_forces_returns_forward_and_backward():
+    min1_hessian = np.diag([4.0, 9.0, 16.0])
+    min2_hessian = np.diag([25.0, 9.0, 16.0])
+    saddle_hessian = np.diag([-1.0, 9.0, 16.0])
+    min1_positions = np.array([[0.0, 0.0, 0.0]], dtype=float)
+    min2_positions = np.array([[10.0, 0.0, 0.0]], dtype=float)
+    saddle_positions = np.array([[20.0, 0.0, 0.0]], dtype=float)
+
+    def forces(displaced):
+        if np.linalg.norm(displaced - min1_positions) < 1.0:
+            return (-(min1_hessian @ (displaced - min1_positions).reshape(-1))).reshape(
+                -1, 3
+            )
+        if np.linalg.norm(displaced - min2_positions) < 1.0:
+            return (-(min2_hessian @ (displaced - min2_positions).reshape(-1))).reshape(
+                -1, 3
+            )
+        return (-(saddle_hessian @ (displaced - saddle_positions).reshape(-1))).reshape(
+            -1, 3
+        )
+
+    prefactors = vineyard_event_prefactors_from_forces(
+        forces,
+        min1_positions,
+        saddle_positions,
+        min2_positions,
+        active_indices=[0],
+        masses_amu=[1.0],
+        step_A=1.0e-4,
+    )
+
+    conv = EV_PER_A2_AMU_TO_RAD2_PER_S2
+    assert prefactors.forward_prefactor_inv_s == pytest.approx(
+        np.sqrt(4.0 * conv) / (2.0 * np.pi)
+    )
+    assert prefactors.backward_prefactor_inv_s == pytest.approx(
+        np.sqrt(25.0 * conv) / (2.0 * np.pi)
+    )
+    assert prefactors.barrier_omega_rad_per_s == pytest.approx(np.sqrt(conv))
+    assert prefactors.saddle_freq_invcm == pytest.approx(
+        np.sqrt(conv) / (2.0 * np.pi * 2.99792458e10)
+    )
