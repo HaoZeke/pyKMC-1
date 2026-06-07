@@ -196,6 +196,48 @@ def test_kmc_vineyard_prefactors_use_global_full_system_forces(monkeypatch):
     assert event.prefactor_source == "vineyard-finite-difference"
 
 
+def test_kmc_vineyard_active_indices_follow_event_displacements():
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(vineyard_fd_step_A=1.0e-3),
+        atomicenvironment=SimpleNamespace(rcut=10.0),
+    )
+    kmc.system = SimpleNamespace(cell=np.eye(3) * 20.0)
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=np.array(
+            [
+                [1.0, 1.0, 1.0],
+                [2.0, 1.0, 1.0],
+                [3.0, 1.0, 1.0],
+            ],
+            dtype=float,
+        ),
+        saddle_positions=np.array(
+            [
+                [1.0, 1.0, 1.0],
+                [2.2, 1.0, 1.0],
+                [3.0, 1.0, 1.0],
+            ],
+            dtype=float,
+        ),
+        min2_positions=np.array(
+            [
+                [1.0, 1.0, 1.0],
+                [2.4, 1.0, 1.0],
+                [3.0, 1.0, 1.0],
+            ],
+            dtype=float,
+        ),
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 20.0,
+    )
+
+    assert kmc._vineyard_active_indices(event) == [0, 1]
+
+
 def test_environments_with_cataloged_searches_tracks_valid_search_centers():
     event_outputs = [
         SimpleNamespace(central_atom_index=1),
