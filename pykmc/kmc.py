@@ -1296,6 +1296,21 @@ class KMC:
             int(index)
             for index in np.flatnonzero(displacement > displacement_tol)
         }
+        if active:
+            ordered = sorted(
+                active,
+                key=lambda index: displacement[index],
+                reverse=True,
+            )
+            weights = np.array(
+                [displacement[index] ** 2 for index in ordered],
+                dtype=float,
+            )
+            total_weight = float(np.sum(weights))
+            if total_weight > 0.0:
+                cumulative = np.cumsum(weights) / total_weight
+                keep_count = int(np.searchsorted(cumulative, 0.95, side="left") + 1)
+                active = set(ordered[:keep_count])
         active.add(center)
         central = int(event.central_atom_index)
         if 0 <= central < len(positions):
