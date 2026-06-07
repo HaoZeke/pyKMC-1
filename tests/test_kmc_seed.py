@@ -196,6 +196,71 @@ def test_kmc_vineyard_prefactors_log_subspace_and_result(monkeypatch):
     )
 
 
+def test_kmc_uses_projected_vineyard_for_large_active_core(monkeypatch):
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(
+            style="amsel-vtst",
+            compute_vineyard_prefactor=True,
+            vineyard_fd_step_A=1.0e-4,
+        ),
+        atomicenvironment=SimpleNamespace(rcut=3.0),
+    )
+    kmc.system = SimpleNamespace(
+        types=["Cu", "Cu", "Cu", "Cu", "Cu"],
+        cell=np.eye(3) * 10.0,
+    )
+    kmc.manager = SimpleNamespace(
+        get_forces=lambda positions=None: SimpleNamespace(
+            result=lambda: np.zeros_like(positions)
+        )
+    )
+    kmc.loggers = SimpleNamespace(info=lambda *_args: None)
+    min1 = np.array([[float(index), 0.0, 0.0] for index in range(5)], dtype=float)
+    saddle = min1.copy()
+    product = min1.copy()
+    saddle[:, 0] += 0.2
+    product[:, 0] += 0.4
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=min1,
+        saddle_positions=saddle,
+        min2_positions=product,
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 10.0,
+    )
+
+    def fail_full_prefactors(*_args, **_kwargs):
+        raise AssertionError("full Vineyard path should not run")
+
+    def fake_projected_prefactors(*_args, **_kwargs):
+        return SimpleNamespace(
+            forward_prefactor_inv_s=1.1e13,
+            backward_prefactor_inv_s=2.2e13,
+            saddle_freq_invcm=120.0,
+            barrier_omega_rad_per_s=2.4e13,
+        )
+
+    monkeypatch.setattr(
+        kmc_module,
+        "vineyard_event_prefactors_from_forces",
+        fail_full_prefactors,
+    )
+    monkeypatch.setattr(
+        kmc_module,
+        "vineyard_projected_event_prefactors_from_forces",
+        fake_projected_prefactors,
+    )
+
+    kmc._attach_vineyard_prefactors([event])
+
+    assert event.prefactor_inv_s == pytest.approx(1.1e13)
+    assert event.product_prefactor_inv_s == pytest.approx(2.2e13)
+    assert event.prefactor_source == "vineyard-projected-mode"
+
+
 def test_kmc_vineyard_prefactors_use_global_full_system_forces(monkeypatch):
     kmc = KMC.__new__(KMC)
     kmc.config = SimpleNamespace(
