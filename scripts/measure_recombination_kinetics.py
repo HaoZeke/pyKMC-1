@@ -590,6 +590,13 @@ def apply_kinetic_guard(
         guarded["kinetic_claim_ok"] = False
     if not guarded.get("recombined", False) and int(guarded.get("kmc_steps") or 0) == 0:
         guarded["kinetic_claim_ok"] = False
+    if (
+        event_discovery_status_from_log(log_text) == "zero-events"
+        and guarded.get("rate_prefactor_source") == "vineyard-finite-difference"
+    ):
+        guarded["rate_model_ok"] = False
+        guarded["rate_model_reason"] = "event-prefactor-missing"
+        guarded["kinetic_claim_ok"] = False
 
     # AMSEL process-coverage certificates expose the controller's
     # rate-material resampling gate. A trial is not suitable for kinetic claims
