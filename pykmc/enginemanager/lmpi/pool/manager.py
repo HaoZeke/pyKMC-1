@@ -169,6 +169,10 @@ class Manager:
         future = self.submit_job("get_total_energy", {"positions": positions})
         return future
 
+    def get_forces(self, positions=None):
+        future = self.submit_job("get_forces", {"positions": positions})
+        return future
+
     def partn_search(self, config, central_atom: list[int], positions=None, cell=None, type=None) -> list[Future] :
         futures = []
         for atom in central_atom :
@@ -207,5 +211,4 @@ class Manager:
             return global_method
 
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
 

@@ -251,6 +251,17 @@ class MpiApiSession :
         finally : 
             self._is_busy = False
 
+    def get_forces(self, positions=None):
+        self._is_busy = True
+        try:
+            self.send_message({"type": "get_forces", "value": {"positions": positions}})
+            msg = self.messenger.recv(source=self.engine_master_rank, tag=1)
+            if msg.get("type") == "result":
+                return msg["value"]
+            raise RuntimeError(f"Unexpected message type: {msg}")
+        finally:
+            self._is_busy = False
+
     #@session_locked
     def partn_search(self, config, central_atom_idx, positions=None, cell=None, type=None) :
         self._is_busy = True 

@@ -171,6 +171,17 @@ def get_potential_energy(engine, positions = None) :
     engine.command("uncompute c1")
     return result
 
+
+def get_forces(engine, positions=None):
+    if positions is not None:
+        set_positions(engine=engine, positions=positions)
+    engine.command("run 0")
+    result = engine.lmp.gather_atoms("f", 1, 3)
+    if engine.rank == 0:
+        result = np.ctypeslib.as_array(result)
+        return np.reshape(result, (-1, 3)).copy()
+
+
 def get_positions(engine) : 
     result = engine.lmp.gather_atoms("x", 1, 3)
     if engine.rank == 0:
