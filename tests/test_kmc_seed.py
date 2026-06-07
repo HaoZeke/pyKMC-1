@@ -1138,7 +1138,7 @@ def test_negligible_missing_rate_mass_does_not_trigger_more_process_search(
     )[0]
 
 
-def test_missing_process_mass_resamples_environment_even_when_rate_mass_is_small(monkeypatch):
+def test_small_missing_rate_mass_does_not_resample_against_active_rate_scale(monkeypatch):
     class FakeCertificate:
         attempts = 34
         observations = 10
@@ -1196,7 +1196,7 @@ def test_missing_process_mass_resamples_environment_even_when_rate_mass_is_small
         new_environments=[],
         visited_environments={"slow-gap-env", "fast-env"},
         environment_search_evidence=evidence,
-    ) == ["slow-gap-env"]
+    ) == []
 
 
 def test_zero_observation_environment_is_not_rate_scaled_away(monkeypatch):
@@ -1233,7 +1233,7 @@ def test_zero_observation_environment_is_not_rate_scaled_away(monkeypatch):
     ) == ["zero-env"]
 
 
-def test_process_coverage_trace_reports_strict_search_decision(monkeypatch):
+def test_process_coverage_trace_reports_rate_scale_search_decision(monkeypatch):
     class FakeCertificate:
         attempts = 34
         observations = 10
@@ -1267,7 +1267,7 @@ def test_process_coverage_trace_reports_strict_search_decision(monkeypatch):
         )
     }
 
-    assert "needs_more_search=True" in environment_search_evidence_trace_lines(
+    assert "needs_more_search=False" in environment_search_evidence_trace_lines(
         evidence,
         known_rate_scale=2.0,
     )[0]
