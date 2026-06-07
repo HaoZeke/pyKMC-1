@@ -261,6 +261,56 @@ def test_kmc_uses_projected_vineyard_for_large_active_core(monkeypatch):
     assert event.prefactor_source == "vineyard-projected-mode"
 
 
+def test_kmc_uses_artn_saddle_curvature_without_force_calls():
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(
+            style="amsel-vtst",
+            compute_vineyard_prefactor=True,
+            vineyard_fd_step_A=1.0e-4,
+            T=300.0,
+        ),
+        atomicenvironment=SimpleNamespace(rcut=3.0),
+    )
+    kmc.system = SimpleNamespace(
+        types=["Cu", "Cu"],
+        cell=np.eye(3) * 10.0,
+    )
+
+    class FailingManager:
+        def use_global(self):
+            raise AssertionError("ARTn curvature path must not switch manager mode")
+
+        def use_local(self):
+            raise AssertionError("ARTn curvature path must not restore manager mode")
+
+        def get_forces(self, positions=None):
+            raise AssertionError("ARTn curvature path must not evaluate forces")
+
+    kmc.manager = FailingManager()
+    kmc.loggers = SimpleNamespace(info=lambda *_args: None)
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=np.array([[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], dtype=float),
+        saddle_positions=np.array([[1.1, 1.0, 1.0], [2.1, 1.0, 1.0]], dtype=float),
+        min2_positions=np.array([[1.2, 1.0, 1.0], [2.2, 1.0, 1.0]], dtype=float),
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 10.0,
+        saddle_eigenvalue_ev_per_A2=-1.0,
+    )
+
+    kmc._attach_vineyard_prefactors([event])
+
+    expected_prefactor = 8.6173303e-05 * 300.0 / 4.135667e-3 * 1.0e12
+    assert event.prefactor_inv_s == pytest.approx(expected_prefactor)
+    assert event.product_prefactor_inv_s == pytest.approx(expected_prefactor)
+    assert event.prefactor_source == "thermal-tst-artn-curvature"
+    assert event.saddle_freq_invcm > 0.0
+    assert event.barrier_omega_rad_per_s > 0.0
+
+
 def test_kmc_vineyard_prefactors_use_global_full_system_forces(monkeypatch):
     kmc = KMC.__new__(KMC)
     kmc.config = SimpleNamespace(
