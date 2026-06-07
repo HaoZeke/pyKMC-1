@@ -1393,6 +1393,8 @@ def render_trial_input(
         priority=priority,
         amsel_selector=amsel_selector,
     )
+    if priority != "legacy" and basin_max_absorbing_refinements is None:
+        config[basin].pop("max_absorbing_refinements", None)
     if basin_energy_thr is not None:
         config[basin]["energy_thr"] = str(float(basin_energy_thr))
     if basin_max_expansions is not None:
