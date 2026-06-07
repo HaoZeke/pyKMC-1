@@ -1570,6 +1570,9 @@ def execute_trials(
                     row["detector_reason"] = f"timeout-{trial_timeout_s}s"
                     row["event_searches"] = command.get("event_searches")
                     row["kinetic_claim_ok"] = False
+                    if row.get("rate_prefactor_source") == "vineyard-finite-difference":
+                        row["rate_model_ok"] = False
+                        row["rate_model_reason"] = "vineyard-prefactor-timeout"
                     rows.append(row)
                 else:
                     rows.append(
