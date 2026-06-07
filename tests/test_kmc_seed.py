@@ -238,6 +238,57 @@ def test_kmc_vineyard_active_indices_follow_event_displacements():
     assert kmc._vineyard_active_indices(event) == [0, 1]
 
 
+def test_kmc_vineyard_prefactor_logs_force_shape_mismatch(monkeypatch):
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(
+            style="amsel-vtst",
+            compute_vineyard_prefactor=True,
+            vineyard_fd_step_A=1.0e-4,
+        ),
+        atomicenvironment=SimpleNamespace(rcut=3.0),
+    )
+    kmc.system = SimpleNamespace(
+        types=["Cu", "Cu"],
+        cell=np.eye(3) * 10.0,
+    )
+    kmc.manager = SimpleNamespace(
+        global_get_forces=lambda positions=None: np.zeros((1, 3), dtype=float),
+        get_forces=lambda positions=None: np.zeros((2, 3), dtype=float),
+    )
+    log_messages = []
+    kmc.loggers = SimpleNamespace(
+        info=lambda _name, message: log_messages.append(message)
+    )
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=np.array([[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], dtype=float),
+        saddle_positions=np.array([[1.1, 1.0, 1.0], [2.1, 1.0, 1.0]], dtype=float),
+        min2_positions=np.array([[1.2, 1.0, 1.0], [2.2, 1.0, 1.0]], dtype=float),
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 10.0,
+    )
+
+    def fake_prefactors(force_fn, min1, _saddle, _min2, **_kwargs):
+        force_fn(np.asarray(min1, dtype=float))
+
+    monkeypatch.setattr(
+        kmc_module,
+        "vineyard_event_prefactors_from_forces",
+        fake_prefactors,
+    )
+
+    kmc._attach_vineyard_prefactors([event])
+
+    assert event.prefactor_source is None
+    assert any(
+        "force shape (1, 3) does not match positions shape (2, 3)" in message
+        for message in log_messages
+    )
+
+
 def test_environments_with_cataloged_searches_tracks_valid_search_centers():
     event_outputs = [
         SimpleNamespace(central_atom_index=1),
