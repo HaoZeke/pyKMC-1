@@ -9,7 +9,10 @@ from pykmc.rate_constant import (
     EV_PER_A2_AMU_TO_RAD2_PER_S2,
     compute_rate_amsel_vtst,
     compute_rate_amsel_vtst_details,
+    finite_difference_hessian_from_forces,
+    mass_weighted_hessian_eigenvalues,
     vineyard_prefactor_from_eigenvalues,
+    vineyard_prefactor_from_hessians,
 )
 
 
@@ -129,3 +132,47 @@ def test_vineyard_prefactor_rejects_saddle_without_one_unstable_mode():
             np.array([4.0, 9.0, 16.0]),
             np.array([1.0, 4.0, 9.0]),
         )
+
+
+def test_finite_difference_hessian_uses_negative_force_derivative():
+    hessian = np.diag([2.0, 3.0, 5.0, 7.0, 11.0, 13.0])
+    positions = np.zeros((3, 3), dtype=float)
+    active_indices = [0, 2]
+
+    def harmonic_forces(displaced):
+        active_flat = displaced[active_indices].reshape(-1)
+        forces = np.zeros_like(displaced)
+        forces[active_indices] = (-hessian @ active_flat).reshape(-1, 3)
+        return forces
+
+    got = finite_difference_hessian_from_forces(
+        harmonic_forces,
+        positions,
+        active_indices,
+        step_A=1.0e-4,
+    )
+
+    np.testing.assert_allclose(got, hessian, rtol=1.0e-10, atol=1.0e-10)
+
+
+def test_mass_weighted_hessian_eigenvalues_apply_atomic_masses():
+    hessian = np.diag([4.0, 9.0, 16.0])
+
+    got = mass_weighted_hessian_eigenvalues(hessian, masses_amu=[2.0])
+
+    expected = np.array([2.0, 4.5, 8.0]) * EV_PER_A2_AMU_TO_RAD2_PER_S2
+    np.testing.assert_allclose(got, expected)
+
+
+def test_vineyard_prefactor_from_hessians_mass_weights_before_ratio():
+    minimum_hessian = np.diag([4.0, 9.0, 16.0])
+    saddle_hessian = np.diag([-1.0, 4.0, 9.0])
+
+    prefactor = vineyard_prefactor_from_hessians(
+        minimum_hessian,
+        saddle_hessian,
+        masses_amu=[1.0],
+    )
+
+    expected = np.sqrt(16.0 * EV_PER_A2_AMU_TO_RAD2_PER_S2) / (2.0 * np.pi)
+    assert prefactor == pytest.approx(expected)
