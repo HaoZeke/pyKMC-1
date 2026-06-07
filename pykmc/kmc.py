@@ -348,10 +348,29 @@ def _process_search_certificate_with_rate_scale(
     *,
     known_rate_scale: float | None = None,
 ) -> dict[str, object]:
-    _ = known_rate_scale
-    # Process completeness is the correctness gate for additional searches.
-    # Rate-scale information belongs to scheduling priority, not coverage truth.
-    return dict(_process_search_certificate(evidence))
+    certificate = dict(_process_search_certificate(evidence))
+    local_rate_mass = float(sum(evidence.process_rates.values()))
+    rate_scale = _process_search_rate_scale(
+        known_rate_scale=known_rate_scale,
+        local_rate_mass=local_rate_mass,
+    )
+    certificate["needs_more_search"] = _needs_rate_material_process_search(
+        process_needs_more=bool(certificate["needs_more_search"]),
+        missing_rate_mass=float(certificate["missing_rate_mass"]),
+        known_rate_mass=rate_scale,
+    )
+    return certificate
+
+
+def _process_search_rate_scale(
+    *,
+    known_rate_scale: float | None,
+    local_rate_mass: float,
+) -> float:
+    if known_rate_scale is not None and math.isfinite(float(known_rate_scale)):
+        if float(known_rate_scale) > 0.0:
+            return float(known_rate_scale)
+    return float(local_rate_mass)
 
 
 def _evidence_signature(
@@ -375,6 +394,7 @@ def _evidence_signature(
 _PROCESS_SEARCH_CERTIFICATE_CACHE: dict[tuple, dict[str, object]] = {}
 _PROCESS_SEARCH_CERTIFICATE_CACHE_MAX = 4096
 PROCESS_SEARCH_MISSING_RATE_FLOOR = 1.0e-12
+PROCESS_SEARCH_MISSING_RATE_REL_TOL = 5.0e-3
 
 
 def _process_search_certificate_cache_clear() -> None:
@@ -487,7 +507,11 @@ def _needs_rate_material_process_search(
         return True
     if math.isinf(missing_rate_mass):
         return True
-    return float(missing_rate_mass) > PROCESS_SEARCH_MISSING_RATE_FLOOR
+    rate_floor = max(
+        PROCESS_SEARCH_MISSING_RATE_FLOOR,
+        PROCESS_SEARCH_MISSING_RATE_REL_TOL * float(known_rate_mass),
+    )
+    return float(missing_rate_mass) > rate_floor
 
 
 def _environment_label(environment) -> str:
