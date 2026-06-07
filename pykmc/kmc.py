@@ -1194,6 +1194,7 @@ class KMC:
         if not bool(getattr(rate_cfg, "compute_vineyard_prefactor", False)):
             return
         for event in events:
+            restore_local_mode = False
             try:
                 active_indices = self._vineyard_active_indices(event)
                 active_dof = 3 * len(active_indices)
@@ -1209,14 +1210,21 @@ class KMC:
                         ),
                     )
                 masses_amu = self._vineyard_masses_amu(active_indices)
-                force_getter = getattr(
-                    self.manager, "global_get_forces", self.manager.get_forces
-                )
-                global_session = getattr(self.manager, "global_session", None)
-                if global_session is not None and hasattr(
-                    global_session, "use_global"
+                if hasattr(self.manager, "use_global") and hasattr(
+                    self.manager, "use_local"
                 ):
-                    global_session.use_global()
+                    self.manager.use_global()
+                    restore_local_mode = True
+                    force_getter = self.manager.get_forces
+                else:
+                    force_getter = getattr(
+                        self.manager, "global_get_forces", self.manager.get_forces
+                    )
+                    global_session = getattr(self.manager, "global_session", None)
+                    if global_session is not None and hasattr(
+                        global_session, "use_global"
+                    ):
+                        global_session.use_global()
 
                 def force_fn(positions):
                     positions = np.asarray(positions, dtype=float)
@@ -1290,6 +1298,9 @@ class KMC:
                         ),
                     )
                 continue
+            finally:
+                if restore_local_mode:
+                    self.manager.use_local()
             event.prefactor_inv_s = prefactors.forward_prefactor_inv_s
             event.product_prefactor_inv_s = prefactors.backward_prefactor_inv_s
             event.prefactor_source = (
