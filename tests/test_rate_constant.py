@@ -1,9 +1,16 @@
 import sys
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+import sympy as sp
 
-from pykmc.rate_constant import compute_rate_amsel_vtst, compute_rate_amsel_vtst_details
+from pykmc.rate_constant import (
+    EV_PER_A2_AMU_TO_RAD2_PER_S2,
+    compute_rate_amsel_vtst,
+    compute_rate_amsel_vtst_details,
+    vineyard_prefactor_from_eigenvalues,
+)
 
 
 def test_amsel_vtst_returns_ps_inverse_for_kmc_clock(monkeypatch):
@@ -86,3 +93,39 @@ def test_amsel_vtst_details_mark_no_curvature_model_as_uncorrected(monkeypatch):
     assert details.anharmonic_corrections_active is False
     assert details.rate_model_ok is False
     assert details.rate_model_reason == "configured-prefactor-no-curvature"
+
+
+def test_vineyard_prefactor_symbolically_cancels_shared_stable_modes():
+    omega_a, omega_b, omega_reactant = sp.symbols(
+        "omega_a omega_b omega_reactant", positive=True
+    )
+
+    expression = (
+        omega_a
+        * omega_b
+        * omega_reactant
+        / (omega_a * omega_b)
+        / (2 * sp.pi)
+    )
+
+    assert sp.simplify(expression - omega_reactant / (2 * sp.pi)) == 0
+
+
+def test_vineyard_prefactor_from_mass_weighted_eigenvalues():
+    minimum_eigenvalues = np.array([4.0, 9.0, 16.0]) * EV_PER_A2_AMU_TO_RAD2_PER_S2
+    saddle_eigenvalues = np.array([-1.0, 4.0, 9.0]) * EV_PER_A2_AMU_TO_RAD2_PER_S2
+
+    prefactor = vineyard_prefactor_from_eigenvalues(
+        minimum_eigenvalues, saddle_eigenvalues
+    )
+
+    expected = np.sqrt(16.0 * EV_PER_A2_AMU_TO_RAD2_PER_S2) / (2.0 * np.pi)
+    assert prefactor == pytest.approx(expected)
+
+
+def test_vineyard_prefactor_rejects_saddle_without_one_unstable_mode():
+    with pytest.raises(ValueError, match="exactly one unstable"):
+        vineyard_prefactor_from_eigenvalues(
+            np.array([4.0, 9.0, 16.0]),
+            np.array([1.0, 4.0, 9.0]),
+        )
