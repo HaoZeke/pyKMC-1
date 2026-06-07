@@ -134,6 +134,68 @@ def test_kmc_attaches_vineyard_prefactors_to_event_search_outputs(monkeypatch):
     assert event.barrier_omega_rad_per_s == pytest.approx(2.4e13)
 
 
+def test_kmc_vineyard_prefactors_log_subspace_and_result(monkeypatch):
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(
+            style="amsel-vtst",
+            compute_vineyard_prefactor=True,
+            vineyard_fd_step_A=1.0e-4,
+        ),
+        atomicenvironment=SimpleNamespace(rcut=3.0),
+    )
+    kmc.system = SimpleNamespace(
+        types=["Cu", "Cu"],
+        cell=np.eye(3) * 10.0,
+    )
+    kmc.manager = SimpleNamespace(
+        get_forces=lambda positions=None: SimpleNamespace(
+            result=lambda: np.zeros_like(positions)
+        )
+    )
+    log_messages = []
+    kmc.loggers = SimpleNamespace(
+        info=lambda _name, message: log_messages.append(message)
+    )
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=np.array([[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], dtype=float),
+        saddle_positions=np.array([[1.2, 1.0, 1.0], [2.2, 1.0, 1.0]], dtype=float),
+        min2_positions=np.array([[1.4, 1.0, 1.0], [2.4, 1.0, 1.0]], dtype=float),
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 10.0,
+    )
+
+    def fake_prefactors(force_fn, min1, saddle, min2, **_kwargs):
+        return SimpleNamespace(
+            forward_prefactor_inv_s=1.1e13,
+            backward_prefactor_inv_s=2.2e13,
+            saddle_freq_invcm=120.0,
+            barrier_omega_rad_per_s=2.4e13,
+        )
+
+    monkeypatch.setattr(
+        kmc_module,
+        "vineyard_event_prefactors_from_forces",
+        fake_prefactors,
+    )
+
+    kmc._attach_vineyard_prefactors([event])
+
+    assert any(
+        "Vineyard prefactor event at atom 0: active_atoms=2 active_dof=6 force_evaluations=36"
+        in message
+        for message in log_messages
+    )
+    assert any(
+        "Vineyard prefactor event at atom 0 complete: forward=1.100000e+13/s backward=2.200000e+13/s saddle_freq=1.200000e+02/cm"
+        in message
+        for message in log_messages
+    )
+
+
 def test_kmc_vineyard_prefactors_use_global_full_system_forces(monkeypatch):
     kmc = KMC.__new__(KMC)
     kmc.config = SimpleNamespace(
