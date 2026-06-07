@@ -51,6 +51,12 @@ def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch
     import pykmc.event_table as event_table
 
     monkeypatch.setattr(event_table, "compute_rate", fake_compute_rate)
+    monkeypatch.setattr(event_table, "graph", lambda *_args, **_kwargs: ["env"])
+    monkeypatch.setattr(
+        event_table,
+        "unique_symmetries",
+        lambda *_args, **_kwargs: ([np.eye(3)], [np.array([0])]),
+    )
     table = ReferenceEventTable.__new__(ReferenceEventTable)
     table.config = SimpleNamespace(
         atomicenvironment=SimpleNamespace(rnei=0.1, rcut=0.5),

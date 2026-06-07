@@ -522,8 +522,12 @@ class ReferenceEventTable:
             atom_idx=[index_move],
         )[0]
 
-        neighbor_list_forwward = min1neighbors_list.neighbors_list["rcut"][index_move]
-        neighbor_list_backward = min2neighbors_list.neighbors_list["rcut"][index_move]
+        neighbor_list_forwward = np.asarray(
+            min1neighbors_list.neighbors_list["rcut"][index_move], dtype=int
+        )
+        neighbor_list_backward = np.asarray(
+            min2neighbors_list.neighbors_list["rcut"][index_move], dtype=int
+        )
 
         # Symmetries :
         sym_matrix, sym_perm = unique_symmetries(
