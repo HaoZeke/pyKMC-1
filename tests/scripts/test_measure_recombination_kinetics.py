@@ -968,6 +968,83 @@ def test_render_trial_input_enables_vineyard_prefactors_for_amsel_priority(tmp_p
     assert config["RateConstant"]["compute_vineyard_prefactor"] == "True"
 
 
+def test_render_trial_input_uses_committor_tolerance_without_default_absorbing_cap(
+    tmp_path,
+):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text=(
+            "[Control]\n"
+            "[pARTn]\n"
+            "[BASIN]\n"
+            "max_absorbing_refinements = 4\n"
+            "frontier_committor_tol = 0.1\n"
+            "[RateConstant]\n"
+            "style = amsel-vtst\n"
+        ),
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert "max_absorbing_refinements" not in config["BASIN"]
+    assert config["BASIN"]["frontier_committor_tol"] == "0.1"
+
+
+def test_render_trial_input_preserves_explicit_absorbing_refinement_cap(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text=(
+            "[Control]\n"
+            "[pARTn]\n"
+            "[BASIN]\n"
+            "max_absorbing_refinements = 4\n"
+            "frontier_committor_tol = 0.1\n"
+        ),
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=2,
+        basin_frontier_committor_tol=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert config["BASIN"]["max_absorbing_refinements"] == "2"
+
+
 def test_render_trial_input_keeps_legacy_prefactors_configured(tmp_path):
     script = _load_script()
 
