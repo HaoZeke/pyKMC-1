@@ -289,6 +289,80 @@ def test_kmc_vineyard_prefactor_logs_force_shape_mismatch(monkeypatch):
     )
 
 
+def test_kmc_vineyard_prefactors_switch_global_session(monkeypatch):
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(
+            style="amsel-vtst",
+            compute_vineyard_prefactor=True,
+            vineyard_fd_step_A=1.0e-4,
+        ),
+        atomicenvironment=SimpleNamespace(rcut=3.0),
+    )
+    kmc.system = SimpleNamespace(
+        types=["Cu", "Cu"],
+        cell=np.eye(3) * 10.0,
+    )
+    full_forces = np.array(
+        [[1.0, 2.0, 3.0], [-1.0, -2.0, -3.0]],
+        dtype=float,
+    )
+
+    class FakeGlobalSession:
+        def __init__(self):
+            self.global_mode = False
+            self.use_global_calls = 0
+
+        def use_global(self):
+            self.global_mode = True
+            self.use_global_calls += 1
+
+    class FakeManager:
+        def __init__(self):
+            self.global_session = FakeGlobalSession()
+
+        def get_forces(self, positions=None):
+            return np.zeros((1, 3), dtype=float)
+
+        def global_get_forces(self, positions=None):
+            if not self.global_session.global_mode:
+                return np.zeros((1, 3), dtype=float)
+            return full_forces.reshape(-1)
+
+    manager = FakeManager()
+    kmc.manager = manager
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=np.array([[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], dtype=float),
+        saddle_positions=np.array([[1.1, 1.0, 1.0], [2.1, 1.0, 1.0]], dtype=float),
+        min2_positions=np.array([[1.2, 1.0, 1.0], [2.2, 1.0, 1.0]], dtype=float),
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 10.0,
+    )
+
+    def fake_prefactors(force_fn, min1, _saddle, _min2, **_kwargs):
+        np.testing.assert_allclose(force_fn(np.asarray(min1, dtype=float)), full_forces)
+        return SimpleNamespace(
+            forward_prefactor_inv_s=1.1e13,
+            backward_prefactor_inv_s=2.2e13,
+            saddle_freq_invcm=120.0,
+            barrier_omega_rad_per_s=2.4e13,
+        )
+
+    monkeypatch.setattr(
+        kmc_module,
+        "vineyard_event_prefactors_from_forces",
+        fake_prefactors,
+    )
+
+    kmc._attach_vineyard_prefactors([event])
+
+    assert manager.global_session.use_global_calls >= 1
+    assert event.prefactor_source == "vineyard-finite-difference"
+
+
 def test_environments_with_cataloged_searches_tracks_valid_search_centers():
     event_outputs = [
         SimpleNamespace(central_atom_index=1),
