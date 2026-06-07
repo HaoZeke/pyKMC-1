@@ -1191,6 +1191,18 @@ class KMC:
         for event in events:
             try:
                 active_indices = self._vineyard_active_indices(event)
+                active_dof = 3 * len(active_indices)
+                force_evaluations = 3 * 2 * active_dof
+                if getattr(self, "loggers", None) is not None:
+                    self.loggers.info(
+                        "log",
+                        "\t :=> Vineyard prefactor event at atom {}: active_atoms={} active_dof={} force_evaluations={}".format(
+                            event.central_atom_index,
+                            len(active_indices),
+                            active_dof,
+                            force_evaluations,
+                        ),
+                    )
                 masses_amu = self._vineyard_masses_amu(active_indices)
                 force_getter = getattr(
                     self.manager, "global_get_forces", self.manager.get_forces
@@ -1241,6 +1253,16 @@ class KMC:
             event.prefactor_source = "vineyard-finite-difference"
             event.saddle_freq_invcm = prefactors.saddle_freq_invcm
             event.barrier_omega_rad_per_s = prefactors.barrier_omega_rad_per_s
+            if getattr(self, "loggers", None) is not None:
+                self.loggers.info(
+                    "log",
+                    "\t :=> Vineyard prefactor event at atom {} complete: forward={:.6e}/s backward={:.6e}/s saddle_freq={:.6e}/cm".format(
+                        event.central_atom_index,
+                        prefactors.forward_prefactor_inv_s,
+                        prefactors.backward_prefactor_inv_s,
+                        prefactors.saddle_freq_invcm,
+                    ),
+                )
 
     def _vineyard_active_indices(self, event: EventSearchOutput) -> list[int]:
         positions = np.asarray(event.min1_positions, dtype=float)
