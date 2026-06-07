@@ -82,6 +82,87 @@ def vineyard_prefactor_from_eigenvalues(
     return float(m.exp(log_prefactor))
 
 
+def finite_difference_hessian_from_forces(
+    force_fn,
+    positions,
+    active_indices,
+    *,
+    step_A: float = 1.0e-3,
+) -> np.ndarray:
+    """Build an active-block Hessian in ``eV/A^2`` from force evaluations."""
+    base_positions = np.asarray(positions, dtype=float)
+    active = np.asarray(active_indices, dtype=int).ravel()
+    if base_positions.ndim != 2 or base_positions.shape[1] != 3:
+        raise ValueError("positions must have shape (n_atoms, 3)")
+    if active.size == 0:
+        raise ValueError("active_indices must be non-empty")
+    if np.any(active < 0) or np.any(active >= base_positions.shape[0]):
+        raise ValueError("active_indices must be valid atom indices")
+    step = float(step_A)
+    if not np.isfinite(step) or step <= 0.0:
+        raise ValueError("step_A must be positive")
+    n_dof = int(active.size * 3)
+    hessian = np.zeros((n_dof, n_dof), dtype=float)
+    for column, (atom_index, axis) in enumerate(
+        (atom, xyz) for atom in active for xyz in range(3)
+    ):
+        plus = base_positions.copy()
+        minus = base_positions.copy()
+        plus[atom_index, axis] += step
+        minus[atom_index, axis] -= step
+        force_plus = np.asarray(force_fn(plus), dtype=float)
+        force_minus = np.asarray(force_fn(minus), dtype=float)
+        if (
+            force_plus.shape != base_positions.shape
+            or force_minus.shape != base_positions.shape
+        ):
+            raise ValueError("force_fn must return forces with shape (n_atoms, 3)")
+        force_derivative = (
+            force_plus[active].reshape(-1) - force_minus[active].reshape(-1)
+        ) / (2.0 * step)
+        hessian[:, column] = -force_derivative
+    return 0.5 * (hessian + hessian.T)
+
+
+def mass_weighted_hessian_eigenvalues(hessian_ev_per_A2, masses_amu) -> np.ndarray:
+    """Return mass-weighted Hessian eigenvalues in ``rad^2/s^2``."""
+    hessian = np.asarray(hessian_ev_per_A2, dtype=float)
+    masses = np.asarray(masses_amu, dtype=float).ravel()
+    if hessian.ndim != 2 or hessian.shape[0] != hessian.shape[1]:
+        raise ValueError("hessian must be a square matrix")
+    if hessian.shape[0] != masses.size * 3:
+        raise ValueError("hessian size must be 3 * len(masses_amu)")
+    if not np.all(np.isfinite(hessian)) or not np.all(np.isfinite(masses)):
+        raise ValueError("hessian and masses must be finite")
+    if np.any(masses <= 0.0):
+        raise ValueError("masses_amu must be positive")
+    dof_masses = np.repeat(masses, 3)
+    mass_weighted = hessian / np.sqrt(np.outer(dof_masses, dof_masses))
+    mass_weighted = 0.5 * (mass_weighted + mass_weighted.T)
+    return np.linalg.eigvalsh(mass_weighted) * EV_PER_A2_AMU_TO_RAD2_PER_S2
+
+
+def vineyard_prefactor_from_hessians(
+    minimum_hessian_ev_per_A2,
+    saddle_hessian_ev_per_A2,
+    masses_amu,
+    *,
+    zero_tol_rad2_per_s2: float = 0.0,
+) -> float:
+    """Return the Vineyard prefactor from minimum and saddle Hessians."""
+    minimum_eigenvalues = mass_weighted_hessian_eigenvalues(
+        minimum_hessian_ev_per_A2, masses_amu
+    )
+    saddle_eigenvalues = mass_weighted_hessian_eigenvalues(
+        saddle_hessian_ev_per_A2, masses_amu
+    )
+    return vineyard_prefactor_from_eigenvalues(
+        minimum_eigenvalues,
+        saddle_eigenvalues,
+        zero_tol=zero_tol_rad2_per_s2,
+    )
+
+
 def compute_rate_Eyring(dE: float, config: Config) -> float:
     r"""Compute the rate constant based on the energy barrier and parameters in the configuration.
 
