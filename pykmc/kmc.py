@@ -41,7 +41,10 @@ from .info_simulation import (
 )
 from .eventsearch import EventSearch
 from .refinement import Refinement
-from .rate_constant import vineyard_event_prefactors_from_forces
+from .rate_constant import (
+    vineyard_event_prefactors_from_forces,
+    vineyard_projected_event_prefactors_from_forces,
+)
 from .log import Colors
 import time
 from .utils import push_towards, compute_delr
@@ -54,6 +57,8 @@ try:
     import amsel as _amsel
 except ImportError:  # pragma: no cover - exercised without AMSEL installed.
     _amsel = None
+
+MAX_FULL_VINEYARD_FORCE_EVALUATIONS = 72
 
 
 @dataclass
@@ -1251,7 +1256,22 @@ class KMC:
                             ),
                         )
 
-                prefactors = vineyard_event_prefactors_from_forces(
+                use_projected = (
+                    force_evaluations > MAX_FULL_VINEYARD_FORCE_EVALUATIONS
+                )
+                prefactor_fn = (
+                    vineyard_projected_event_prefactors_from_forces
+                    if use_projected
+                    else vineyard_event_prefactors_from_forces
+                )
+                if use_projected and getattr(self, "loggers", None) is not None:
+                    self.loggers.info(
+                        "log",
+                        "\t :=> Vineyard projected-mode prefactor for event at atom {}".format(
+                            event.central_atom_index
+                        ),
+                    )
+                prefactors = prefactor_fn(
                     force_fn,
                     event.min1_positions,
                     event.saddle_positions,
@@ -1272,7 +1292,11 @@ class KMC:
                 continue
             event.prefactor_inv_s = prefactors.forward_prefactor_inv_s
             event.product_prefactor_inv_s = prefactors.backward_prefactor_inv_s
-            event.prefactor_source = "vineyard-finite-difference"
+            event.prefactor_source = (
+                "vineyard-projected-mode"
+                if use_projected
+                else "vineyard-finite-difference"
+            )
             event.saddle_freq_invcm = prefactors.saddle_freq_invcm
             event.barrier_omega_rad_per_s = prefactors.barrier_omega_rad_per_s
             if getattr(self, "loggers", None) is not None:

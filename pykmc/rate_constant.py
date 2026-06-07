@@ -240,6 +240,132 @@ def vineyard_event_prefactors_from_forces(
     )
 
 
+def _reaction_unit_vector(reference_positions, target_positions, active_indices):
+    reference = np.asarray(reference_positions, dtype=float)
+    target = np.asarray(target_positions, dtype=float)
+    active = np.asarray(active_indices, dtype=int).ravel()
+    displacement = (target[active] - reference[active]).reshape(-1)
+    norm = float(np.linalg.norm(displacement))
+    if norm <= 0.0 or not np.isfinite(norm):
+        raise ValueError("projected Vineyard mode requires non-zero displacement")
+    return displacement / norm
+
+
+def _projected_curvature_ev_per_A2_amu(
+    force_fn,
+    positions,
+    active_indices,
+    masses_amu,
+    unit_vector,
+    *,
+    step_A: float,
+) -> float:
+    base_positions = np.asarray(positions, dtype=float)
+    active = np.asarray(active_indices, dtype=int).ravel()
+    masses = np.asarray(masses_amu, dtype=float).ravel()
+    unit = np.asarray(unit_vector, dtype=float).ravel()
+    if masses.size != active.size:
+        raise ValueError("masses_amu must match active_indices")
+    if unit.size != active.size * 3:
+        raise ValueError("projected mode size must match active coordinates")
+    if np.any(masses <= 0.0) or not np.all(np.isfinite(masses)):
+        raise ValueError("masses_amu must be positive and finite")
+    step = float(step_A)
+    if not np.isfinite(step) or step <= 0.0:
+        raise ValueError("step_A must be positive")
+    effective_mass = float(np.sum(np.repeat(masses, 3) * unit * unit))
+    if effective_mass <= 0.0 or not np.isfinite(effective_mass):
+        raise ValueError("projected mode effective mass must be positive")
+    plus = base_positions.copy()
+    minus = base_positions.copy()
+    displacement = (step * unit).reshape(active.size, 3)
+    plus[active] += displacement
+    minus[active] -= displacement
+    force_plus = np.asarray(force_fn(plus), dtype=float)
+    force_minus = np.asarray(force_fn(minus), dtype=float)
+    if (
+        force_plus.shape != base_positions.shape
+        or force_minus.shape != base_positions.shape
+    ):
+        raise ValueError("force_fn must return forces with shape (n_atoms, 3)")
+    force_derivative = (
+        force_plus[active].reshape(-1) - force_minus[active].reshape(-1)
+    ) / (2.0 * step)
+    curvature_ev_per_A2 = -float(np.dot(force_derivative, unit))
+    return curvature_ev_per_A2 / effective_mass
+
+
+def vineyard_projected_event_prefactors_from_forces(
+    force_fn,
+    min1_positions,
+    saddle_positions,
+    min2_positions,
+    *,
+    active_indices,
+    masses_amu,
+    step_A: float = 1.0e-3,
+    progress_callback=None,
+) -> VineyardEventPrefactors:
+    """Compute reduced Vineyard prefactors along the reaction coordinate."""
+
+    def stage_curvature(stage, positions, reference, target):
+        if progress_callback is not None:
+            progress_callback(stage, "start")
+        start = time.perf_counter()
+        try:
+            unit = _reaction_unit_vector(reference, target, active_indices)
+            curvature = _projected_curvature_ev_per_A2_amu(
+                force_fn,
+                positions,
+                active_indices,
+                masses_amu,
+                unit,
+                step_A=step_A,
+            )
+        except Exception:
+            if progress_callback is not None:
+                progress_callback(stage, "failed", time.perf_counter() - start)
+            raise
+        if progress_callback is not None:
+            progress_callback(stage, "complete", time.perf_counter() - start)
+        return curvature
+
+    forward_curvature = stage_curvature(
+        "projected_minimum_forward",
+        min1_positions,
+        min1_positions,
+        saddle_positions,
+    )
+    backward_curvature = stage_curvature(
+        "projected_minimum_backward",
+        min2_positions,
+        min2_positions,
+        saddle_positions,
+    )
+    saddle_curvature = stage_curvature(
+        "projected_saddle",
+        saddle_positions,
+        min1_positions,
+        min2_positions,
+    )
+    if forward_curvature <= 0.0 or backward_curvature <= 0.0:
+        raise ValueError("projected Vineyard minimum curvature must be positive")
+    if saddle_curvature >= 0.0:
+        raise ValueError("projected Vineyard saddle curvature must be unstable")
+    forward_omega = np.sqrt(forward_curvature * EV_PER_A2_AMU_TO_RAD2_PER_S2)
+    backward_omega = np.sqrt(backward_curvature * EV_PER_A2_AMU_TO_RAD2_PER_S2)
+    barrier_omega_rad_per_s = float(
+        np.sqrt(abs(saddle_curvature) * EV_PER_A2_AMU_TO_RAD2_PER_S2)
+    )
+    return VineyardEventPrefactors(
+        forward_prefactor_inv_s=float(forward_omega / (2.0 * m.pi)),
+        backward_prefactor_inv_s=float(backward_omega / (2.0 * m.pi)),
+        saddle_freq_invcm=barrier_omega_rad_per_s
+        / (2.0 * m.pi * SPEED_OF_LIGHT_CM_PER_S),
+        barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+    )
+
+
 def compute_rate_Eyring(dE: float, config: Config) -> float:
     r"""Compute the rate constant based on the energy barrier and parameters in the configuration.
 
