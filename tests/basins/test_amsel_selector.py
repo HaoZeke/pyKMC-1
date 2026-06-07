@@ -193,3 +193,49 @@ def test_singleton_process_evidence_remains_undercovered_with_large_rate_scale()
     )
 
     assert undercovered == [environment]
+
+
+def test_productive_undercoverage_preempts_zero_yield_resampling():
+    productive = "productive-defect"
+    zero_yield = "zero-yield-defect"
+    evidence_by_environment = {
+        productive: EnvironmentSearchEvidence(
+            attempts=5,
+            process_counts=Counter({"hop-a": 1}),
+            process_rates={"hop-a": 2.0},
+        ),
+        zero_yield: EnvironmentSearchEvidence(attempts=2),
+    }
+
+    undercovered = undercovered_environments_for_search(
+        current_environments=[productive, zero_yield],
+        new_environments=[],
+        visited_environments={productive, zero_yield},
+        environment_search_evidence=evidence_by_environment,
+        zero_observation_attempt_limit=10,
+    )
+
+    assert undercovered == [productive]
+
+
+def test_zero_yield_resampling_resumes_after_productive_coverage():
+    productive = "productive-defect"
+    zero_yield = "zero-yield-defect"
+    evidence_by_environment = {
+        productive: EnvironmentSearchEvidence(
+            attempts=6,
+            process_counts=Counter({"hop-a": 2}),
+            process_rates={"hop-a": 2.0},
+        ),
+        zero_yield: EnvironmentSearchEvidence(attempts=2),
+    }
+
+    undercovered = undercovered_environments_for_search(
+        current_environments=[productive, zero_yield],
+        new_environments=[],
+        visited_environments={productive, zero_yield},
+        environment_search_evidence=evidence_by_environment,
+        zero_observation_attempt_limit=10,
+    )
+
+    assert undercovered == [zero_yield]
