@@ -1287,7 +1287,11 @@ class KMC:
                 1.0e-3,
             )
         )
-        displacement_tol = max(10.0 * fd_step, 1.0e-3)
+        displacement_tol = max(
+            10.0 * fd_step,
+            1.0e-3,
+            0.05 * float(np.max(displacement)),
+        )
         active = {
             int(index)
             for index in np.flatnonzero(displacement > displacement_tol)
