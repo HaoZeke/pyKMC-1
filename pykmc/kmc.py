@@ -331,20 +331,10 @@ def _process_search_certificate_with_rate_scale(
     *,
     known_rate_scale: float | None = None,
 ) -> dict[str, object]:
-    certificate = dict(_process_search_certificate(evidence))
-    if not certificate["needs_more_search"]:
-        return certificate
-    if known_rate_scale is None or float(known_rate_scale) <= 0.0:
-        return certificate
-    missing_rate_mass = float(certificate["missing_rate_mass"])
-    if math.isinf(missing_rate_mass):
-        return certificate
-    if (
-        missing_rate_mass
-        <= PROCESS_SEARCH_MISSING_RATE_FRACTION * float(known_rate_scale)
-    ):
-        certificate["needs_more_search"] = False
-    return certificate
+    _ = known_rate_scale
+    # Process completeness is the correctness gate for additional searches.
+    # Rate-scale information belongs to scheduling priority, not coverage truth.
+    return dict(_process_search_certificate(evidence))
 
 
 def _evidence_signature(
@@ -368,7 +358,6 @@ def _evidence_signature(
 _PROCESS_SEARCH_CERTIFICATE_CACHE: dict[tuple, dict[str, object]] = {}
 _PROCESS_SEARCH_CERTIFICATE_CACHE_MAX = 4096
 PROCESS_SEARCH_MISSING_RATE_FLOOR = 1.0e-12
-PROCESS_SEARCH_MISSING_RATE_FRACTION = 0.05
 
 
 def _process_search_certificate_cache_clear() -> None:
