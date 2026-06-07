@@ -1227,6 +1227,8 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "selector": "legacy",
             "trial": 0,
             "seed": 1000,
+            "temperature_K": None,
+            "box_volume_A3": None,
             "recombined": False,
             "t_recombination_s": None,
             "censored_time_s": 3.0e-12,
