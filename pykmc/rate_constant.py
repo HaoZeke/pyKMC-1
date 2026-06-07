@@ -3,6 +3,8 @@
 from .config import PhysicalConstants, Config
 import math as m
 
+PS_PER_S = 1.0e12
+
 
 def compute_rate_Eyring(dE: float, config: Config) -> float:
     r"""Compute the rate constant based on the energy barrier and parameters in the configuration.
@@ -58,7 +60,7 @@ def compute_rate_amsel_vtst(
         import amsel as _amsel
     except ImportError:
         p = PhysicalConstants()
-        return prefactor * m.exp(-dE_forward / (p.kb * T))
+        return prefactor * m.exp(-dE_forward / (p.kb * T)) / PS_PER_S
     result = _amsel.vtst_corrected_rate(
         prefactor,
         float(dE_forward),
@@ -68,7 +70,7 @@ def compute_rate_amsel_vtst(
         float(getattr(rc, "friction_inv_s", 0.0)),
         float(getattr(rc, "barrier_omega_rad_per_s", 0.0)),
     )
-    return float(result["corrected_rate_inv_s"])
+    return float(result["corrected_rate_inv_s"]) / PS_PER_S
 
 
 def compute_rate(dE_forward: float, dE_backward: float, config: Config) -> float:
