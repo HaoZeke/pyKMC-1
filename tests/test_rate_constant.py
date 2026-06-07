@@ -221,3 +221,53 @@ def test_vineyard_event_prefactors_from_forces_returns_forward_and_backward():
     assert prefactors.saddle_freq_invcm == pytest.approx(
         np.sqrt(conv) / (2.0 * np.pi * 2.99792458e10)
     )
+
+
+def test_vineyard_event_prefactors_report_hessian_stages():
+    min1_hessian = np.diag([4.0, 9.0, 16.0])
+    min2_hessian = np.diag([25.0, 9.0, 16.0])
+    saddle_hessian = np.diag([-1.0, 9.0, 16.0])
+    min1_positions = np.array([[0.0, 0.0, 0.0]], dtype=float)
+    min2_positions = np.array([[10.0, 0.0, 0.0]], dtype=float)
+    saddle_positions = np.array([[20.0, 0.0, 0.0]], dtype=float)
+
+    def forces(displaced):
+        if np.linalg.norm(displaced - min1_positions) < 1.0:
+            return (-(min1_hessian @ (displaced - min1_positions).reshape(-1))).reshape(
+                -1, 3
+            )
+        if np.linalg.norm(displaced - min2_positions) < 1.0:
+            return (-(min2_hessian @ (displaced - min2_positions).reshape(-1))).reshape(
+                -1, 3
+            )
+        return (-(saddle_hessian @ (displaced - saddle_positions).reshape(-1))).reshape(
+            -1, 3
+        )
+
+    stages = []
+
+    vineyard_event_prefactors_from_forces(
+        forces,
+        min1_positions,
+        saddle_positions,
+        min2_positions,
+        active_indices=[0],
+        masses_amu=[1.0],
+        step_A=1.0e-4,
+        progress_callback=lambda stage, status, elapsed_s=None: stages.append(
+            (stage, status, elapsed_s)
+        ),
+    )
+
+    assert [(stage, status) for stage, status, _elapsed in stages] == [
+        ("minimum_forward", "start"),
+        ("minimum_forward", "complete"),
+        ("minimum_backward", "start"),
+        ("minimum_backward", "complete"),
+        ("saddle", "start"),
+        ("saddle", "complete"),
+    ]
+    assert all(
+        elapsed_s is None or elapsed_s >= 0.0
+        for _stage, _status, elapsed_s in stages
+    )
