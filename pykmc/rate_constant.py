@@ -4,8 +4,13 @@ from dataclasses import dataclass
 
 from .config import PhysicalConstants, Config
 import math as m
+import numpy as np
 
 PS_PER_S = 1.0e12
+EV_J = 1.602176634e-19
+ANGSTROM_M = 1.0e-10
+AMU_KG = 1.66053906660e-27
+EV_PER_A2_AMU_TO_RAD2_PER_S2 = EV_J / (ANGSTROM_M**2 * AMU_KG)
 
 
 @dataclass(frozen=True)
@@ -31,6 +36,50 @@ class RateConstantDetails:
     anharmonic_corrections_active: bool
     rate_model_ok: bool
     rate_model_reason: str
+
+
+def vineyard_prefactor_from_eigenvalues(
+    minimum_eigenvalues_rad2_per_s2,
+    saddle_eigenvalues_rad2_per_s2,
+    *,
+    zero_tol: float = 0.0,
+) -> float:
+    r"""Return the harmonic Vineyard prefactor in ``s^-1``.
+
+    The inputs are mass-weighted Hessian eigenvalues in angular-frequency
+    squared units. The saddle spectrum must contain exactly one unstable
+    mode. Positive stable modes enter as
+
+    $$
+    \nu = \frac{1}{2\pi}
+          \frac{\prod_i \sqrt{\lambda_i^\mathrm{min}}}
+               {\prod_j \sqrt{\lambda_j^\ddagger}}.
+    $$
+    """
+    minimum = np.asarray(minimum_eigenvalues_rad2_per_s2, dtype=float).ravel()
+    saddle = np.asarray(saddle_eigenvalues_rad2_per_s2, dtype=float).ravel()
+    if minimum.size == 0 or saddle.size == 0:
+        raise ValueError("Vineyard prefactor requires non-empty spectra")
+    if not np.all(np.isfinite(minimum)) or not np.all(np.isfinite(saddle)):
+        raise ValueError("Vineyard prefactor requires finite eigenvalues")
+    tol = float(zero_tol)
+    minimum_positive = minimum[minimum > tol]
+    saddle_positive = saddle[saddle > tol]
+    saddle_negative = saddle[saddle < -tol]
+    if saddle_negative.size != 1:
+        raise ValueError("Vineyard saddle spectrum must have exactly one unstable mode")
+    if minimum_positive.size != saddle_positive.size + 1:
+        raise ValueError(
+            "Vineyard spectra must have one more minimum stable mode than saddle stable modes"
+        )
+    if minimum_positive.size == 0:
+        raise ValueError("Vineyard prefactor requires stable minimum modes")
+    log_prefactor = (
+        0.5 * float(np.sum(np.log(minimum_positive)))
+        - 0.5 * float(np.sum(np.log(saddle_positive)))
+        - m.log(2.0 * m.pi)
+    )
+    return float(m.exp(log_prefactor))
 
 
 def compute_rate_Eyring(dE: float, config: Config) -> float:
