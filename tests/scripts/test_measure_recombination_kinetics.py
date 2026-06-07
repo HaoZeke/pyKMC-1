@@ -288,6 +288,44 @@ def test_trial_row_rejects_failed_event_vineyard_rate_model(tmp_path, monkeypatc
     assert row["kinetic_claim_ok"] is False
 
 
+def test_trial_row_rejects_missing_event_vineyard_prefactor(tmp_path, monkeypatch):
+    script = _load_script()
+    initial_config = tmp_path / "initial.xyz"
+    initial_config.write_text("placeholder\n")
+    (tmp_path / "input.in").write_text(
+        "[Control]\n"
+        f"initial_config = {initial_config}\n"
+        "[RateConstant]\n"
+        "style = amsel-vtst\n"
+        "T = 500.0\n"
+        "prefactor = 6.0e12\n"
+        "compute_vineyard_prefactor = True\n"
+    )
+    (tmp_path / "pykmc.out").write_text("")
+    (tmp_path / "pykmc.log").write_text(
+        "Step : 1\n"
+        "Event search failed: No event found\n"
+        "No events have been found, empty reference events table.\n"
+        ":=> End of simulation\n"
+    )
+    monkeypatch.setattr(script, "structure_volume_A3", lambda path: 128.0)
+
+    row = script.trial_row_from_outputs(
+        case="cu-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=11,
+        output_dir=tmp_path,
+    )
+
+    assert row["event_discovery_status"] == "zero-events"
+    assert row["rate_prefactor_source"] == "vineyard-finite-difference"
+    assert row["rate_anharmonic_corrections_active"] is True
+    assert row["rate_model_ok"] is False
+    assert row["rate_model_reason"] == "event-prefactor-missing"
+    assert row["kinetic_claim_ok"] is False
+
+
 def test_trial_row_rejects_zero_step_censored_run(tmp_path):
     script = _load_script()
     (tmp_path / "pykmc.out").write_text("")
