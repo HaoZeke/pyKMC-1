@@ -45,6 +45,7 @@ make = "*"
 numpy = ">=2.0.2"
 libblas = "*"
 liblapack = "*"
+ira = ">=2.2.0,<3"
 
 [tool.pixi.feature.ira.tasks]
 install-ira = "python scripts/install_ira.py"
