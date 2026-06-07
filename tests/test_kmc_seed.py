@@ -241,6 +241,35 @@ def test_kmc_vineyard_active_indices_follow_event_displacements():
     assert kmc._vineyard_active_indices(event) == [0, 1]
 
 
+def test_kmc_vineyard_active_indices_drop_elastic_tail():
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(vineyard_fd_step_A=1.0e-3),
+        atomicenvironment=SimpleNamespace(rcut=10.0),
+    )
+    kmc.system = SimpleNamespace(cell=np.eye(3) * 30.0)
+    min1 = np.array([[float(index), 0.0, 0.0] for index in range(12)], dtype=float)
+    saddle = min1.copy()
+    product = min1.copy()
+    saddle[1, 0] += 0.4
+    product[1, 0] += 0.5
+    for index in range(2, 12):
+        saddle[index, 0] += 0.03
+        product[index, 0] += 0.03
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=min1,
+        saddle_positions=saddle,
+        min2_positions=product,
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 30.0,
+    )
+
+    assert kmc._vineyard_active_indices(event) == [0, 1]
+
+
 def test_kmc_vineyard_prefactor_logs_force_shape_mismatch(monkeypatch):
     kmc = KMC.__new__(KMC)
     kmc.config = SimpleNamespace(
