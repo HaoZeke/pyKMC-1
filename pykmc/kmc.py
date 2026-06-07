@@ -1198,7 +1198,9 @@ class KMC:
 
                 def force_fn(positions):
                     positions = np.asarray(positions, dtype=float)
-                    forces = force_getter(positions=positions).result()
+                    forces = force_getter(positions=positions)
+                    if hasattr(forces, "result"):
+                        forces = forces.result()
                     forces = np.asarray(forces, dtype=float)
                     if forces.ndim == 1 and forces.size == positions.size:
                         forces = forces.reshape(positions.shape)
