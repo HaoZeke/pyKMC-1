@@ -11,6 +11,7 @@ EV_J = 1.602176634e-19
 ANGSTROM_M = 1.0e-10
 AMU_KG = 1.66053906660e-27
 EV_PER_A2_AMU_TO_RAD2_PER_S2 = EV_J / (ANGSTROM_M**2 * AMU_KG)
+SPEED_OF_LIGHT_CM_PER_S = 2.99792458e10
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,16 @@ class RateConstantDetails:
     anharmonic_corrections_active: bool
     rate_model_ok: bool
     rate_model_reason: str
+
+
+@dataclass(frozen=True)
+class VineyardEventPrefactors:
+    """Forward and backward Vineyard prefactors for a transition event."""
+
+    forward_prefactor_inv_s: float
+    backward_prefactor_inv_s: float
+    saddle_freq_invcm: float
+    barrier_omega_rad_per_s: float
 
 
 def vineyard_prefactor_from_eigenvalues(
@@ -160,6 +171,66 @@ def vineyard_prefactor_from_hessians(
         minimum_eigenvalues,
         saddle_eigenvalues,
         zero_tol=zero_tol_rad2_per_s2,
+    )
+
+
+def vineyard_event_prefactors_from_forces(
+    force_fn,
+    min1_positions,
+    saddle_positions,
+    min2_positions,
+    *,
+    active_indices,
+    masses_amu,
+    step_A: float = 1.0e-3,
+    zero_tol_rad2_per_s2: float = 0.0,
+) -> VineyardEventPrefactors:
+    """Compute directional Vineyard prefactors from finite-difference forces."""
+    minimum_forward_hessian = finite_difference_hessian_from_forces(
+        force_fn,
+        min1_positions,
+        active_indices,
+        step_A=step_A,
+    )
+    minimum_backward_hessian = finite_difference_hessian_from_forces(
+        force_fn,
+        min2_positions,
+        active_indices,
+        step_A=step_A,
+    )
+    saddle_hessian = finite_difference_hessian_from_forces(
+        force_fn,
+        saddle_positions,
+        active_indices,
+        step_A=step_A,
+    )
+    forward_eigenvalues = mass_weighted_hessian_eigenvalues(
+        minimum_forward_hessian, masses_amu
+    )
+    backward_eigenvalues = mass_weighted_hessian_eigenvalues(
+        minimum_backward_hessian, masses_amu
+    )
+    saddle_eigenvalues = mass_weighted_hessian_eigenvalues(
+        saddle_hessian, masses_amu
+    )
+    saddle_negative = saddle_eigenvalues[saddle_eigenvalues < -zero_tol_rad2_per_s2]
+    if saddle_negative.size != 1:
+        raise ValueError("Vineyard saddle spectrum must have exactly one unstable mode")
+    barrier_omega_rad_per_s = float(np.sqrt(abs(saddle_negative[0])))
+    return VineyardEventPrefactors(
+        forward_prefactor_inv_s=vineyard_prefactor_from_eigenvalues(
+            forward_eigenvalues,
+            saddle_eigenvalues,
+            zero_tol=zero_tol_rad2_per_s2,
+        ),
+        backward_prefactor_inv_s=vineyard_prefactor_from_eigenvalues(
+            backward_eigenvalues,
+            saddle_eigenvalues,
+            zero_tol=zero_tol_rad2_per_s2,
+        ),
+        saddle_freq_invcm=barrier_omega_rad_per_s
+        / (2.0 * m.pi * SPEED_OF_LIGHT_CM_PER_S),
+        barrier_omega_rad_per_s=barrier_omega_rad_per_s,
     )
 
 
