@@ -282,15 +282,27 @@ def test_kmc_vineyard_prefactors_use_global_full_system_forces(monkeypatch):
     )
 
     class FakeManager:
-        def get_forces(self, positions=None):
-            calls.append(("local", np.asarray(positions, dtype=float).shape))
-            return SimpleNamespace(result=lambda: np.zeros((1, 3), dtype=float))
+        def __init__(self):
+            self.global_mode = False
+            self.use_global_calls = 0
+            self.use_local_calls = 0
 
-        def global_get_forces(self, positions=None):
-            calls.append(("global", np.asarray(positions, dtype=float).shape))
+        def use_global(self):
+            self.global_mode = True
+            self.use_global_calls += 1
+
+        def use_local(self):
+            self.global_mode = False
+            self.use_local_calls += 1
+
+        def get_forces(self, positions=None):
+            calls.append((self.global_mode, np.asarray(positions, dtype=float).shape))
+            if not self.global_mode:
+                return SimpleNamespace(result=lambda: np.zeros((1, 3), dtype=float))
             return full_forces.reshape(-1)
 
-    kmc.manager = FakeManager()
+    manager = FakeManager()
+    kmc.manager = manager
     event = EventSearchOutput(
         central_atom_index=0,
         min1_positions=np.array([[1.0, 1.0, 1.0], [2.0, 1.0, 1.0]], dtype=float),
@@ -319,7 +331,9 @@ def test_kmc_vineyard_prefactors_use_global_full_system_forces(monkeypatch):
 
     kmc._attach_vineyard_prefactors([event])
 
-    assert calls == [("global", (2, 3))]
+    assert calls == [(True, (2, 3))]
+    assert manager.use_global_calls == 1
+    assert manager.use_local_calls == 1
     assert event.prefactor_source == "vineyard-finite-difference"
 
 
