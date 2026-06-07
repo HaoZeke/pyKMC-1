@@ -1502,6 +1502,81 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
     ]
 
 
+def test_execute_trials_rejects_timeout_vineyard_rate_model(tmp_path, monkeypatch):
+    script = _load_script()
+    workdir = tmp_path / "amsel" / "trial-0"
+    workdir.mkdir(parents=True)
+    (workdir / "input.in").write_text(
+        "[RateConstant]\n"
+        "style = amsel-vtst\n"
+        "prefactor = 5.0e12\n"
+        "compute_vineyard_prefactor = True\n"
+    )
+    (workdir / "pykmc.out").write_text("")
+    (workdir / "pykmc.log").write_text("Step : 1\n")
+
+    class FakeTimedOutProcess:
+        pid = 4321
+        returncode = None
+
+        def communicate(self, timeout=None):
+            raise subprocess.TimeoutExpired(
+                cmd=["python", "-m", "pykmc"],
+                timeout=timeout,
+                output="partial stdout",
+            )
+
+    def fake_popen(*_args, **_kwargs):
+        return FakeTimedOutProcess()
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd=kwargs.get("args") or args[0],
+            timeout=5.0,
+            output="partial stdout",
+        )
+
+    monkeypatch.setattr(script.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(script.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        script,
+        "os",
+        SimpleNamespace(
+            getpgid=lambda pid: pid,
+            killpg=lambda _pgid, _sig: None,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        script,
+        "signal",
+        SimpleNamespace(SIGTERM=15),
+        raising=False,
+    )
+
+    rows = script.execute_trials(
+        [
+            {
+                "case": "cu-vac-sia",
+                "priority": "amsel",
+                "trial": 0,
+                "seed": 1000,
+                "event_searches": 3,
+                "workdir": str(workdir),
+                "command": ["python", "-m", "pykmc"],
+            }
+        ],
+        tmp_path / "events.jsonl",
+        trial_timeout_s=5.0,
+    )
+
+    assert rows[0]["detector_reason"] == "timeout-5.0s"
+    assert rows[0]["kinetic_claim_ok"] is False
+    assert rows[0]["rate_prefactor_source"] == "vineyard-finite-difference"
+    assert rows[0]["rate_model_ok"] is False
+    assert rows[0]["rate_model_reason"] == "vineyard-prefactor-timeout"
+
+
 def test_execute_trials_runs_child_in_isolated_session(tmp_path, monkeypatch):
     script = _load_script()
     workdir = tmp_path / "amsel" / "trial-0"
