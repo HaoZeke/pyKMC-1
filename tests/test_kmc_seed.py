@@ -161,7 +161,7 @@ def test_kmc_vineyard_prefactors_use_global_full_system_forces(monkeypatch):
 
         def global_get_forces(self, positions=None):
             calls.append(("global", np.asarray(positions, dtype=float).shape))
-            return SimpleNamespace(result=lambda: full_forces.reshape(-1))
+            return full_forces.reshape(-1)
 
     kmc.manager = FakeManager()
     event = EventSearchOutput(
