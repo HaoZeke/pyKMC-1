@@ -11,6 +11,7 @@ from pykmc.rate_constant import (
     compute_rate_amsel_vtst_details,
     finite_difference_hessian_from_forces,
     mass_weighted_hessian_eigenvalues,
+    thermal_tst_event_prefactors_from_saddle_curvature,
     vineyard_event_prefactors_from_forces,
     vineyard_projected_event_prefactors_from_forces,
     vineyard_prefactor_from_eigenvalues,
@@ -98,6 +99,61 @@ def test_amsel_vtst_details_mark_no_curvature_model_as_uncorrected(monkeypatch):
     assert details.anharmonic_corrections_active is False
     assert details.rate_model_ok is False
     assert details.rate_model_reason == "configured-prefactor-no-curvature"
+
+
+def test_amsel_vtst_details_label_artn_curvature_prefactor(monkeypatch):
+    fake_amsel = SimpleNamespace(
+        vtst_corrected_rate=lambda *_args: {
+            "harmonic_rate_inv_s": 2.0e11,
+            "corrected_rate_inv_s": 3.0e11,
+            "wigner_factor": 1.25,
+            "eckart_factor": 1.20,
+            "kramers_factor": 1.0,
+        }
+    )
+    monkeypatch.setitem(sys.modules, "amsel", fake_amsel)
+    config = SimpleNamespace(
+        rateconstant=SimpleNamespace(
+            prefactor=5.0e12,
+            T=300.0,
+            saddle_freq_invcm=45.0,
+            friction_inv_s=0.0,
+            barrier_omega_rad_per_s=8.4e12,
+        )
+    )
+
+    details = compute_rate_amsel_vtst_details(
+        0.10,
+        0.10,
+        config,
+        prefactor_inv_s=6.250985e12,
+        prefactor_source="thermal-tst-artn-curvature",
+        saddle_freq_invcm=45.0,
+        barrier_omega_rad_per_s=8.4e12,
+    )
+
+    assert details.prefactor_inv_s == pytest.approx(6.250985e12)
+    assert details.prefactor_source == "thermal-tst-artn-curvature"
+    assert details.anharmonic_corrections_active is True
+    assert details.rate_model_ok is True
+    assert details.rate_model_reason == "thermal-tst-artn-curvature"
+
+
+def test_thermal_tst_prefactor_uses_kbt_over_h_and_artn_barrier_frequency():
+    k_b, temperature, h = sp.symbols("k_b temperature h", positive=True)
+    assert sp.simplify((k_b * temperature / h) - (k_b * temperature / h)) == 0
+
+    prefactors = thermal_tst_event_prefactors_from_saddle_curvature(
+        -0.49,
+        mass_amu=63.546,
+        temperature_K=300.0,
+    )
+
+    expected_prefactor = (8.6173303e-5 * 300.0 / 4.135667e-3) * 1.0e12
+    expected_omega = np.sqrt(0.49 / 63.546 * EV_PER_A2_AMU_TO_RAD2_PER_S2)
+    assert prefactors.forward_prefactor_inv_s == pytest.approx(expected_prefactor)
+    assert prefactors.backward_prefactor_inv_s == pytest.approx(expected_prefactor)
+    assert prefactors.barrier_omega_rad_per_s == pytest.approx(expected_omega)
 
 
 def test_vineyard_prefactor_symbolically_cancels_shared_stable_modes():

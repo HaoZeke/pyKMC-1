@@ -250,6 +250,47 @@ def test_trial_row_accepts_event_vineyard_rate_model(tmp_path, monkeypatch):
     assert row["rate_model_reason"] == "event-prefactor-vtst"
 
 
+def test_trial_row_records_artn_curvature_prefactor_from_log(tmp_path, monkeypatch):
+    script = _load_script()
+    initial_config = tmp_path / "initial.xyz"
+    initial_config.write_text("placeholder\n")
+    (tmp_path / "input.in").write_text(
+        "[Control]\n"
+        f"initial_config = {initial_config}\n"
+        "[RateConstant]\n"
+        "style = amsel-vtst\n"
+        "T = 300.0\n"
+        "prefactor = 5.0e12\n"
+        "compute_vineyard_prefactor = True\n"
+    )
+    (tmp_path / "pykmc.out").write_text(
+        "1 6.5e-13 6.5e-13 0 0.1 0.10 0.58 -1000.0 0.1 0.2\n"
+    )
+    (tmp_path / "pykmc.log").write_text(
+        "Step : 1\n"
+        "ARTn saddle curvature prefactor for event at atom 8787\n"
+        "Vineyard prefactor event at atom 8787 complete: "
+        "forward=6.250985e+12/s backward=6.250985e+12/s "
+        "saddle_freq=4.556903e+01/cm\n"
+        ":=> End of simulation\n"
+    )
+    monkeypatch.setattr(script, "structure_volume_A3", lambda path: 128.0)
+
+    row = script.trial_row_from_outputs(
+        case="cu-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=4100,
+        output_dir=tmp_path,
+    )
+
+    assert row["rate_prefactor_inv_s"] == pytest.approx(6.250985e12)
+    assert row["rate_prefactor_source"] == "thermal-tst-artn-curvature"
+    assert row["rate_anharmonic_corrections_active"] is True
+    assert row["rate_model_ok"] is True
+    assert row["rate_model_reason"] == "thermal-tst-artn-curvature"
+
+
 def test_trial_row_rejects_failed_event_vineyard_rate_model(tmp_path, monkeypatch):
     script = _load_script()
     initial_config = tmp_path / "initial.xyz"
