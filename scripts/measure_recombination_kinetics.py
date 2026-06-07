@@ -62,6 +62,7 @@ PROCESS_COVERAGE_RE = re.compile(
     r"missing_rate_mass=(?P<missing_rate>[0-9.eE+-]+); "
     r"needs_more_search=(?P<needs_more>True|False)"
 )
+VINEYARD_PREFACTOR_FAILURE_MARKER = "Vineyard prefactor failed"
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 CU_SIA_MIGRATION_ALPHA = 2.0 / 3.0
 CU_RECOMBINATION_TRANSPORT = {
@@ -305,6 +306,9 @@ def rate_model_metadata(rate_section: configparser.SectionProxy) -> dict[str, An
         "rate_model_ok": False,
     }
     if style == "amsel-vtst":
+        compute_vineyard_prefactor = rate_section.getboolean(
+            "compute_vineyard_prefactor", fallback=False
+        )
         saddle_freq_invcm = rate_section.getfloat("saddle_freq_invcm", fallback=0.0)
         friction_inv_s = rate_section.getfloat("friction_inv_s", fallback=0.0)
         barrier_omega_rad_per_s = rate_section.getfloat(
@@ -313,6 +317,19 @@ def rate_model_metadata(rate_section: configparser.SectionProxy) -> dict[str, An
         correction_inputs_active = saddle_freq_invcm > 0.0 or (
             friction_inv_s > 0.0 and barrier_omega_rad_per_s > 0.0
         )
+        if compute_vineyard_prefactor:
+            metadata.update(
+                {
+                    "rate_prefactor_inv_s": rate_section.getfloat(
+                        "prefactor", fallback=1.0e13
+                    ),
+                    "rate_prefactor_source": "vineyard-finite-difference",
+                    "rate_anharmonic_corrections_active": True,
+                    "rate_model_ok": True,
+                    "rate_model_reason": "event-prefactor-vtst",
+                }
+            )
+            return metadata
         metadata.update(
             {
                 "rate_prefactor_inv_s": rate_section.getfloat(
@@ -615,6 +632,10 @@ def apply_kinetic_guard(
             and not bool(guarded.get("coverage_resampling_disabled", False))
         ):
             guarded["kinetic_claim_ok"] = False
+    if VINEYARD_PREFACTOR_FAILURE_MARKER in log_text:
+        guarded["rate_model_ok"] = False
+        guarded["rate_model_reason"] = "vineyard-prefactor-failed"
+        guarded["kinetic_claim_ok"] = False
     return guarded
 
 
@@ -1304,6 +1325,11 @@ def render_trial_input(
         config[partn]["nevalf_max"] = str(int(partn_search_evals))
     if temperature_K is not None:
         config[rateconstant]["T"] = str(float(temperature_K))
+    if (
+        priority != "legacy"
+        and config[rateconstant].get("style", fallback="constant") == "amsel-vtst"
+    ):
+        config[rateconstant]["compute_vineyard_prefactor"] = "True"
     config[basin]["exploration_priority"] = _exploration_priority_for_priority(
         priority=priority,
         amsel_exploration_priority=amsel_exploration_priority,
