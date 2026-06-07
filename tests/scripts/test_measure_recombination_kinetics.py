@@ -215,6 +215,79 @@ def test_trial_row_records_rate_model_provenance(tmp_path, monkeypatch):
     assert row["rate_model_reason"] == "configured-prefactor"
 
 
+def test_trial_row_accepts_event_vineyard_rate_model(tmp_path, monkeypatch):
+    script = _load_script()
+    initial_config = tmp_path / "initial.xyz"
+    initial_config.write_text("placeholder\n")
+    (tmp_path / "input.in").write_text(
+        "[Control]\n"
+        f"initial_config = {initial_config}\n"
+        "[RateConstant]\n"
+        "style = amsel-vtst\n"
+        "T = 500.0\n"
+        "prefactor = 6.0e12\n"
+        "compute_vineyard_prefactor = True\n"
+    )
+    (tmp_path / "pykmc.out").write_text(
+        "1 1.0e-12 1.0e-12 3 0.4 2.0 5.0 -1000.0 0.1 0.2\n"
+    )
+    (tmp_path / "pykmc.log").write_text("Step : 1\n:=> End of simulation\n")
+    monkeypatch.setattr(script, "structure_volume_A3", lambda path: 128.0)
+
+    row = script.trial_row_from_outputs(
+        case="cu-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=11,
+        output_dir=tmp_path,
+    )
+
+    assert row["rate_style"] == "amsel-vtst"
+    assert row["rate_prefactor_inv_s"] == pytest.approx(6.0e12)
+    assert row["rate_prefactor_source"] == "vineyard-finite-difference"
+    assert row["rate_anharmonic_corrections_active"] is True
+    assert row["rate_model_ok"] is True
+    assert row["rate_model_reason"] == "event-prefactor-vtst"
+
+
+def test_trial_row_rejects_failed_event_vineyard_rate_model(tmp_path, monkeypatch):
+    script = _load_script()
+    initial_config = tmp_path / "initial.xyz"
+    initial_config.write_text("placeholder\n")
+    (tmp_path / "input.in").write_text(
+        "[Control]\n"
+        f"initial_config = {initial_config}\n"
+        "[RateConstant]\n"
+        "style = amsel-vtst\n"
+        "T = 500.0\n"
+        "prefactor = 6.0e12\n"
+        "compute_vineyard_prefactor = True\n"
+    )
+    (tmp_path / "pykmc.out").write_text(
+        "1 1.0e-12 1.0e-12 3 0.4 2.0 5.0 -1000.0 0.1 0.2\n"
+    )
+    (tmp_path / "pykmc.log").write_text(
+        "Step : 1\n"
+        "Vineyard prefactor failed for event 0: singular active Hessian\n"
+        ":=> End of simulation\n"
+    )
+    monkeypatch.setattr(script, "structure_volume_A3", lambda path: 128.0)
+
+    row = script.trial_row_from_outputs(
+        case="cu-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=11,
+        output_dir=tmp_path,
+    )
+
+    assert row["rate_prefactor_source"] == "vineyard-finite-difference"
+    assert row["rate_anharmonic_corrections_active"] is True
+    assert row["rate_model_ok"] is False
+    assert row["rate_model_reason"] == "vineyard-prefactor-failed"
+    assert row["kinetic_claim_ok"] is False
+
+
 def test_trial_row_rejects_zero_step_censored_run(tmp_path):
     script = _load_script()
     (tmp_path / "pykmc.out").write_text("")
@@ -784,6 +857,66 @@ def test_render_trial_input_can_request_diverse_amsel_exploration(tmp_path):
     config.read_string(text)
     assert config["BASIN"]["selector"] == "amsel-adaptive"
     assert config["BASIN"]["exploration_priority"] == "amsel-diverse"
+
+
+def test_render_trial_input_enables_vineyard_prefactors_for_amsel_priority(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text="[Control]\n[pARTn]\n[BASIN]\n[RateConstant]\nstyle = amsel-vtst\n",
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert config["RateConstant"]["compute_vineyard_prefactor"] == "True"
+
+
+def test_render_trial_input_keeps_legacy_prefactors_configured(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text="[Control]\n[pARTn]\n[BASIN]\n[RateConstant]\nstyle = amsel-vtst\n",
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="legacy",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert "compute_vineyard_prefactor" not in config["RateConstant"]
 
 
 def test_basin_confidence_rows_parse_frontier_and_absorbing_markers():
