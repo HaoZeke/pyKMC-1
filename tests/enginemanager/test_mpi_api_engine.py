@@ -1,6 +1,7 @@
 import queue
 import threading
 
+import numpy as np
 from mpi4py import MPI
 
 from pykmc.enginemanager.lmpi.engines import MpiApiEngine
@@ -116,3 +117,36 @@ def test_partn_search_error_envelope_returns_failed_search_result():
     assert not result.is_ok()
     assert result.err_value().type is ErrorType.EVENT_NOT_FOUND
     assert "pARTn failed" in result.err_value().message
+
+
+def test_session_get_forces_sends_positions_and_returns_result():
+    positions = np.array([[0.0, 0.1, 0.2], [1.0, 1.1, 1.2]], dtype=float)
+    forces = np.array([[1.0, 2.0, 3.0], [-1.0, -2.0, -3.0]], dtype=float)
+
+    class FakeMessenger:
+        def __init__(self):
+            self.sent = []
+
+        def send(self, msg, dest, tag):
+            self.sent.append((msg, dest, tag))
+
+        def recv(self, source, tag):
+            if tag == 0:
+                return {"type": "status", "value": {"alive": True, "busy": False}}
+            return {"type": "result", "value": forces}
+
+    messenger = FakeMessenger()
+    session = MpiApiSession(
+        messenger=messenger,
+        engine_ranks=[3],
+        session_id=0,
+    )
+
+    got = session.get_forces(positions=positions)
+
+    np.testing.assert_allclose(got, forces)
+    message, dest, tag = messenger.sent[0]
+    assert dest == 3
+    assert tag == 2
+    assert message["type"] == "get_forces"
+    np.testing.assert_allclose(message["value"]["positions"], positions)

@@ -1,8 +1,10 @@
+import ctypes
 import os
 import subprocess
 import sys
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from pykmc.enginemanager.lmpi import lammps_operations
@@ -113,6 +115,39 @@ def test_load_partn_plugin_raises_when_loaded_plugin_does_not_register_artn(tmp_
 
     with pytest.raises(RuntimeError, match="fix artn"):
         lammps_operations.load_partn_plugin(engine, config)
+
+
+def test_get_forces_runs_zero_and_gathers_force_array():
+    forces = np.array([[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]], dtype=float)
+    positions = np.array([[0.1, 0.2, 0.3], [1.0, 1.1, 1.2]], dtype=float)
+
+    class FakeForceLammps:
+        def __init__(self):
+            self.commands = []
+            self.scatter_payload = None
+
+        def command(self, command):
+            self.commands.append(command)
+
+        def scatter_atoms(self, name, style, count, values):
+            assert (name, style, count) == ("x", 1, 3)
+            self.scatter_payload = np.ctypeslib.as_array(
+                values, shape=(positions.size,)
+            ).copy()
+
+        def gather_atoms(self, name, style, count):
+            assert (name, style, count) == ("f", 1, 3)
+            return (ctypes.c_double * forces.size)(*forces.reshape(-1))
+
+    lammps = FakeForceLammps()
+    engine = FakeEngine(lammps)
+    engine.rank = 0
+
+    got = lammps_operations.get_forces(engine, positions=positions)
+
+    np.testing.assert_allclose(got, forces)
+    np.testing.assert_allclose(lammps.scatter_payload, positions.reshape(-1))
+    assert lammps.commands == ["run 0"]
 
 
 def test_partn_search_configures_artn_evaluation_limit(monkeypatch):
