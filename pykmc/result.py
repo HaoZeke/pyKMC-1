@@ -154,6 +154,11 @@ class EventSearchOutput:
     move_atom_index: int
     #map: np.ndarray
     cell: Optional[np.ndarray] = None
+    prefactor_inv_s: Optional[float] = None
+    product_prefactor_inv_s: Optional[float] = None
+    prefactor_source: Optional[str] = None
+    saddle_freq_invcm: Optional[float] = None
+    barrier_omega_rad_per_s: Optional[float] = None
 
 
 @dataclass
@@ -185,6 +190,10 @@ class EventRefinementOutput:
     dE_forward: Optional[float] = None
     num_reference_event: Optional[int] = None
     refined: Optional[str] = None
+    prefactor_inv_s: Optional[float] = None
+    prefactor_source: Optional[str] = None
+    saddle_freq_invcm: Optional[float] = None
+    barrier_omega_rad_per_s: Optional[float] = None
 
 
 @dataclass

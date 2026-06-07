@@ -25,6 +25,7 @@ from .result import (
 import numpy as np
 from ase.io import write
 from ase import Atoms
+from ase.data import atomic_masses, atomic_numbers
 from .algorithms import rejection_free
 import sys
 import pandas as pd
@@ -40,6 +41,7 @@ from .info_simulation import (
 )
 from .eventsearch import EventSearch
 from .refinement import Refinement
+from .rate_constant import vineyard_event_prefactors_from_forces
 from .log import Colors
 import time
 from .utils import push_towards, compute_delr
@@ -1170,6 +1172,7 @@ class KMC:
             List of event dataframe that has been added to the reference event table.
 
         """
+        self._attach_vineyard_prefactors(events)
         results_is_valid_events = self.reference_table.add_events(events)
         self.loggers.info(
             "log",
@@ -1178,6 +1181,80 @@ class KMC:
             ),
         )
         return results_is_valid_events
+
+    def _attach_vineyard_prefactors(self, events: list[EventSearchOutput]) -> None:
+        rate_cfg = getattr(self.config, "rateconstant", None)
+        if getattr(rate_cfg, "style", "constant") != "amsel-vtst":
+            return
+        if not bool(getattr(rate_cfg, "compute_vineyard_prefactor", False)):
+            return
+        for event in events:
+            try:
+                active_indices = self._vineyard_active_indices(event)
+                masses_amu = self._vineyard_masses_amu(active_indices)
+
+                def force_fn(positions):
+                    return self.manager.get_forces(
+                        positions=np.asarray(positions, dtype=float)
+                    ).result()
+
+                prefactors = vineyard_event_prefactors_from_forces(
+                    force_fn,
+                    event.min1_positions,
+                    event.saddle_positions,
+                    event.min2_positions,
+                    active_indices=active_indices,
+                    masses_amu=masses_amu,
+                    step_A=float(getattr(rate_cfg, "vineyard_fd_step_A", 1.0e-3)),
+                )
+            except Exception as exc:
+                if getattr(self, "loggers", None) is not None:
+                    self.loggers.info(
+                        "log",
+                        "\t :=> Vineyard prefactor failed for event at atom {}: {}".format(
+                            event.central_atom_index, exc
+                        ),
+                    )
+                continue
+            event.prefactor_inv_s = prefactors.forward_prefactor_inv_s
+            event.product_prefactor_inv_s = prefactors.backward_prefactor_inv_s
+            event.prefactor_source = "vineyard-finite-difference"
+            event.saddle_freq_invcm = prefactors.saddle_freq_invcm
+            event.barrier_omega_rad_per_s = prefactors.barrier_omega_rad_per_s
+
+    def _vineyard_active_indices(self, event: EventSearchOutput) -> list[int]:
+        positions = np.asarray(event.min1_positions, dtype=float)
+        center = int(event.move_atom_index)
+        if center < 0 or center >= len(positions):
+            center = int(event.central_atom_index)
+        if center < 0 or center >= len(positions):
+            raise ValueError("Vineyard prefactor event center is out of range")
+        delta = positions - positions[center]
+        cell = getattr(event, "cell", None)
+        if cell is None:
+            cell = getattr(self.system, "cell", None)
+        if cell is not None:
+            cell = np.asarray(cell, dtype=float)
+            if cell.shape == (3, 3):
+                lengths = np.diag(cell)
+                for axis, length in enumerate(lengths):
+                    if length > 0.0:
+                        delta[:, axis] -= length * np.round(delta[:, axis] / length)
+        distances = np.linalg.norm(delta, axis=1)
+        rcut = float(getattr(self.config.atomicenvironment, "rcut", 0.0) or 0.0)
+        active = np.flatnonzero(distances <= rcut)
+        if active.size == 0:
+            active = np.array([center], dtype=int)
+        return [int(index) for index in active]
+
+    def _vineyard_masses_amu(self, active_indices: list[int]) -> list[float]:
+        types = getattr(self.system, "types", None)
+        if types is None:
+            raise ValueError("Vineyard prefactor requires system atom types")
+        return [
+            float(atomic_masses[atomic_numbers[str(types[int(index)])]])
+            for index in active_indices
+        ]
 
     def execute_refinements(self, df_reference_events: pd.DataFrame) -> Refinement:
         """Refine all events in df_reference_events for all atoms on which they can be apply.

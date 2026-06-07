@@ -15,6 +15,24 @@ import pandas as pd
 import concurrent.futures
 
 
+def _optional_metadata_value(row: pd.Series, key: str):
+    value = row.get(key, None)
+    if value is None or pd.isna(value):
+        return None
+    return value
+
+
+def _rate_metadata_from_reference(row: pd.Series) -> dict:
+    return {
+        "prefactor_inv_s": _optional_metadata_value(row, "prefactor_inv_s"),
+        "prefactor_source": _optional_metadata_value(row, "prefactor_source"),
+        "saddle_freq_invcm": _optional_metadata_value(row, "saddle_freq_invcm"),
+        "barrier_omega_rad_per_s": _optional_metadata_value(
+            row, "barrier_omega_rad_per_s"
+        ),
+    }
+
+
 class Refinement:
     """Perfrom event refinements and deal with results.
 
@@ -99,6 +117,12 @@ class Refinement:
             if res.is_ok() :
                 res.ok_value().min2_positions = ctx["min2_positions"]
                 res.ok_value().num_reference_event = ctx["num_reference_event"]
+                res.ok_value().prefactor_inv_s = ctx.get("prefactor_inv_s")
+                res.ok_value().prefactor_source = ctx.get("prefactor_source")
+                res.ok_value().saddle_freq_invcm = ctx.get("saddle_freq_invcm")
+                res.ok_value().barrier_omega_rad_per_s = ctx.get(
+                    "barrier_omega_rad_per_s"
+                )
                 # Catalog-only fake futures (refined='F') already store
                 # the neighbors-only saddle slice; only re-index when the
                 # ARTn-refined path returned a full-system array.
@@ -219,7 +243,8 @@ class Refinement:
                         central_atom_index=at_idx,
                         saddle_positions=saddle_neighbors,
                         E_saddle=dfevent["energy_barrier"] if self.config.control.active_volume else total_energy + dfevent["energy_barrier"] ,
-                        refined='F'
+                        refined='F',
+                        **_rate_metadata_from_reference(dfevent),
                     )))
 
                 else : #we refine
@@ -248,7 +273,8 @@ class Refinement:
                     "min2_positions": ase.geometry.wrap_positions(new_positions_final, cell = self.system.cell, pbc=True),
                     "num_reference_event": dfevent["idx_ref"],
                     "reference_energy_barrier": dfevent["energy_barrier"],
-                    "neighbors": neighbors.copy()
+                    "neighbors": neighbors.copy(),
+                    **_rate_metadata_from_reference(dfevent),
                 }
 
 

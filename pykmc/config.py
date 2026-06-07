@@ -563,6 +563,16 @@ class RateConstantConfig(BaseModel):
         description="Barrier-top angular frequency (rad/s) for the amsel-vtst "
         "Kramers factor.",
     )
+    compute_vineyard_prefactor: bool = Field(
+        default=False,
+        description="Compute event-specific Vineyard prefactors from finite-"
+        "difference LAMMPS force Hessians for `style='amsel-vtst'`.",
+    )
+    vineyard_fd_step_A: float = Field(
+        default=1.0e-3,
+        description="Cartesian finite-difference displacement (Angstrom) used "
+        "when computing Vineyard prefactors.",
+    )
     T: float = Field(
         default=300,
         description="Temperature (in Kelvin) used for computing rate constants.",

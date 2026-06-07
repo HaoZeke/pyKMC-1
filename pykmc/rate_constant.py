@@ -283,16 +283,39 @@ def _rate_model_ok(reason: str) -> bool:
 
 
 def compute_rate_amsel_vtst_details(
-    dE_forward: float, dE_backward: float, config: Config
+    dE_forward: float,
+    dE_backward: float,
+    config: Config,
+    *,
+    prefactor_inv_s: float | None = None,
+    prefactor_source: str | None = None,
+    saddle_freq_invcm: float | None = None,
+    barrier_omega_rad_per_s: float | None = None,
 ) -> RateConstantDetails:
     """Return AMSEL-VTST rate value, units, correction factors, and provenance."""
     rc = config.rateconstant
-    prefactor = float(getattr(rc, "prefactor", 1.0e13))
-    prefactor_source = str(getattr(rc, "prefactor_source", "rateconstant.prefactor"))
+    prefactor = float(
+        prefactor_inv_s
+        if prefactor_inv_s is not None
+        else getattr(rc, "prefactor", 1.0e13)
+    )
+    prefactor_source = str(
+        prefactor_source
+        if prefactor_source is not None
+        else getattr(rc, "prefactor_source", "rateconstant.prefactor")
+    )
     T = float(rc.T)
-    saddle_freq_invcm = float(getattr(rc, "saddle_freq_invcm", 0.0))
+    saddle_freq_invcm = float(
+        saddle_freq_invcm
+        if saddle_freq_invcm is not None
+        else getattr(rc, "saddle_freq_invcm", 0.0)
+    )
     friction_inv_s = float(getattr(rc, "friction_inv_s", 0.0))
-    barrier_omega_rad_per_s = float(getattr(rc, "barrier_omega_rad_per_s", 0.0))
+    barrier_omega_rad_per_s = float(
+        barrier_omega_rad_per_s
+        if barrier_omega_rad_per_s is not None
+        else getattr(rc, "barrier_omega_rad_per_s", 0.0)
+    )
     correction_inputs_active = saddle_freq_invcm > 0.0 or (
         friction_inv_s > 0.0 and barrier_omega_rad_per_s > 0.0
     )
@@ -372,7 +395,14 @@ def compute_rate_amsel_vtst_details(
 
 
 def compute_rate_amsel_vtst(
-    dE_forward: float, dE_backward: float, config: Config
+    dE_forward: float,
+    dE_backward: float,
+    config: Config,
+    *,
+    prefactor_inv_s: float | None = None,
+    prefactor_source: str | None = None,
+    saddle_freq_invcm: float | None = None,
+    barrier_omega_rad_per_s: float | None = None,
 ) -> float:
     r"""Variational-TST / anharmonic-corrected rate via amsel.
 
@@ -392,11 +422,26 @@ def compute_rate_amsel_vtst(
     Falls back to a physical-prefactor Eyring rate if amsel is unavailable.
     """
     return compute_rate_amsel_vtst_details(
-        dE_forward, dE_backward, config
+        dE_forward,
+        dE_backward,
+        config,
+        prefactor_inv_s=prefactor_inv_s,
+        prefactor_source=prefactor_source,
+        saddle_freq_invcm=saddle_freq_invcm,
+        barrier_omega_rad_per_s=barrier_omega_rad_per_s,
     ).rate_ps_inv
 
 
-def compute_rate(dE_forward: float, dE_backward: float, config: Config) -> float:
+def compute_rate(
+    dE_forward: float,
+    dE_backward: float,
+    config: Config,
+    *,
+    prefactor_inv_s: float | None = None,
+    prefactor_source: str | None = None,
+    saddle_freq_invcm: float | None = None,
+    barrier_omega_rad_per_s: float | None = None,
+) -> float:
     """Dispatch the per-process rate on ``rateconstant.style``.
 
     - ``constant`` / ``eyring``: k0 * exp(-dE_forward / kT) (legacy).
@@ -407,7 +452,15 @@ def compute_rate(dE_forward: float, dE_backward: float, config: Config) -> float
     """
     style = getattr(config.rateconstant, "style", "constant")
     if style == "amsel-vtst":
-        return compute_rate_amsel_vtst(dE_forward, dE_backward, config)
+        return compute_rate_amsel_vtst(
+            dE_forward,
+            dE_backward,
+            config,
+            prefactor_inv_s=prefactor_inv_s,
+            prefactor_source=prefactor_source,
+            saddle_freq_invcm=saddle_freq_invcm,
+            barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+        )
     return compute_rate_Eyring(dE_forward, config)
 
 

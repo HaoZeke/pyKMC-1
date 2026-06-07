@@ -55,6 +55,25 @@ def _optional_float(value: Any) -> float | None:
     return float(value)
 
 
+def _rate_override_kwargs(
+    *,
+    prefactor_inv_s: float | None,
+    prefactor_source: str | None,
+    saddle_freq_invcm: float | None,
+    barrier_omega_rad_per_s: float | None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if prefactor_inv_s is not None:
+        kwargs["prefactor_inv_s"] = float(prefactor_inv_s)
+    if prefactor_source is not None:
+        kwargs["prefactor_source"] = str(prefactor_source)
+    if saddle_freq_invcm is not None:
+        kwargs["saddle_freq_invcm"] = float(saddle_freq_invcm)
+    if barrier_omega_rad_per_s is not None:
+        kwargs["barrier_omega_rad_per_s"] = float(barrier_omega_rad_per_s)
+    return kwargs
+
+
 class ReferenceEventTable:
     """Store reference events and manage them.
 
@@ -107,6 +126,15 @@ class ReferenceEventTable:
                     dE_forward=ev.dE_forward,
                     dE_backward=ev.dE_backward,
                     cell=ev.cell,
+                    prefactor_inv_s=getattr(ev, "prefactor_inv_s", None),
+                    product_prefactor_inv_s=getattr(
+                        ev, "product_prefactor_inv_s", None
+                    ),
+                    prefactor_source=getattr(ev, "prefactor_source", None),
+                    saddle_freq_invcm=getattr(ev, "saddle_freq_invcm", None),
+                    barrier_omega_rad_per_s=getattr(
+                        ev, "barrier_omega_rad_per_s", None
+                    ),
                 )
             results_is_valid_events.append(res)
             if res.is_ok() : 
@@ -133,6 +161,11 @@ class ReferenceEventTable:
         dE_forward: float,
         dE_backward: float,
         cell: np.ndarray,
+        prefactor_inv_s: float | None = None,
+        product_prefactor_inv_s: float | None = None,
+        prefactor_source: str | None = None,
+        saddle_freq_invcm: float | None = None,
+        barrier_omega_rad_per_s: float | None = None,
     ) -> Result[pd.DataFrame, ErrorInfo]:
         """Check if the event has the required conditions to be added to the table DataFrame based on the configuration's parameters.
 
@@ -223,6 +256,11 @@ class ReferenceEventTable:
                 dE_forward=dE_forward,
                 dE_backward=dE_backward,
                 cell=cell,
+                prefactor_inv_s=prefactor_inv_s,
+                product_prefactor_inv_s=product_prefactor_inv_s,
+                prefactor_source=prefactor_source,
+                saddle_freq_invcm=saddle_freq_invcm,
+                barrier_omega_rad_per_s=barrier_omega_rad_per_s,
             )
             matched_forward = self.matching_event(dfevent_forward)
             if matched_forward is None:  # check if event not already in the catalog
@@ -405,6 +443,11 @@ class ReferenceEventTable:
         dE_forward: float,
         dE_backward: float,
         cell: np.ndarray,
+        prefactor_inv_s: float | None = None,
+        product_prefactor_inv_s: float | None = None,
+        prefactor_source: str | None = None,
+        saddle_freq_invcm: float | None = None,
+        barrier_omega_rad_per_s: float | None = None,
     ) -> tuple[pd.Series, pd.Series]:
         """Build foward and backward events Series.
 
@@ -494,6 +537,18 @@ class ReferenceEventTable:
         dra_forward = np.linalg.norm(min1_positions[neighbor_list_forwward][move_atom_idx_forward]-saddle_positions[neighbor_list_forwward][move_atom_idx_forward])
         move_atom_idx_backward = np.where(neighbor_list_backward == index_move)[0][0]
         dra_backward = np.linalg.norm(min1_positions[neighbor_list_backward][move_atom_idx_backward]-saddle_positions[neighbor_list_backward][move_atom_idx_backward])
+        forward_rate_kwargs = _rate_override_kwargs(
+            prefactor_inv_s=prefactor_inv_s,
+            prefactor_source=prefactor_source,
+            saddle_freq_invcm=saddle_freq_invcm,
+            barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+        )
+        backward_rate_kwargs = _rate_override_kwargs(
+            prefactor_inv_s=product_prefactor_inv_s,
+            prefactor_source=prefactor_source,
+            saddle_freq_invcm=saddle_freq_invcm,
+            barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+        )
 
         dfevent_forward = pd.Series(
             {
@@ -503,7 +558,13 @@ class ReferenceEventTable:
                 "saddle_positions": saddle_positions[neighbor_list_forwward],
                 "final_positions": min2_positions[neighbor_list_forwward],
                 "energy_barrier": dE_forward,
-                "k": compute_rate(dE_forward, dE_backward, self.config),
+                "k": compute_rate(
+                    dE_forward, dE_backward, self.config, **forward_rate_kwargs
+                ),
+                "prefactor_inv_s": prefactor_inv_s,
+                "prefactor_source": prefactor_source,
+                "saddle_freq_invcm": saddle_freq_invcm,
+                "barrier_omega_rad_per_s": barrier_omega_rad_per_s,
                 "id_saddle": id_saddle,
                 "id_final": id_min2,
                 "move_atom_idx": np.where(neighbor_list_forwward == index_move)[0][0],
@@ -527,7 +588,13 @@ class ReferenceEventTable:
                 "saddle_positions": saddle_positions[neighbor_list_backward],
                 "final_positions": min1_positions[neighbor_list_backward],
                 "energy_barrier": dE_backward,
-                "k": compute_rate(dE_backward, dE_forward, self.config),
+                "k": compute_rate(
+                    dE_backward, dE_forward, self.config, **backward_rate_kwargs
+                ),
+                "prefactor_inv_s": product_prefactor_inv_s,
+                "prefactor_source": prefactor_source,
+                "saddle_freq_invcm": saddle_freq_invcm,
+                "barrier_omega_rad_per_s": barrier_omega_rad_per_s,
                 "id_saddle": id_saddle,
                 "id_final": id_min1,
                 "move_atom_idx": np.where(neighbor_list_backward == index_move)[0][0],
@@ -651,6 +718,10 @@ class ActiveEventTable:
                 "final_positions": pd.Series(dtype="object"),
                 "energy_barrier": pd.Series(dtype="float64"),
                 "k": pd.Series(dtype="float64"),
+                "prefactor_inv_s": pd.Series(dtype="float64"),
+                "prefactor_source": pd.Series(dtype="str"),
+                "saddle_freq_invcm": pd.Series(dtype="float64"),
+                "barrier_omega_rad_per_s": pd.Series(dtype="float64"),
                 "num_reference_event": pd.Series(dtype="int64"),
                 "refined": pd.Series(dtype="str")
             }
@@ -725,7 +796,16 @@ class ActiveEventTable:
             The pd.Series of the event.
 
         """
-        
+        rate_kwargs = _rate_override_kwargs(
+            prefactor_inv_s=getattr(event_refinement_output, "prefactor_inv_s", None),
+            prefactor_source=getattr(event_refinement_output, "prefactor_source", None),
+            saddle_freq_invcm=getattr(
+                event_refinement_output, "saddle_freq_invcm", None
+            ),
+            barrier_omega_rad_per_s=getattr(
+                event_refinement_output, "barrier_omega_rad_per_s", None
+            ),
+        )
         dfactive = pd.Series(
             {
                 "atom_index": event_refinement_output.central_atom_index,
@@ -737,6 +817,19 @@ class ActiveEventTable:
                     getattr(event_refinement_output, "dE_backward",
                             event_refinement_output.dE_forward),
                     self.config,
+                    **rate_kwargs,
+                ),
+                "prefactor_inv_s": getattr(
+                    event_refinement_output, "prefactor_inv_s", None
+                ),
+                "prefactor_source": getattr(
+                    event_refinement_output, "prefactor_source", None
+                ),
+                "saddle_freq_invcm": getattr(
+                    event_refinement_output, "saddle_freq_invcm", None
+                ),
+                "barrier_omega_rad_per_s": getattr(
+                    event_refinement_output, "barrier_omega_rad_per_s", None
                 ),
                 "num_reference_event": event_refinement_output.num_reference_event,
                 "refined": event_refinement_output.refined
