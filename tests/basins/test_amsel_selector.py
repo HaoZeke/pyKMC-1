@@ -176,7 +176,7 @@ def test_adaptive_selector_samples_when_diagnostics_reject_mean_clock():
     assert result.ok_value().exit_state == 10
 
 
-def test_singleton_process_evidence_remains_undercovered_with_large_rate_scale():
+def test_singleton_process_evidence_clears_when_missing_rate_is_not_material():
     environment = "mobile-defect"
     evidence = EnvironmentSearchEvidence(
         attempts=5,
@@ -192,7 +192,7 @@ def test_singleton_process_evidence_remains_undercovered_with_large_rate_scale()
         zero_observation_attempt_limit=10,
     )
 
-    assert undercovered == [environment]
+    assert undercovered == []
 
 
 def test_productive_undercoverage_preempts_zero_yield_resampling():
