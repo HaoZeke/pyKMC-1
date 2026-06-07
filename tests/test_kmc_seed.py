@@ -18,7 +18,7 @@ from pykmc.kmc import (
     undercovered_environments_for_search,
 )
 from pykmc.eventsearch import EventSearch
-from pykmc.result import Err, ErrorInfo, ErrorType, Ok
+from pykmc.result import Err, ErrorInfo, ErrorType, EventSearchOutput, Ok
 
 
 def test_kmc_seeds_python_and_numpy_rngs_from_control_config():
@@ -72,6 +72,62 @@ def test_event_search_logs_failed_search_reason():
     event_search.execute([0])
 
     assert any("partn_search: pARTn failed" in message for message in log_messages)
+
+
+def test_kmc_attaches_vineyard_prefactors_to_event_search_outputs(monkeypatch):
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(
+            style="amsel-vtst",
+            compute_vineyard_prefactor=True,
+            vineyard_fd_step_A=1.0e-4,
+        ),
+        atomicenvironment=SimpleNamespace(rcut=2.0),
+    )
+    kmc.system = SimpleNamespace(
+        types=["Cu"],
+        cell=np.eye(3) * 10.0,
+    )
+    kmc.manager = SimpleNamespace(
+        get_forces=lambda positions=None: SimpleNamespace(
+            result=lambda: np.zeros_like(positions)
+        )
+    )
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=np.array([[1.0, 1.0, 1.0]], dtype=float),
+        saddle_positions=np.array([[1.1, 1.0, 1.0]], dtype=float),
+        min2_positions=np.array([[1.2, 1.0, 1.0]], dtype=float),
+        dE_forward=0.2,
+        dE_backward=0.3,
+        move_atom_index=0,
+        cell=np.eye(3) * 10.0,
+    )
+
+    def fake_prefactors(force_fn, min1, saddle, min2, **kwargs):
+        assert kwargs["active_indices"] == [0]
+        assert kwargs["step_A"] == 1.0e-4
+        assert kwargs["masses_amu"][0] == pytest.approx(63.546)
+        return SimpleNamespace(
+            forward_prefactor_inv_s=1.1e13,
+            backward_prefactor_inv_s=2.2e13,
+            saddle_freq_invcm=120.0,
+            barrier_omega_rad_per_s=2.4e13,
+        )
+
+    monkeypatch.setattr(
+        kmc_module,
+        "vineyard_event_prefactors_from_forces",
+        fake_prefactors,
+    )
+
+    kmc._attach_vineyard_prefactors([event])
+
+    assert event.prefactor_inv_s == pytest.approx(1.1e13)
+    assert event.product_prefactor_inv_s == pytest.approx(2.2e13)
+    assert event.prefactor_source == "vineyard-finite-difference"
+    assert event.saddle_freq_invcm == pytest.approx(120.0)
+    assert event.barrier_omega_rad_per_s == pytest.approx(2.4e13)
 
 
 def test_environments_with_cataloged_searches_tracks_valid_search_centers():
