@@ -44,6 +44,33 @@ def test_central_atoms_research_covers_distinct_atoms_before_resampling():
     assert sorted(central_atoms) == [0, 1, 2]
 
 
+def test_central_atoms_research_includes_amsel_recombination_center(monkeypatch):
+    kmc = KMC(
+        SimpleNamespace(
+            control=SimpleNamespace(random_seed=12345),
+            partn=SimpleNamespace(amsel_recomb_seed=True),
+        )
+    )
+    kmc.atomic_environment = SimpleNamespace(
+        atomic_environment_list=["env-a", "env-a", "crystal", "crystal"]
+    )
+    kmc.system = SimpleNamespace(
+        positions=np.zeros((4, 3), dtype=float),
+        cell=np.eye(3),
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.recombination_search_center",
+        lambda positions, cell: 3,
+        raising=False,
+    )
+    random.seed(0)
+
+    central_atoms = kmc.central_atoms_research(["env-a"], nsearch=1)
+
+    assert central_atoms[0] == 3
+    assert sorted(central_atoms[1:]) == [1]
+
+
 def test_event_search_logs_failed_search_reason():
     class FinishedFuture:
         def result(self):
