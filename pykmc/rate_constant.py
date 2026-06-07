@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from .config import PhysicalConstants, Config
 import math as m
 import numpy as np
+import time
 
 PS_PER_S = 1.0e12
 EV_J = 1.602176634e-19
@@ -184,26 +185,31 @@ def vineyard_event_prefactors_from_forces(
     masses_amu,
     step_A: float = 1.0e-3,
     zero_tol_rad2_per_s2: float = 0.0,
+    progress_callback=None,
 ) -> VineyardEventPrefactors:
     """Compute directional Vineyard prefactors from finite-difference forces."""
-    minimum_forward_hessian = finite_difference_hessian_from_forces(
-        force_fn,
-        min1_positions,
-        active_indices,
-        step_A=step_A,
-    )
-    minimum_backward_hessian = finite_difference_hessian_from_forces(
-        force_fn,
-        min2_positions,
-        active_indices,
-        step_A=step_A,
-    )
-    saddle_hessian = finite_difference_hessian_from_forces(
-        force_fn,
-        saddle_positions,
-        active_indices,
-        step_A=step_A,
-    )
+    def stage_hessian(stage, positions):
+        if progress_callback is not None:
+            progress_callback(stage, "start")
+        start = time.perf_counter()
+        try:
+            hessian = finite_difference_hessian_from_forces(
+                force_fn,
+                positions,
+                active_indices,
+                step_A=step_A,
+            )
+        except Exception:
+            if progress_callback is not None:
+                progress_callback(stage, "failed", time.perf_counter() - start)
+            raise
+        if progress_callback is not None:
+            progress_callback(stage, "complete", time.perf_counter() - start)
+        return hessian
+
+    minimum_forward_hessian = stage_hessian("minimum_forward", min1_positions)
+    minimum_backward_hessian = stage_hessian("minimum_backward", min2_positions)
+    saddle_hessian = stage_hessian("saddle", saddle_positions)
     forward_eigenvalues = mass_weighted_hessian_eigenvalues(
         minimum_forward_hessian, masses_amu
     )

@@ -1230,6 +1230,27 @@ class KMC:
                         )
                     return forces
 
+                def progress_callback(stage, status, elapsed_s=None):
+                    if getattr(self, "loggers", None) is None:
+                        return
+                    if elapsed_s is None:
+                        self.loggers.info(
+                            "log",
+                            "\t :=> Vineyard {} hessian {}".format(
+                                stage,
+                                status,
+                            ),
+                        )
+                    else:
+                        self.loggers.info(
+                            "log",
+                            "\t :=> Vineyard {} hessian {} elapsed_s={:.3f}".format(
+                                stage,
+                                status,
+                                float(elapsed_s),
+                            ),
+                        )
+
                 prefactors = vineyard_event_prefactors_from_forces(
                     force_fn,
                     event.min1_positions,
@@ -1238,6 +1259,7 @@ class KMC:
                     active_indices=active_indices,
                     masses_amu=masses_amu,
                     step_A=float(getattr(rate_cfg, "vineyard_fd_step_A", 1.0e-3)),
+                    progress_callback=progress_callback,
                 )
             except Exception as exc:
                 if getattr(self, "loggers", None) is not None:
