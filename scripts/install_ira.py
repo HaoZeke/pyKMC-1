@@ -94,7 +94,7 @@ def _install(work: Path) -> None:
     )
 
 
-def _smoke_test() -> None:
+def _smoke_test() -> bool:
     code = (
         "import ira_mod, numpy as np; "
         "coords=np.array([[0., 0., 0.], [1., 0., 0.], "
@@ -105,7 +105,8 @@ def _smoke_test() -> None:
         "); "
         "print('IRA OK', float(dh))"
     )
-    _run([sys.executable, "-c", code], cwd=Path.cwd())
+    result = subprocess.run([sys.executable, "-c", code], cwd=Path.cwd())
+    return result.returncode == 0
 
 
 def install(source: Path) -> None:
@@ -113,14 +114,26 @@ def install(source: Path) -> None:
         work = _copy_source(source, Path(tmp))
         _patch_native_flags(work)
         _install(work)
-    _smoke_test()
+    if not _smoke_test():
+        raise SystemExit("IRA installation failed its matcher smoke test.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", help="Path to an IRA checkout.")
     args = parser.parse_args()
-    install(_source_dir(args.source))
+    if args.source is None and _smoke_test():
+        return
+    try:
+        source = _source_dir(args.source)
+    except SystemExit as exc:
+        if args.source is None:
+            raise SystemExit(
+                "Installed IRA package failed its matcher smoke test and no "
+                "source checkout was available for a local rebuild.\n" + str(exc)
+            ) from exc
+        raise
+    install(source)
 
 
 if __name__ == "__main__":
