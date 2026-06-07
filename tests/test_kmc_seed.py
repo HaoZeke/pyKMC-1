@@ -534,6 +534,7 @@ def test_kmc_vineyard_prefactors_switch_global_session(monkeypatch):
 
     def fake_prefactors(force_fn, min1, _saddle, _min2, **_kwargs):
         np.testing.assert_allclose(force_fn(np.asarray(min1, dtype=float)), full_forces)
+        np.testing.assert_allclose(force_fn(np.asarray(min1, dtype=float)), full_forces)
         return SimpleNamespace(
             forward_prefactor_inv_s=1.1e13,
             backward_prefactor_inv_s=2.2e13,
@@ -549,7 +550,7 @@ def test_kmc_vineyard_prefactors_switch_global_session(monkeypatch):
 
     kmc._attach_vineyard_prefactors([event])
 
-    assert manager.global_session.use_global_calls >= 1
+    assert manager.global_session.use_global_calls == 1
     assert event.prefactor_source == "vineyard-finite-difference"
 
 
