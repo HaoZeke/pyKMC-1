@@ -63,6 +63,14 @@ PROCESS_COVERAGE_RE = re.compile(
     r"needs_more_search=(?P<needs_more>True|False)"
 )
 VINEYARD_PREFACTOR_FAILURE_MARKER = "Vineyard prefactor failed"
+ARTN_CURVATURE_PREFACTOR_MARKER = "ARTn saddle curvature prefactor"
+VINEYARD_PROJECTED_PREFACTOR_MARKER = "Vineyard projected-mode prefactor"
+VINEYARD_PREFACTOR_COMPLETE_RE = re.compile(
+    r"Vineyard prefactor event at atom (?P<atom>\d+) complete: "
+    r"forward=(?P<forward>[0-9.eE+-]+)/s "
+    r"backward=(?P<backward>[0-9.eE+-]+)/s "
+    r"saddle_freq=(?P<saddle_freq>[0-9.eE+-]+)/cm"
+)
 STEP_RE = re.compile(r"^Step\s*:\s*(?P<step>\d+)\s*$")
 CU_SIA_MIGRATION_ALPHA = 2.0 / 3.0
 CU_RECOMBINATION_TRANSPORT = {
@@ -357,6 +365,41 @@ def rate_model_metadata(rate_section: configparser.SectionProxy) -> dict[str, An
     return metadata
 
 
+def observed_prefactor_metadata_from_log(log_text: str) -> dict[str, Any]:
+    matches = list(VINEYARD_PREFACTOR_COMPLETE_RE.finditer(log_text))
+    if not matches:
+        return {}
+    prefactor_source = "vineyard-finite-difference"
+    if ARTN_CURVATURE_PREFACTOR_MARKER in log_text:
+        prefactor_source = "thermal-tst-artn-curvature"
+    elif VINEYARD_PROJECTED_PREFACTOR_MARKER in log_text:
+        prefactor_source = "vineyard-projected-mode"
+    match = matches[-1]
+    return {
+        "rate_prefactor_inv_s": float(match.group("forward")),
+        "rate_prefactor_source": prefactor_source,
+        "rate_anharmonic_corrections_active": True,
+        "rate_model_ok": _observed_rate_model_ok(prefactor_source),
+        "rate_model_reason": _observed_rate_model_reason(prefactor_source),
+    }
+
+
+def _observed_rate_model_reason(prefactor_source: str) -> str:
+    if prefactor_source == "thermal-tst-artn-curvature":
+        return "thermal-tst-artn-curvature"
+    if prefactor_source == "vineyard-projected-mode":
+        return "projected-prefactor-vtst"
+    return "event-prefactor-vtst"
+
+
+def _observed_rate_model_ok(prefactor_source: str) -> bool:
+    return prefactor_source in {
+        "thermal-tst-artn-curvature",
+        "vineyard-projected-mode",
+        "vineyard-finite-difference",
+    }
+
+
 def structure_volume_A3(path: Path) -> float | None:
     if not path.exists():
         return None
@@ -526,6 +569,7 @@ def trial_row_from_outputs(
     ):
         if field in metadata:
             row[field] = metadata[field]
+    row.update(observed_prefactor_metadata_from_log(log_text))
     return apply_kinetic_guard(row, diagnostics=None, log_text=log_text)
 
 

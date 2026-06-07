@@ -435,13 +435,25 @@ def _rate_model_reason(
         if not anharmonic_corrections_active:
             return "configured-prefactor-no-curvature"
         return "configured-prefactor"
+    if prefactor_source == "thermal-tst-artn-curvature":
+        if not anharmonic_corrections_active:
+            return "thermal-tst-artn-curvature-no-correction"
+        return "thermal-tst-artn-curvature"
+    if prefactor_source == "vineyard-projected-mode":
+        if not anharmonic_corrections_active:
+            return "projected-prefactor-no-curvature"
+        return "projected-prefactor-vtst"
     if not anharmonic_corrections_active:
         return "event-prefactor-no-curvature"
     return "event-prefactor-vtst"
 
 
 def _rate_model_ok(reason: str) -> bool:
-    return reason == "event-prefactor-vtst"
+    return reason in {
+        "event-prefactor-vtst",
+        "projected-prefactor-vtst",
+        "thermal-tst-artn-curvature",
+    }
 
 
 def compute_rate_amsel_vtst_details(
