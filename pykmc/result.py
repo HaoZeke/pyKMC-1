@@ -159,6 +159,7 @@ class EventSearchOutput:
     prefactor_source: Optional[str] = None
     saddle_freq_invcm: Optional[float] = None
     barrier_omega_rad_per_s: Optional[float] = None
+    saddle_eigenvalue_ev_per_A2: Optional[float] = None
 
 
 @dataclass

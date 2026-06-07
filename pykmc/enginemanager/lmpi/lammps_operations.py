@@ -362,6 +362,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
             E_sad = artn.extract("etot_sad")
             E_min1 = artn.extract("etot_min1")
             E_min2 = artn.extract("etot_min2")
+            saddle_eigenvalue = artn.extract("eigval_sad")
             # Ordinarily a process is accepted when one relaxed minimum sits
             # within delr_threshold of the search origin. A V/SIA recombination
             # saddle does not: its product is the recombined crystal, a distant
@@ -406,6 +407,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
                             saddle_positions=saddlepositions,
                             min2_positions=min2positions,
                             move_atom_index=index_move,
+                            saddle_eigenvalue_ev_per_A2=saddle_eigenvalue,
                         )
                     )
                 else:
@@ -418,6 +420,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
                             saddle_positions=saddlepositions,
                             min2_positions=min1positions,
                             move_atom_index=index_move,
+                            saddle_eigenvalue_ev_per_A2=saddle_eigenvalue,
                         )
                     )
             else:

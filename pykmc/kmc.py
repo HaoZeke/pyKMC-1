@@ -42,6 +42,7 @@ from .info_simulation import (
 from .eventsearch import EventSearch
 from .refinement import Refinement
 from .rate_constant import (
+    thermal_tst_event_prefactors_from_saddle_curvature,
     vineyard_event_prefactors_from_forces,
     vineyard_projected_event_prefactors_from_forces,
 )
@@ -1210,85 +1211,112 @@ class KMC:
                         ),
                     )
                 masses_amu = self._vineyard_masses_amu(active_indices)
-                if hasattr(self.manager, "use_global") and hasattr(
-                    self.manager, "use_local"
-                ):
-                    self.manager.use_global()
-                    restore_local_mode = True
-                    force_getter = self.manager.get_forces
+                saddle_eigenvalue = getattr(
+                    event, "saddle_eigenvalue_ev_per_A2", None
+                )
+                prefactor_source = None
+                if saddle_eigenvalue is not None and float(saddle_eigenvalue) < 0.0:
+                    center_mass = self._vineyard_masses_amu(
+                        [int(event.move_atom_index)]
+                    )[0]
+                    prefactors = thermal_tst_event_prefactors_from_saddle_curvature(
+                        float(saddle_eigenvalue),
+                        mass_amu=center_mass,
+                        temperature_K=float(getattr(rate_cfg, "T", 300.0)),
+                    )
+                    prefactor_source = "thermal-tst-artn-curvature"
+                    if getattr(self, "loggers", None) is not None:
+                        self.loggers.info(
+                            "log",
+                            "\t :=> ARTn saddle curvature prefactor for event at atom {}".format(
+                                event.central_atom_index
+                            ),
+                        )
                 else:
-                    force_getter = getattr(
-                        self.manager, "global_get_forces", self.manager.get_forces
-                    )
-                    global_session = getattr(self.manager, "global_session", None)
-                    if global_session is not None and hasattr(
-                        global_session, "use_global"
+                    if hasattr(self.manager, "use_global") and hasattr(
+                        self.manager, "use_local"
                     ):
-                        global_session.use_global()
-
-                def force_fn(positions):
-                    positions = np.asarray(positions, dtype=float)
-                    forces = force_getter(positions=positions)
-                    if hasattr(forces, "result"):
-                        forces = forces.result()
-                    forces = np.asarray(forces, dtype=float)
-                    if forces.ndim == 1 and forces.size == positions.size:
-                        forces = forces.reshape(positions.shape)
-                    if forces.shape != positions.shape:
-                        raise ValueError(
-                            "force shape {} does not match positions shape {}".format(
-                                forces.shape,
-                                positions.shape,
-                            )
-                        )
-                    return forces
-
-                def progress_callback(stage, status, elapsed_s=None):
-                    if getattr(self, "loggers", None) is None:
-                        return
-                    if elapsed_s is None:
-                        self.loggers.info(
-                            "log",
-                            "\t :=> Vineyard {} hessian {}".format(
-                                stage,
-                                status,
-                            ),
-                        )
+                        self.manager.use_global()
+                        restore_local_mode = True
+                        force_getter = self.manager.get_forces
                     else:
+                        force_getter = getattr(
+                            self.manager, "global_get_forces", self.manager.get_forces
+                        )
+                        global_session = getattr(self.manager, "global_session", None)
+                        if global_session is not None and hasattr(
+                            global_session, "use_global"
+                        ):
+                            global_session.use_global()
+
+                    def force_fn(positions):
+                        positions = np.asarray(positions, dtype=float)
+                        forces = force_getter(positions=positions)
+                        if hasattr(forces, "result"):
+                            forces = forces.result()
+                        forces = np.asarray(forces, dtype=float)
+                        if forces.ndim == 1 and forces.size == positions.size:
+                            forces = forces.reshape(positions.shape)
+                        if forces.shape != positions.shape:
+                            raise ValueError(
+                                "force shape {} does not match positions shape {}".format(
+                                    forces.shape,
+                                    positions.shape,
+                                )
+                            )
+                        return forces
+
+                    def progress_callback(stage, status, elapsed_s=None):
+                        if getattr(self, "loggers", None) is None:
+                            return
+                        if elapsed_s is None:
+                            self.loggers.info(
+                                "log",
+                                "\t :=> Vineyard {} hessian {}".format(
+                                    stage,
+                                    status,
+                                ),
+                            )
+                        else:
+                            self.loggers.info(
+                                "log",
+                                "\t :=> Vineyard {} hessian {} elapsed_s={:.3f}".format(
+                                    stage,
+                                    status,
+                                    float(elapsed_s),
+                                ),
+                            )
+
+                    use_projected = (
+                        force_evaluations > MAX_FULL_VINEYARD_FORCE_EVALUATIONS
+                    )
+                    prefactor_fn = (
+                        vineyard_projected_event_prefactors_from_forces
+                        if use_projected
+                        else vineyard_event_prefactors_from_forces
+                    )
+                    if use_projected and getattr(self, "loggers", None) is not None:
                         self.loggers.info(
                             "log",
-                            "\t :=> Vineyard {} hessian {} elapsed_s={:.3f}".format(
-                                stage,
-                                status,
-                                float(elapsed_s),
+                            "\t :=> Vineyard projected-mode prefactor for event at atom {}".format(
+                                event.central_atom_index
                             ),
                         )
-
-                use_projected = (
-                    force_evaluations > MAX_FULL_VINEYARD_FORCE_EVALUATIONS
-                )
-                prefactor_fn = (
-                    vineyard_projected_event_prefactors_from_forces
-                    if use_projected
-                    else vineyard_event_prefactors_from_forces
-                )
-                if use_projected and getattr(self, "loggers", None) is not None:
-                    self.loggers.info(
-                        "log",
-                        "\t :=> Vineyard projected-mode prefactor for event at atom {}".format(
-                            event.central_atom_index
-                        ),
+                    prefactors = prefactor_fn(
+                        force_fn,
+                        event.min1_positions,
+                        event.saddle_positions,
+                        event.min2_positions,
+                        active_indices=active_indices,
+                        masses_amu=masses_amu,
+                        step_A=float(getattr(rate_cfg, "vineyard_fd_step_A", 1.0e-3)),
+                        progress_callback=progress_callback,
                     )
-                prefactors = prefactor_fn(
-                    force_fn,
-                    event.min1_positions,
-                    event.saddle_positions,
-                    event.min2_positions,
-                    active_indices=active_indices,
-                    masses_amu=masses_amu,
-                    step_A=float(getattr(rate_cfg, "vineyard_fd_step_A", 1.0e-3)),
-                    progress_callback=progress_callback,
-                )
+                    prefactor_source = (
+                        "vineyard-projected-mode"
+                        if use_projected
+                        else "vineyard-finite-difference"
+                    )
             except Exception as exc:
                 if getattr(self, "loggers", None) is not None:
                     self.loggers.info(
@@ -1303,11 +1331,7 @@ class KMC:
                     self.manager.use_local()
             event.prefactor_inv_s = prefactors.forward_prefactor_inv_s
             event.product_prefactor_inv_s = prefactors.backward_prefactor_inv_s
-            event.prefactor_source = (
-                "vineyard-projected-mode"
-                if use_projected
-                else "vineyard-finite-difference"
-            )
+            event.prefactor_source = prefactor_source
             event.saddle_freq_invcm = prefactors.saddle_freq_invcm
             event.barrier_omega_rad_per_s = prefactors.barrier_omega_rad_per_s
             if getattr(self, "loggers", None) is not None:

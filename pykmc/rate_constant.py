@@ -366,6 +366,36 @@ def vineyard_projected_event_prefactors_from_forces(
     )
 
 
+def thermal_tst_event_prefactors_from_saddle_curvature(
+    saddle_eigenvalue_ev_per_A2: float,
+    *,
+    mass_amu: float,
+    temperature_K: float,
+) -> VineyardEventPrefactors:
+    """Return thermal TST prefactors with ARTn saddle curvature corrections."""
+    eigenvalue = float(saddle_eigenvalue_ev_per_A2)
+    mass = float(mass_amu)
+    temperature = float(temperature_K)
+    if not np.isfinite(eigenvalue) or eigenvalue >= 0.0:
+        raise ValueError("ARTn saddle eigenvalue must be finite and unstable")
+    if not np.isfinite(mass) or mass <= 0.0:
+        raise ValueError("mass_amu must be positive and finite")
+    if not np.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("temperature_K must be positive and finite")
+    p = PhysicalConstants()
+    prefactor_inv_s = (p.kb * temperature / p.h) * PS_PER_S
+    barrier_omega_rad_per_s = float(
+        np.sqrt(abs(eigenvalue) / mass * EV_PER_A2_AMU_TO_RAD2_PER_S2)
+    )
+    return VineyardEventPrefactors(
+        forward_prefactor_inv_s=float(prefactor_inv_s),
+        backward_prefactor_inv_s=float(prefactor_inv_s),
+        saddle_freq_invcm=barrier_omega_rad_per_s
+        / (2.0 * m.pi * SPEED_OF_LIGHT_CM_PER_S),
+        barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+    )
+
+
 def compute_rate_Eyring(dE: float, config: Config) -> float:
     r"""Compute the rate constant based on the energy barrier and parameters in the configuration.
 
