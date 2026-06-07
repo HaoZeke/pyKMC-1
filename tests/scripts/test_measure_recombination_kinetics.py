@@ -150,6 +150,34 @@ def test_trial_row_uses_trajectory_all_crystal_when_log_is_censored(
     assert row["kinetic_claim_ok"] is True
 
 
+def test_trial_row_records_temperature_and_box_volume(tmp_path, monkeypatch):
+    script = _load_script()
+    initial_config = tmp_path / "initial.xyz"
+    initial_config.write_text("placeholder\n")
+    (tmp_path / "input.in").write_text(
+        "[Control]\n"
+        f"initial_config = {initial_config}\n"
+        "[RateConstant]\n"
+        "T = 650.0\n"
+    )
+    (tmp_path / "pykmc.out").write_text(
+        "1 1.0e-12 1.0e-12 3 0.4 2.0 5.0 -1000.0 0.1 0.2\n"
+    )
+    (tmp_path / "pykmc.log").write_text("Step : 1\n:=> End of simulation\n")
+    monkeypatch.setattr(script, "structure_volume_A3", lambda path: 128.0)
+
+    row = script.trial_row_from_outputs(
+        case="cu-vac-sia",
+        selector="amsel",
+        trial=0,
+        seed=11,
+        output_dir=tmp_path,
+    )
+
+    assert row["temperature_K"] == 650.0
+    assert row["box_volume_A3"] == 128.0
+
+
 def test_trial_row_rejects_zero_step_censored_run(tmp_path):
     script = _load_script()
     (tmp_path / "pykmc.out").write_text("")
@@ -178,21 +206,35 @@ def test_survival_rows_are_plot_ready():
     script = _load_script()
     trials = [
         {
+            "case": "cu-vac-sia",
             "selector": "legacy",
+            "temperature_K": 300.0,
             "recombined": True,
             "t_recombination_s": 1.0,
             "censored_time_s": None,
         },
         {
+            "case": "cu-vac-sia",
             "selector": "legacy",
+            "temperature_K": 300.0,
             "recombined": False,
             "t_recombination_s": None,
             "censored_time_s": 2.0,
         },
         {
+            "case": "cu-vac-sia",
             "selector": "legacy",
+            "temperature_K": 300.0,
             "recombined": True,
             "t_recombination_s": 3.0,
+            "censored_time_s": None,
+        },
+        {
+            "case": "cu-vac-sia",
+            "selector": "legacy",
+            "temperature_K": 600.0,
+            "recombined": True,
+            "t_recombination_s": 4.0,
             "censored_time_s": None,
         },
     ]
@@ -201,20 +243,96 @@ def test_survival_rows_are_plot_ready():
 
     assert rows == [
         {
+            "case": "cu-vac-sia",
             "selector": "legacy",
+            "temperature_K": 300.0,
             "time_s": 1.0,
             "n_at_risk": 3,
             "n_events": 1,
             "survival": 2 / 3,
         },
         {
+            "case": "cu-vac-sia",
             "selector": "legacy",
+            "temperature_K": 300.0,
             "time_s": 3.0,
             "n_at_risk": 1,
             "n_events": 1,
             "survival": 0.0,
         },
+        {
+            "case": "cu-vac-sia",
+            "selector": "legacy",
+            "temperature_K": 600.0,
+            "time_s": 4.0,
+            "n_at_risk": 1,
+            "n_events": 1,
+            "survival": 0.0,
+        },
     ]
+
+
+def test_recombination_volume_rows_use_survival_exposure_for_cu():
+    script = _load_script()
+    trials = [
+        {
+            "case": "cu-vac-sia",
+            "selector": "amsel",
+            "temperature_K": 300.0,
+            "box_volume_A3": 100.0,
+            "recombined": True,
+            "t_recombination_s": 1.0e-12,
+            "censored_time_s": None,
+            "kinetic_claim_ok": True,
+        },
+        {
+            "case": "cu-vac-sia",
+            "selector": "amsel",
+            "temperature_K": 300.0,
+            "box_volume_A3": 100.0,
+            "recombined": False,
+            "t_recombination_s": None,
+            "censored_time_s": 2.0e-12,
+            "kinetic_claim_ok": True,
+        },
+        {
+            "case": "cu-vac-sia",
+            "selector": "legacy",
+            "temperature_K": 600.0,
+            "box_volume_A3": 100.0,
+            "recombined": True,
+            "t_recombination_s": 0.5e-12,
+            "censored_time_s": None,
+            "kinetic_claim_ok": False,
+        },
+    ]
+
+    rows = script.recombination_volume_rows(trials)
+
+    assert rows[0]["case"] == "cu-vac-sia"
+    assert rows[0]["selector"] == "amsel"
+    assert rows[0]["temperature_K"] == 300.0
+    assert rows[0]["n_trials"] == 2
+    assert rows[0]["n_recombined"] == 1
+    assert rows[0]["n_censored"] == 1
+    assert rows[0]["kinetic_claim_ok_trials"] == 2
+    assert rows[0]["exposure_time_ps"] == pytest.approx(3.0)
+    assert rows[0]["event_rate_ps_inv"] == pytest.approx(1.0 / 3.0)
+    assert rows[0]["rate_coefficient_A3_per_ps"] == pytest.approx(100.0 / 3.0)
+    assert rows[0]["lattice_parameter_A"] == pytest.approx(3.631)
+    assert rows[0]["diffusivity_A2_per_ps"] == pytest.approx(0.143)
+    expected_viv_A3 = (100.0 / 3.0) * (2.0 / 3.0) * 3.631**2 / 0.143
+    assert rows[0]["recombination_volume_A3"] == pytest.approx(expected_viv_A3)
+    assert rows[0]["recombination_volume_atomic"] == pytest.approx(
+        expected_viv_A3 / (3.631**3 / 4.0)
+    )
+
+    assert rows[1]["case"] == "cu-vac-sia"
+    assert rows[1]["selector"] == "legacy"
+    assert rows[1]["temperature_K"] == 600.0
+    assert rows[1]["n_trials"] == 1
+    assert rows[1]["n_recombined"] == 1
+    assert rows[1]["kinetic_claim_ok_trials"] == 0
 
 
 def test_seed_schedule_is_paired_by_trial():
@@ -308,6 +426,9 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert (out / "survival.csv").read_text().splitlines()[0] == ",".join(
         script.SURVIVAL_FIELDS
     )
+    assert (out / "recombination_volumes.csv").read_text().splitlines()[0] == ",".join(
+        script.RECOMBINATION_VOLUME_FIELDS
+    )
     assert (out / "basin_confidence.csv").read_text().splitlines()[0] == ",".join(
         script.BASIN_CONFIDENCE_FIELDS
     )
@@ -356,6 +477,60 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert "disable_coverage_resampling" not in config["Control"]
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["partn_search_evals"] == 41
+
+
+def test_cli_dry_run_writes_temperature_sweep_inputs(tmp_path):
+    script = _load_script()
+    out = tmp_path / "out"
+    template = tmp_path / "input.in"
+    template.write_text(
+        "[Control]\n"
+        "initial_config = ./old.xyz\n"
+        "[RateConstant]\n"
+        "T = 300.0\n"
+        "[pARTn]\n"
+        "path_artnso = ./old.so\n"
+        "[Lammps]\n"
+        "pair_coeff = * * ./Cu.eam Cu\n"
+        "[BASIN]\n"
+    )
+    (tmp_path / "Cu.eam").write_text("potential")
+
+    code = script.main(
+        [
+            "--case",
+            "cu-vac-sia",
+            "--template-input",
+            str(template),
+            "--initial-config",
+            str(tmp_path / "initial_config.xyz"),
+            "--partn-path",
+            str(tmp_path / "libartn-lmp.so"),
+            "--priority",
+            "amsel",
+            "--trials",
+            "1",
+            "--seed",
+            "10",
+            "--max-steps",
+            "1",
+            "--temperature",
+            "300",
+            "--temperature",
+            "600",
+            "--dry-run",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    commands = json.loads((out / "commands.json").read_text())
+    assert [command["temperature_K"] for command in commands] == [300.0, 600.0]
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(out / "amsel" / "T600" / "trial-0" / "input.in")
+    assert config["RateConstant"]["T"] == "600.0"
 
 
 def test_cli_rejects_preloaded_catalog_without_explicit_opt_in(tmp_path):
