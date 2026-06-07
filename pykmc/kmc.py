@@ -1198,6 +1198,11 @@ class KMC:
 
                 def force_fn(positions):
                     positions = np.asarray(positions, dtype=float)
+                    global_session = getattr(self.manager, "global_session", None)
+                    if global_session is not None and hasattr(
+                        global_session, "use_global"
+                    ):
+                        global_session.use_global()
                     forces = force_getter(positions=positions)
                     if hasattr(forces, "result"):
                         forces = forces.result()
