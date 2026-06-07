@@ -1230,28 +1230,59 @@ class KMC:
 
     def _vineyard_active_indices(self, event: EventSearchOutput) -> list[int]:
         positions = np.asarray(event.min1_positions, dtype=float)
+        saddle = np.asarray(event.saddle_positions, dtype=float)
+        product = np.asarray(event.min2_positions, dtype=float)
         center = int(event.move_atom_index)
         if center < 0 or center >= len(positions):
             center = int(event.central_atom_index)
         if center < 0 or center >= len(positions):
             raise ValueError("Vineyard prefactor event center is out of range")
-        delta = positions - positions[center]
         cell = getattr(event, "cell", None)
         if cell is None:
             cell = getattr(self.system, "cell", None)
-        if cell is not None:
-            cell = np.asarray(cell, dtype=float)
-            if cell.shape == (3, 3):
-                lengths = np.diag(cell)
-                for axis, length in enumerate(lengths):
-                    if length > 0.0:
-                        delta[:, axis] -= length * np.round(delta[:, axis] / length)
-        distances = np.linalg.norm(delta, axis=1)
-        rcut = float(getattr(self.config.atomicenvironment, "rcut", 0.0) or 0.0)
-        active = np.flatnonzero(distances <= rcut)
-        if active.size == 0:
-            active = np.array([center], dtype=int)
-        return [int(index) for index in active]
+        if saddle.shape != positions.shape or product.shape != positions.shape:
+            raise ValueError(
+                "Vineyard prefactor event positions must have matching shapes"
+            )
+
+        def minimum_image_delta(target, reference):
+            delta = np.asarray(target, dtype=float) - np.asarray(reference, dtype=float)
+            active_cell = cell
+            if active_cell is not None:
+                active_cell = np.asarray(active_cell, dtype=float)
+                if active_cell.shape == (3, 3):
+                    lengths = np.diag(active_cell)
+                    for axis, length in enumerate(lengths):
+                        if length > 0.0:
+                            delta[:, axis] -= length * np.round(
+                                delta[:, axis] / length
+                            )
+            return delta
+
+        displacement = np.maximum.reduce(
+            [
+                np.linalg.norm(minimum_image_delta(saddle, positions), axis=1),
+                np.linalg.norm(minimum_image_delta(product, positions), axis=1),
+                np.linalg.norm(minimum_image_delta(product, saddle), axis=1),
+            ]
+        )
+        fd_step = float(
+            getattr(
+                getattr(self.config, "rateconstant", None),
+                "vineyard_fd_step_A",
+                1.0e-3,
+            )
+        )
+        displacement_tol = max(10.0 * fd_step, 1.0e-3)
+        active = {
+            int(index)
+            for index in np.flatnonzero(displacement > displacement_tol)
+        }
+        active.add(center)
+        central = int(event.central_atom_index)
+        if 0 <= central < len(positions):
+            active.add(central)
+        return sorted(active)
 
     def _vineyard_masses_amu(self, active_indices: list[int]) -> list[float]:
         types = getattr(self.system, "types", None)
