@@ -1859,6 +1859,34 @@ def test_process_coverage_trace_reports_rate_scale_search_decision(monkeypatch):
     assert "needs_more_search=False" in line
 
 
+def test_rate_gap_terms_delegate_partition_to_amsel(monkeypatch):
+    calls = []
+
+    def fake_rate_gap_certificate(*, known_rate_mass, missing_rate_mass):
+        calls.append((known_rate_mass, missing_rate_mass))
+        return SimpleNamespace(
+            relative_missing_rate=3.0,
+            missing_rate_fraction=0.25,
+            kinetic_coverage_lower_bound=0.75,
+        )
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(rate_gap_certificate=fake_rate_gap_certificate),
+    )
+
+    assert kmc_module._rate_gap_certificate_terms(
+        known_rate_mass=2.0,
+        missing_rate_mass=1.0,
+    ) == {
+        "relative_missing_rate": 3.0,
+        "missing_rate_fraction": 0.25,
+        "kinetic_coverage_lower": 0.75,
+    }
+    assert calls == [(2.0, 1.0)]
+
+
 def test_rate_material_missing_mass_still_resamples_environment(monkeypatch):
     class FakeCertificate:
         attempts = 4
