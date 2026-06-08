@@ -1599,7 +1599,8 @@ def test_environment_search_evidence_trace_lines_report_missing_process_mass():
         "\t :=> AMSEL process coverage env=01026c6f6e672d65; "
         "attempts=1; observations=1; unique_processes=1; "
         "singleton_processes=1; missing_process_mass=1.000000e+00; "
-        "missing_rate_mass=inf; needs_more_search=True"
+        "missing_rate_mass=inf; missing_rate_fraction=1.000000e+00; "
+        "kinetic_coverage_lower=0.000000e+00; needs_more_search=True"
     ]
 
 
@@ -1796,10 +1797,13 @@ def test_process_coverage_trace_reports_rate_scale_search_decision(monkeypatch):
         )
     }
 
-    assert "needs_more_search=False" in environment_search_evidence_trace_lines(
+    line = environment_search_evidence_trace_lines(
         evidence,
         known_rate_scale=2.0,
     )[0]
+    assert "missing_rate_fraction=7.494378e-04" in line
+    assert "kinetic_coverage_lower=9.992506e-01" in line
+    assert "needs_more_search=False" in line
 
 
 def test_rate_material_missing_mass_still_resamples_environment(monkeypatch):
