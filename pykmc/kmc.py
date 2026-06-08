@@ -1003,22 +1003,25 @@ class KMC:
             res = self.manager.minimize_with_results(
                 self.config, positions=np.asarray(product, dtype=float)
             ).result()
+            if res is None:
+                return None
+            min_pos, e_prod = res
+            nd_prod = n_defects(min_pos, cell)
+            absorb = max(2, int(0.4 * nd_cur))
+            e_cur = self.total_energy
+            if nd_prod > absorb:
+                return None  # product still defected -> not a capture, migrate
+            if e_cur is not None and e_prod is not None and e_prod >= e_cur:
+                return None  # not downhill -> metastable, migrate
         except Exception:
             return None
-        if res is None:
-            return None
-        min_pos, e_prod = res
-        nd_prod = n_defects(min_pos, cell)
-        absorb = max(2, int(0.4 * nd_cur))
-        e_cur = self.total_energy
-        if nd_prod > absorb:
-            return None  # product still defected -> not a capture, migrate
-        if e_cur is not None and e_prod is not None and e_prod >= e_cur:
-            return None  # not downhill -> metastable, migrate
+        finally:
+            use_local = getattr(self.manager, "use_local", None)
+            if use_local is not None:
+                use_local()
         # Apply the downhill capture as one kMC step.
         self.system.update_positions(min_pos)
         self.total_energy = e_prod
-        self.manager.use_local()
         self.manager.set_all_positions(positions=self.system.positions)
         pref = float(getattr(self.config.rateconstant, "prefactor", 1.0e13))
         dt = (1.0 / pref) if pref > 0 else 1.0e-13
