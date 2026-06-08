@@ -1324,6 +1324,33 @@ def test_zero_observation_environment_is_not_rate_scaled_away(monkeypatch):
     ) == ["zero-env"]
 
 
+def test_zero_observation_new_environment_obeys_attempt_limit(monkeypatch):
+    class CompleteCertificate:
+        attempts = 2
+        observations = 2
+        unique_processes = 1
+        singleton_processes = 0
+        unseen_process_probability = 0.0
+        missing_rate_mass_estimate = 0.0
+        needs_more_search = False
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=lambda **kwargs: CompleteCertificate()),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {"zero-env": EnvironmentSearchEvidence(attempts=3)}
+
+    assert undercovered_environments_for_search(
+        current_environments=["zero-env"],
+        new_environments=["zero-env"],
+        visited_environments={"crystal"},
+        environment_search_evidence=evidence,
+        zero_observation_attempt_limit=3,
+    ) == []
+
+
 def test_process_coverage_trace_reports_rate_scale_search_decision(monkeypatch):
     class FakeCertificate:
         attempts = 34
