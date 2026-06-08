@@ -1241,7 +1241,7 @@ def test_kmc_reference_search_bounds_singleton_process_resampling():
     kmc.loggers = SimpleNamespace(info=lambda *_args: None)
     kmc._close = lambda: None
     batches = []
-    attempt_limit = 8
+    attempt_limit = coverage_resampling_attempt_limit(1)
 
     class FakeEventSearch:
         def __init__(self, outputs):
