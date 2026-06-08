@@ -102,6 +102,40 @@ def test_central_atoms_research_prioritizes_amsel_center_without_dropping_enviro
     assert any(atom in central_atoms for atom in [1, 2])
 
 
+def test_central_atoms_research_replaces_same_environment_candidate_with_amsel_center(
+    monkeypatch,
+):
+    kmc = KMC(
+        SimpleNamespace(
+            control=SimpleNamespace(random_seed=12345),
+            partn=SimpleNamespace(amsel_recomb_seed=True),
+        )
+    )
+    kmc.atomic_environment = SimpleNamespace(
+        atomic_environment_list=["env-a", "env-b", "env-b", "env-c"]
+    )
+    kmc.system = SimpleNamespace(
+        positions=np.zeros((4, 3), dtype=float),
+        cell=np.eye(3),
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.recombination_search_center",
+        lambda positions, cell: 2,
+        raising=False,
+    )
+    random.seed(1)
+
+    central_atoms = kmc.central_atoms_research(
+        ["env-a", "env-b", "env-c"], nsearch=1
+    )
+
+    assert central_atoms[0] == 2
+    assert len(central_atoms) == 3
+    assert 1 not in central_atoms
+    assert 0 in central_atoms
+    assert 3 in central_atoms
+
+
 def test_central_atoms_research_skips_amsel_center_outside_requested_environments(
     monkeypatch,
 ):
