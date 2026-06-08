@@ -2,6 +2,61 @@
 
 import ira_mod
 import numpy as np
+import os
+import subprocess
+import sys
+import tempfile
+
+
+def _identity_symmetry(nat: int) -> tuple[np.ndarray, np.ndarray]:
+    return np.array([np.eye(3)]), np.array([np.arange(nat)])
+
+
+def _sofi_subprocess_available() -> bool:
+    return os.environ.get("PYKMC_DISABLE_IRA_SOFI", "").lower() not in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _compute_sofi_symmetries(
+    initial_positions: np.ndarray,
+    sym_thr: float,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    code = """
+import numpy as np
+import sys
+import ira_mod
+
+positions = np.load(sys.argv[1])
+sym_thr = float(sys.argv[3])
+nat = len(positions)
+sym = ira_mod.SOFI().compute(nat, nat * [1], positions, sym_thr)
+np.savez(sys.argv[2], matrix=np.asarray(sym.matrix), perm=np.asarray(sym.perm))
+"""
+    timeout_s = float(os.environ.get("PYKMC_IRA_SOFI_TIMEOUT_S", "30"))
+    with tempfile.TemporaryDirectory(prefix="pykmc-sofi-") as tmpdir:
+        input_path = os.path.join(tmpdir, "positions.npy")
+        output_path = os.path.join(tmpdir, "symmetries.npz")
+        np.save(input_path, np.asarray(initial_positions, dtype=float))
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", code, input_path, output_path, str(sym_thr)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout_s,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0 or not os.path.exists(output_path):
+            return None
+        try:
+            with np.load(output_path) as data:
+                return np.asarray(data["matrix"]), np.asarray(data["perm"], dtype=int)
+        except Exception:
+            return None
 
 
 def unique_symmetries(
@@ -31,11 +86,15 @@ def unique_symmetries(
 
     """
     # Find all symmetries of initial_positions
+    initial_positions = np.asarray(initial_positions, dtype=float)
+    final_positions = np.asarray(final_positions, dtype=float)
     nat = len(initial_positions)
-    typ = nat * [1]
-
-    sofi = ira_mod.SOFI()
-    sym = sofi.compute(nat, typ, initial_positions, sym_thr)  # sym data ira object
+    if not _sofi_subprocess_available():
+        return _identity_symmetry(nat)
+    sym = _compute_sofi_symmetries(initial_positions, sym_thr)
+    if sym is None:
+        return _identity_symmetry(nat)
+    sym_matrix_all, sym_perm_all = sym
 
     # Find unique symmetries
     # Displacment event matrix
@@ -44,11 +103,11 @@ def unique_symmetries(
     unique_displacements = [displacements]
     unique_sym_index = []
 
-    for i in range(len(sym.matrix)):  # Loop over all symmetries
+    for i in range(len(sym_matrix_all)):  # Loop over all symmetries
         is_duplicated = False
         # Apply symmetry to displacements event matrix
-        new_displacements = displacements @ sym.matrix[i].T
-        new_displacements = new_displacements[sym.perm[i]]
+        new_displacements = displacements @ sym_matrix_all[i].T
+        new_displacements = new_displacements[sym_perm_all[i]]
 
         for disp in unique_displacements:  # Check if alreay in unique_displacements
             if np.allclose(disp, new_displacements, atol=1e-2, rtol=0):
@@ -61,8 +120,8 @@ def unique_symmetries(
 
     # unique symetries and add identity :
     sym_matrix = np.concatenate(
-        [[np.eye(3)]] + [[sym.matrix[i]] for i in unique_sym_index], axis=0
+        [[np.eye(3)]] + [[sym_matrix_all[i]] for i in unique_sym_index], axis=0
     )
     # associated permutation :
-    sym_perm = np.array([np.arange(nat)] + [sym.perm[i] for i in unique_sym_index])
+    sym_perm = np.array([np.arange(nat)] + [sym_perm_all[i] for i in unique_sym_index])
     return sym_matrix, sym_perm
