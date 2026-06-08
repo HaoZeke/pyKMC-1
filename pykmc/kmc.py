@@ -328,7 +328,14 @@ def undercovered_environments_for_search(
 
 def coverage_resampling_attempt_limit(searches_per_environment: int) -> int:
     """Return the finite retry budget for adaptive coverage resampling."""
-    return max(8, 4 * max(1, int(searches_per_environment)))
+    rate_gap_attempts = (
+        int(math.ceil(1.0 / PROCESS_SEARCH_MISSING_RATE_REL_TOL)) + 1
+    )
+    return max(
+        8,
+        4 * max(1, int(searches_per_environment)),
+        rate_gap_attempts,
+    )
 
 
 def merge_environment_search_evidence(
