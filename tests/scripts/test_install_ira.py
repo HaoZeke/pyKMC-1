@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import tomllib
 
 
 def _load_installer():
@@ -48,3 +49,11 @@ def test_source_dir_accepts_current_ira_pyproject_layout(tmp_path):
     installer = _load_installer()
 
     assert installer._source_dir(str(tmp_path)) == tmp_path.resolve()
+
+
+def test_pixi_ira_environment_has_scikit_build_backend():
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    dependencies = data["tool"]["pixi"]["feature"]["ira"]["dependencies"]
+
+    assert "scikit-build-core" in dependencies
