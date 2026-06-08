@@ -1011,6 +1011,22 @@ class BasinsGenericEvents() :
             if not isinstance(outlet, dict) or not outlet.get("ok", False):
                 continue
             scores[int(outlet["absorbing_state"])] = float(outlet["committor"])
+        if not scores:
+            return self._absorbing_rate_fraction_scores()
+        return scores
+
+    def _absorbing_rate_fraction_scores(self) -> dict[int, float]:
+        df = getattr(self.connectivity_table, "df", None)
+        if not isinstance(df, pd.DataFrame):
+            return {}
+        rows = df.loc[~df["transient"].astype(bool)]
+        total_rate = float(rows["k_forward"].sum())
+        if not np.isfinite(total_rate) or total_rate <= 0.0:
+            return {}
+        scores: dict[int, float] = {}
+        for _, row in rows.iterrows():
+            state = int(row["state_connexion"])
+            scores[state] = scores.get(state, 0.0) + float(row["k_forward"]) / total_rate
         return scores
 
     def _record_unresolved_frontier_diagnostics(self) -> None:

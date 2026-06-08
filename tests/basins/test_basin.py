@@ -873,6 +873,74 @@ class TestBasin :
             "unresolved_rate": pytest.approx(5.0),
         }
 
+    def test_absorbing_refinement_uses_rate_fraction_fallback(self, monkeypatch):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 1,
+                    "central_atom": 10,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 10.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 0,
+                    "state_connexion": 2,
+                    "event_connexion": 2,
+                    "central_atom": 20,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 0,
+                    "state_connexion": 3,
+                    "event_connexion": 3,
+                    "central_atom": 30,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 5.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+            ]
+        )
+
+        class EmptyOutletSelector:
+            def diagnose_connectivity(self, connectivity_table, entry=0):
+                return {"ok": True, "ngt_outlets": []}
+
+        monkeypatch.setattr(basin_module, "AmselFPTASelector", EmptyOutletSelector)
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(
+                max_absorbing_refinements=None,
+                frontier_committor_tol=0.10,
+            )
+        )
+        basin.connectivity_table = table
+
+        rows = basin._absorbing_refinement_rows()
+
+        assert rows == [0, 2]
+        assert basin.absorbing_refinement_diagnostics == {
+            "total": 3,
+            "refined": 2,
+            "skipped": 1,
+            "unresolved_committor": pytest.approx(1.0 / 16.0),
+            "unresolved_rate": pytest.approx(1.0),
+        }
+
     def test_absorbing_refinement_diagnostics_refresh_after_rate_updates(
         self, monkeypatch
     ):
