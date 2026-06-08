@@ -44,7 +44,7 @@ def test_central_atoms_research_covers_distinct_atoms_before_resampling():
     assert sorted(central_atoms) == [0, 1, 2]
 
 
-def test_central_atoms_research_includes_amsel_recombination_center(monkeypatch):
+def test_central_atoms_research_uses_amsel_recombination_center(monkeypatch):
     kmc = KMC(
         SimpleNamespace(
             control=SimpleNamespace(random_seed=12345),
@@ -67,8 +67,7 @@ def test_central_atoms_research_includes_amsel_recombination_center(monkeypatch)
 
     central_atoms = kmc.central_atoms_research(["env-a"], nsearch=1)
 
-    assert central_atoms[0] == 3
-    assert sorted(central_atoms[1:]) == [1]
+    assert central_atoms == [3]
 
 
 def test_rejected_amsel_capture_suppresses_search_center(monkeypatch):
