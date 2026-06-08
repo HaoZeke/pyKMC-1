@@ -11,6 +11,7 @@ from pykmc.kmc import (
     EnvironmentSearchEvidence,
     KMC,
     basin_exploration_trace_line,
+    coverage_resampling_attempt_limit,
     environment_search_evidence_trace_lines,
     environments_with_cataloged_searches,
     event_search_attempt_evidence,
@@ -1202,6 +1203,73 @@ def test_kmc_reference_search_bounds_singleton_process_resampling():
     assert sum(evidence.process_counts.values()) == attempt_limit
     assert environment_search_evidence_trace_lines({"env-a": evidence})[0].endswith(
         "needs_more_search=True"
+    )
+
+
+def test_kmc_reference_search_uses_global_resampling_budget_for_many_environments():
+    kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
+    environments = [f"env-{idx}" for idx in range(4)]
+    kmc.atomic_environment = SimpleNamespace(atomic_environment_list=environments)
+    kmc.visited_environments = set()
+    kmc.environment_search_evidence = {}
+    kmc.reference_table = SimpleNamespace(table=[object()])
+    kmc.loggers = SimpleNamespace(info=lambda *_args: None)
+    kmc._close = lambda: None
+    batches = []
+    total_searches = 0
+
+    class FakeEventSearch:
+        def __init__(self, outputs):
+            self.results = [Ok(output) for output in outputs]
+            self._outputs = outputs
+
+        def get_successes_results(self):
+            return self._outputs
+
+    def execute_event_searches(central_atoms):
+        nonlocal total_searches
+        atoms = list(central_atoms)
+        batches.append(atoms)
+        total_searches += len(atoms)
+        return FakeEventSearch(
+            [SimpleNamespace(central_atom_index=int(atom)) for atom in atoms]
+        )
+
+    def add_reference_events(event_outputs):
+        valid_results = []
+        for output in event_outputs:
+            environment = environments[int(output.central_atom_index)]
+            process_index = len(valid_results) + sum(len(batch) for batch in batches)
+            valid_results.append(
+                Ok(
+                    pd.DataFrame(
+                        [
+                            {
+                                "idx_ref": process_index,
+                                "event_id": environment,
+                                "id_final": f"{environment}-product-{process_index}",
+                                "k": 1.0,
+                            }
+                        ]
+                    )
+                )
+            )
+        return valid_results
+
+    kmc.execute_event_searches = execute_event_searches
+    kmc.add_reference_events = add_reference_events
+
+    search_results, valid_results = kmc.search_reference_events_until_covered(
+        environments, nsearch=1
+    )
+
+    expected_budget = len(environments) + coverage_resampling_attempt_limit(1)
+    assert total_searches == expected_budget
+    assert len(search_results) == expected_budget
+    assert len(valid_results) == expected_budget
+    assert all(
+        evidence.attempts <= expected_budget
+        for evidence in kmc.environment_search_evidence.values()
     )
 
 
