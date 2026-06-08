@@ -1210,7 +1210,12 @@ class KMC:
             central_atom_research_list += tmp2
         recomb_center = self._amsel_recomb_search_center()
         if recomb_center is not None:
-            return [int(recomb_center)]
+            recomb_center = int(recomb_center)
+            return [recomb_center] + [
+                int(atom)
+                for atom in central_atom_research_list
+                if int(atom) != recomb_center
+            ]
         return central_atom_research_list
 
     def _amsel_recomb_search_center(self):

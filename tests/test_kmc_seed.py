@@ -67,7 +67,8 @@ def test_central_atoms_research_uses_amsel_recombination_center(monkeypatch):
 
     central_atoms = kmc.central_atoms_research(["env-a"], nsearch=1)
 
-    assert central_atoms == [3]
+    assert central_atoms[0] == 3
+    assert any(atom in central_atoms for atom in [0, 1])
 
 
 def test_central_atoms_research_prioritizes_amsel_center_without_dropping_environments(
