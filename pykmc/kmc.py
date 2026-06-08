@@ -1211,11 +1211,19 @@ class KMC:
         recomb_center = self._amsel_recomb_search_center()
         if recomb_center is not None:
             recomb_center = int(recomb_center)
-            return [recomb_center] + [
-                int(atom)
-                for atom in central_atom_research_list
-                if int(atom) != recomb_center
-            ]
+            requested_environments = set(new_environments)
+            try:
+                recomb_environment = self.atomic_environment.atomic_environment_list[
+                    recomb_center
+                ]
+            except (IndexError, TypeError):
+                recomb_environment = None
+            if recomb_environment in requested_environments:
+                return [recomb_center] + [
+                    int(atom)
+                    for atom in central_atom_research_list
+                    if int(atom) != recomb_center
+                ]
         return central_atom_research_list
 
     def _amsel_recomb_search_center(self):

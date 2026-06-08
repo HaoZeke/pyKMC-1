@@ -60,14 +60,14 @@ def test_central_atoms_research_uses_amsel_recombination_center(monkeypatch):
     )
     monkeypatch.setattr(
         "pykmc.basins.amsel_recomb.recombination_search_center",
-        lambda positions, cell: 3,
+        lambda positions, cell: 1,
         raising=False,
     )
     random.seed(0)
 
     central_atoms = kmc.central_atoms_research(["env-a"], nsearch=1)
 
-    assert central_atoms[0] == 3
+    assert central_atoms[0] == 1
     assert any(atom in central_atoms for atom in [0, 1])
 
 
@@ -89,14 +89,14 @@ def test_central_atoms_research_prioritizes_amsel_center_without_dropping_enviro
     )
     monkeypatch.setattr(
         "pykmc.basins.amsel_recomb.recombination_search_center",
-        lambda positions, cell: 3,
+        lambda positions, cell: 1,
         raising=False,
     )
     random.seed(0)
 
     central_atoms = kmc.central_atoms_research(["env-a", "env-b"], nsearch=1)
 
-    assert central_atoms[0] == 3
+    assert central_atoms[0] == 1
     assert 0 in central_atoms
     assert any(atom in central_atoms for atom in [1, 2])
 
