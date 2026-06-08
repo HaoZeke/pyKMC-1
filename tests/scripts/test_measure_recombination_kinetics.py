@@ -1138,6 +1138,37 @@ def test_render_trial_input_enables_vineyard_prefactors_for_amsel_priority(tmp_p
     assert config["RateConstant"]["compute_vineyard_prefactor"] == "True"
 
 
+def test_render_trial_input_promotes_amsel_priority_to_vtst_rates(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text="[Control]\n[pARTn]\n[BASIN]\n[RateConstant]\nstyle = constant\n",
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert config["RateConstant"]["style"] == "amsel-vtst"
+    assert config["RateConstant"]["compute_vineyard_prefactor"] == "True"
+
+
 def test_render_trial_input_defaults_to_single_frontier_search(tmp_path):
     script = _load_script()
 
