@@ -132,11 +132,15 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
         neighbors_list=None,
         transient=True,
     )
+    log_messages = []
     basin = BasinsGenericEvents(
         config=config,
         reference_table=FakeReferenceTable(),
         known_environments={known},
         manager=SimpleNamespace(use_global=lambda: None),
+        loggers=SimpleNamespace(
+            info=lambda _name, message: log_messages.append(message)
+        ),
     )
 
     monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
@@ -145,6 +149,11 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
     assert seen_limits == [(80, 80)]
     assert config.partn.nevalf_max == 1200
     assert config.partn.evalf_max == 2400
+    assert any(
+        "AMSEL frontier pARTn force-evaluation limits nevalf_max=80 evalf_max=80"
+        in message
+        for message in log_messages
+    )
 
 class TestBasin : 
 

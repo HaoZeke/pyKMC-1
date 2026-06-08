@@ -1164,6 +1164,7 @@ class BasinsGenericEvents() :
         event_search = EventSearch(self.config, state.system, self.manager, self.loggers)
         original_evalf_limits = self._set_frontier_search_evalf_limits()
         try:
+            self._log_frontier_search_evalf_limits()
             event_search.execute(central_atoms)
         finally:
             self._restore_frontier_search_evalf_limits(original_evalf_limits)
@@ -1260,6 +1261,17 @@ class BasinsGenericEvents() :
             return
         for name, original in originals.items():
             setattr(partn, name, original)
+
+    def _log_frontier_search_evalf_limits(self) -> None:
+        partn = getattr(self.config, "partn", None)
+        if partn is None:
+            return
+        nevalf_max = getattr(partn, "nevalf_max", None)
+        evalf_max = getattr(partn, "evalf_max", None)
+        self._log(
+            "\t :=> AMSEL frontier pARTn force-evaluation limits "
+            "nevalf_max={} evalf_max={}".format(nevalf_max, evalf_max)
+        )
 
     def _searched_frontier_environments(
         self,
