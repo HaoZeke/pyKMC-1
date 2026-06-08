@@ -478,6 +478,18 @@ def _rate_gap_certificate_terms(
     known_rate_mass: float,
     missing_rate_mass: float,
 ) -> dict[str, float]:
+    if _amsel is not None and hasattr(_amsel, "rate_gap_certificate"):
+        certificate = _amsel.rate_gap_certificate(
+            known_rate_mass=float(known_rate_mass),
+            missing_rate_mass=float(missing_rate_mass),
+        )
+        return {
+            "relative_missing_rate": float(certificate.relative_missing_rate),
+            "missing_rate_fraction": float(certificate.missing_rate_fraction),
+            "kinetic_coverage_lower": float(
+                certificate.kinetic_coverage_lower_bound
+            ),
+        }
     if math.isinf(float(missing_rate_mass)):
         return {
             "relative_missing_rate": math.inf,
