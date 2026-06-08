@@ -983,6 +983,7 @@ class KMC:
         state (a true downhill sink), so metastable separations fall
         through to normal saddle-based migration. This supplies the one
         transition no saddle search can find (the sink has no saddle)."""
+        self._amsel_recomb_search_suppressed = False
         try:
             from .basins.amsel_recomb import (
                 build_product, detect_recomb, n_defects,
@@ -995,6 +996,7 @@ class KMC:
         det = detect_recomb(pos, cell, capture_mult=cap)
         if det is None:
             return None
+        self._amsel_recomb_search_suppressed = True
         source, v_centroid = det
         try:
             product = build_product(pos, cell, source, v_centroid)
@@ -1215,6 +1217,8 @@ class KMC:
         return central_atom_research_list
 
     def _amsel_recomb_search_center(self):
+        if bool(getattr(self, "_amsel_recomb_search_suppressed", False)):
+            return None
         partn = getattr(self.config, "partn", None)
         if not bool(getattr(partn, "amsel_recomb_seed", False)):
             return None
