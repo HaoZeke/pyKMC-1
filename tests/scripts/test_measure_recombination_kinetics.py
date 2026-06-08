@@ -785,6 +785,63 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert manifest["amsel_python_path"] == str(tmp_path / "amsel-python" / "python")
 
 
+def test_cli_dry_run_records_generic_transport_parameters(tmp_path):
+    script = _load_script()
+    out = tmp_path / "out"
+    template = tmp_path / "input.in"
+    template.write_text(
+        "[Control]\n"
+        "initial_config = ./old.xyz\n"
+        "n_steps = 1\n"
+        "[pARTn]\n"
+        "path_artnso = ./old.so\n"
+        "zseed = 0\n"
+        "[BASIN]\n"
+    )
+    initial = tmp_path / "initial.xyz"
+    initial.write_text("1\nLattice=\"1 0 0 0 1 0 0 0 1\"\nX 0 0 0\n")
+
+    code = script.main(
+        [
+            "--case",
+            "generic-defect",
+            "--template-input",
+            str(template),
+            "--initial-config",
+            str(initial),
+            "--partn-path",
+            str(tmp_path / "libartn-lmp.so"),
+            "--priority",
+            "legacy",
+            "--trials",
+            "1",
+            "--seed",
+            "10",
+            "--max-steps",
+            "5",
+            "--transport-lattice-parameter-A",
+            "3.2",
+            "--transport-diffusivity-A2-per-ps",
+            "0.25",
+            "--transport-alpha",
+            "0.5",
+            "--dry-run",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["transport_lattice_parameter_A"] == pytest.approx(3.2)
+    assert manifest["transport_diffusivity_A2_per_ps"] == pytest.approx(0.25)
+    assert manifest["transport_alpha"] == pytest.approx(0.5)
+    commands = json.loads((out / "commands.json").read_text())
+    assert commands[0]["transport_lattice_parameter_A"] == pytest.approx(3.2)
+    assert commands[0]["transport_diffusivity_A2_per_ps"] == pytest.approx(0.25)
+    assert commands[0]["transport_alpha"] == pytest.approx(0.5)
+
+
 def test_cli_dry_run_generates_cu_separation_config(tmp_path):
     script = _load_script()
     out = tmp_path / "out"
