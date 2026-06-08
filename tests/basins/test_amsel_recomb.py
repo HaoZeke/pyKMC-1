@@ -34,3 +34,29 @@ def test_recomb_push_requires_capture_radius(monkeypatch):
     )
 
     assert push is None
+
+
+def test_recombination_search_center_requires_capture_radius(monkeypatch):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [4.0, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.eye(3) * 20.0
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_nearest_recomb_topology",
+        lambda positions, cell, cutoff_mult=1.08: (1, [0.0, 0.0, 0.0], 4.0, 2.0),
+    )
+
+    assert (
+        amsel_recomb.recombination_search_center(
+            positions,
+            cell,
+            capture_mult=1.5,
+        )
+        is None
+    )
