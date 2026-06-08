@@ -1620,8 +1620,9 @@ def run_trial_subprocess(
     timeout: float | None,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    process_env = os.environ.copy()
+    process_env = None
     if env:
+        process_env = os.environ.copy()
         process_env.update(env)
     process = subprocess.Popen(
         command,
