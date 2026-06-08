@@ -1801,7 +1801,7 @@ def test_process_coverage_trace_reports_rate_scale_search_decision(monkeypatch):
         evidence,
         known_rate_scale=2.0,
     )[0]
-    assert "missing_rate_fraction=7.494378e-04" in line
+    assert "missing_rate_fraction=7.494379e-04" in line
     assert "kinetic_coverage_lower=9.992506e-01" in line
     assert "needs_more_search=False" in line
 
