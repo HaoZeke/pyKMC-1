@@ -1,7 +1,12 @@
 """Manages Point Set Registration (shape matching) methods."""
 
+import json
 import ira_mod
 import numpy as np
+import os
+import subprocess
+import sys
+import tempfile
 from .result import Result, ErrorInfo, PSROutput, Ok, Err, ErrorType
 from .config import Config 
 from .system import System 
@@ -71,9 +76,6 @@ class PointSetRegistration:
             The results of the ira psr procedure.
 
         """
-        # Initialize IRA
-        ira = ira_mod.IRA()
-
         # Event informations :
         coords2 = self.dfevent.at["initial_positions"]
         nat2 = len(coords2)
@@ -137,27 +139,7 @@ class PointSetRegistration:
         nat1 = len(coords1)
         kmax_factor = self.config.ira.kmax_factor
 
-        # Run ira to find transformation matrices
-        try:
-            rmat, tr, perm, dh = ira.match(
-                nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor
-            )
-
-            return Ok(
-                PSROutput(
-                    rotation_matrix=rmat,
-                    translation_matrix=tr,
-                    permutation_matrix=perm,
-                    matching_score=dh,
-                )
-            )
-        except Exception:
-            return Err(
-                ErrorInfo(
-                    type=ErrorType.PSR_NO_MATCH_FOUND,
-                    message="IRA did not find a match",
-                )
-            )
+        return simple_ira(nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor)
 
 
 def check_match(
@@ -196,26 +178,112 @@ def check_match(
         else:
             return result_match  # Ok(PSROutput)
 
-def simple_ira(nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor) : 
-    # Run ira to find transformation matrices
-    ira = ira_mod.IRA()
-    try:
-        rmat, tr, perm, dh = ira.match(
-            nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor
-        )
 
-        return Ok(
-            PSROutput(
-                rotation_matrix=rmat,
-                translation_matrix=tr,
-                permutation_matrix=perm,
-                matching_score=dh,
-            )
+def _psr_no_match(message: str = "IRA did not find a match"):
+    return Err(
+        ErrorInfo(
+            type=ErrorType.PSR_NO_MATCH_FOUND,
+            message=message,
         )
-    except Exception:
-        return Err(
-            ErrorInfo(
-                type=ErrorType.PSR_NO_MATCH_FOUND,
-                message="IRA did not find a match",
-            )
+    )
+
+
+def _ira_match_subprocess_available() -> bool:
+    return os.environ.get("PYKMC_DISABLE_IRA_MATCH", "").lower() not in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _run_ira_match_subprocess(
+    nat1,
+    typ1,
+    coords1,
+    nat2,
+    typ2,
+    coords2,
+    kmax_factor,
+):
+    code = """
+import json
+import numpy as np
+import sys
+import ira_mod
+
+data = np.load(sys.argv[1])
+typ1 = json.loads(sys.argv[3])
+typ2 = json.loads(sys.argv[4])
+kmax_factor = float(sys.argv[5])
+rmat, tr, perm, dh = ira_mod.IRA().match(
+    int(data["nat1"]),
+    typ1,
+    data["coords1"],
+    int(data["nat2"]),
+    typ2,
+    data["coords2"],
+    kmax_factor,
+)
+np.savez(sys.argv[2], rmat=np.asarray(rmat), tr=np.asarray(tr), perm=np.asarray(perm), dh=float(dh))
+"""
+    timeout_s = float(os.environ.get("PYKMC_IRA_MATCH_TIMEOUT_S", "30"))
+    with tempfile.TemporaryDirectory(prefix="pykmc-ira-") as tmpdir:
+        input_path = os.path.join(tmpdir, "match-input.npz")
+        output_path = os.path.join(tmpdir, "match-output.npz")
+        np.savez(
+            input_path,
+            nat1=int(nat1),
+            coords1=np.asarray(coords1, dtype=float),
+            nat2=int(nat2),
+            coords2=np.asarray(coords2, dtype=float),
         )
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    code,
+                    input_path,
+                    output_path,
+                    json.dumps(list(typ1)),
+                    json.dumps(list(typ2)),
+                    str(float(kmax_factor)),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout_s,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0 or not os.path.exists(output_path):
+            return None
+        try:
+            with np.load(output_path) as data:
+                return (
+                    np.asarray(data["rmat"]),
+                    np.asarray(data["tr"]),
+                    np.asarray(data["perm"]),
+                    float(data["dh"]),
+                )
+        except Exception:
+            return None
+
+
+def simple_ira(nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor) : 
+    if not _ira_match_subprocess_available():
+        return _psr_no_match("IRA matcher backend unavailable")
+    matched = _run_ira_match_subprocess(
+        nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor
+    )
+    if matched is None:
+        return _psr_no_match()
+    rmat, tr, perm, dh = matched
+    return Ok(
+        PSROutput(
+            rotation_matrix=rmat,
+            translation_matrix=tr,
+            permutation_matrix=perm,
+            matching_score=dh,
+        )
+    )
