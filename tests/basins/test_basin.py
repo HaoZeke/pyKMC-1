@@ -87,7 +87,7 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
     known = "known-env"
     unknown = "unknown-env"
     event_output = SimpleNamespace(central_atom_index=1)
-    seen_nevalf = []
+    seen_limits = []
 
     class FakeEventSearch:
         def __init__(self, config, system, manager, loggers):
@@ -95,7 +95,12 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
             self.results = [Ok(event_output)]
 
         def execute(self, central_atom_research_list):
-            seen_nevalf.append(int(self.config.partn.nevalf_max))
+            seen_limits.append(
+                (
+                    int(self.config.partn.nevalf_max),
+                    int(self.config.partn.evalf_max),
+                )
+            )
 
         def get_successes_results(self):
             return [event_output]
@@ -107,9 +112,13 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
     config = SimpleNamespace(
         basin=SimpleNamespace(
             frontier_event_searches=1,
-            frontier_search_nevalf_max=300,
+            frontier_search_nevalf_max=80,
         ),
-        partn=SimpleNamespace(amsel_recomb_seed=False, nevalf_max=1200),
+        partn=SimpleNamespace(
+            amsel_recomb_seed=False,
+            nevalf_max=1200,
+            evalf_max=2400,
+        ),
     )
     state = StateData(
         system=System(
@@ -133,8 +142,9 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
     monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
 
     assert basin._try_search_unknown_state_environments(state) is True
-    assert seen_nevalf == [300]
+    assert seen_limits == [(80, 80)]
     assert config.partn.nevalf_max == 1200
+    assert config.partn.evalf_max == 2400
 
 class TestBasin : 
 

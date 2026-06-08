@@ -30,7 +30,7 @@ REFINEMENT_CONTEXT_COLUMNS = (
     "transient",
 )
 
-_NO_FRONTIER_NEVALF_OVERRIDE = object()
+_NO_FRONTIER_EVALF_OVERRIDE = object()
 
 
 def _refinement_error_with_row_context(
@@ -1162,11 +1162,11 @@ class BasinsGenericEvents() :
         if hasattr(self.manager, "use_global"):
             self.manager.use_global()
         event_search = EventSearch(self.config, state.system, self.manager, self.loggers)
-        original_nevalf_max = self._set_frontier_search_nevalf_max()
+        original_evalf_limits = self._set_frontier_search_evalf_limits()
         try:
             event_search.execute(central_atoms)
         finally:
-            self._restore_frontier_search_nevalf_max(original_nevalf_max)
+            self._restore_frontier_search_evalf_limits(original_evalf_limits)
         events = event_search.get_successes_results()
         if self.prefactor_attacher is not None:
             self.prefactor_attacher(events)
@@ -1228,30 +1228,38 @@ class BasinsGenericEvents() :
         except Exception:
             return None
 
-    def _set_frontier_search_nevalf_max(self):
+    def _set_frontier_search_evalf_limits(self):
         partn = getattr(self.config, "partn", None)
-        if partn is None or not hasattr(partn, "nevalf_max"):
-            return _NO_FRONTIER_NEVALF_OVERRIDE
-        original = getattr(partn, "nevalf_max")
+        if partn is None:
+            return _NO_FRONTIER_EVALF_OVERRIDE
         cap = int(
             getattr(
                 getattr(self.config, "basin", None),
                 "frontier_search_nevalf_max",
-                300,
+                80,
             )
-            or 300
+            or 80
         )
-        if original is None:
-            setattr(partn, "nevalf_max", cap)
-        else:
-            setattr(partn, "nevalf_max", min(int(original), cap))
-        return original
+        originals = {}
+        for name in ("nevalf_max", "evalf_max"):
+            if not hasattr(partn, name):
+                continue
+            original = getattr(partn, name)
+            originals[name] = original
+            if original is None:
+                setattr(partn, name, cap)
+            else:
+                setattr(partn, name, min(int(original), cap))
+        if not originals:
+            return _NO_FRONTIER_EVALF_OVERRIDE
+        return originals
 
-    def _restore_frontier_search_nevalf_max(self, original) -> None:
+    def _restore_frontier_search_evalf_limits(self, originals) -> None:
         partn = getattr(self.config, "partn", None)
-        if partn is None or original is _NO_FRONTIER_NEVALF_OVERRIDE:
+        if partn is None or originals is _NO_FRONTIER_EVALF_OVERRIDE:
             return
-        setattr(partn, "nevalf_max", original)
+        for name, original in originals.items():
+            setattr(partn, name, original)
 
     def _searched_frontier_environments(
         self,
