@@ -41,6 +41,46 @@ def test_duplicate_event_error_info_preserves_matched_process_identity():
     }
 
 
+def test_reference_event_add_links_two_direction_events_recursively():
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.kdb = None
+    table.table = pd.DataFrame(
+        {
+            "idx_ref": pd.Series(dtype="int64"),
+            "event_id": pd.Series(dtype="str"),
+            "id_final": pd.Series(dtype="str"),
+            "energy_barrier": pd.Series(dtype="float64"),
+            "k": pd.Series(dtype="float64"),
+            "idx_backward": pd.Series(dtype="int64"),
+        }
+    )
+    dfevent = pd.DataFrame(
+        [
+            {
+                "idx_ref": -1,
+                "event_id": "env-a",
+                "id_final": "env-b",
+                "energy_barrier": 0.10,
+                "k": 2.0,
+                "idx_backward": -1,
+            },
+            {
+                "idx_ref": -1,
+                "event_id": "env-b",
+                "id_final": "env-a",
+                "energy_barrier": 0.12,
+                "k": 3.0,
+                "idx_backward": -1,
+            },
+        ]
+    )
+
+    table.add(dfevent)
+
+    assert table.table["idx_ref"].tolist() == [0, 1]
+    assert table.table["idx_backward"].tolist() == [1, 0]
+
+
 def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch):
     calls = []
 

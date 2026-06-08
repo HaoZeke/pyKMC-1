@@ -386,7 +386,7 @@ class ReferenceEventTable:
         """
         return [e.ok_value() for e in results_is_valid_event if e.is_ok()]
 
-    def add(self, dfevent: pd.Series, persist: bool = True) -> None:
+    def add(self, dfevent: pd.Series | pd.DataFrame, persist: bool = True) -> None:
         """Add on event series to the table.
 
         Parameters
@@ -399,16 +399,21 @@ class ReferenceEventTable:
             events pass persist=False to avoid re-storing them.
 
         """
+        if isinstance(dfevent, pd.Series):
+            dfevent = dfevent.to_frame().T
+        else:
+            dfevent = dfevent.copy().reset_index(drop=True)
+
         #Check if only one or two events (if event is its own backard or not)
         ref = self.max_idx_ref()
         if len(dfevent) == 1 :
-            dfevent["idx_ref"] = ref
-            dfevent["idx_backward"] = ref
+            dfevent.loc[:, "idx_ref"] = ref
+            dfevent.loc[:, "idx_backward"] = ref
         else :
-            dfevent.loc[0].at["idx_ref"] = ref
-            dfevent.loc[0].at["idx_backward"] = ref+1
-            dfevent.loc[1].at["idx_ref"] = ref +1
-            dfevent.loc[1].at["idx_backward"] = ref
+            dfevent.loc[0, "idx_ref"] = ref
+            dfevent.loc[0, "idx_backward"] = ref+1
+            dfevent.loc[1, "idx_ref"] = ref +1
+            dfevent.loc[1, "idx_backward"] = ref
 
         self.table = pd.concat([self.table, dfevent], ignore_index=True)
         if persist and self.kdb is not None:
