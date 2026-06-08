@@ -71,6 +71,65 @@ def test_central_atoms_research_includes_amsel_recombination_center(monkeypatch)
     assert sorted(central_atoms[1:]) == [1]
 
 
+def test_rejected_amsel_capture_suppresses_search_center(monkeypatch):
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        partn=SimpleNamespace(amsel_recomb_capture_mult=1.6),
+        rateconstant=SimpleNamespace(prefactor=5.0e12),
+    )
+    kmc.system = SimpleNamespace(
+        positions=np.array([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]], dtype=float),
+        cell=np.eye(3) * 20.0,
+    )
+    kmc.total_energy = 0.0
+    kmc.manager = SimpleNamespace(
+        use_global=lambda: None,
+        minimize_with_results=lambda config, positions: SimpleNamespace(
+            result=lambda: (positions, -1.0)
+        ),
+    )
+    n_defects = iter([10, 9])
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.detect_recomb",
+        lambda positions, cell, capture_mult: (1, [0.0, 0.0, 0.0]),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.build_product",
+        lambda positions, cell, source, target: np.asarray(positions, dtype=float),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.n_defects",
+        lambda positions, cell: next(n_defects),
+        raising=False,
+    )
+
+    assert kmc._try_amsel_capture() is None
+    assert kmc._amsel_recomb_search_suppressed is True
+
+
+def test_suppressed_amsel_capture_skips_recombination_center(monkeypatch):
+    kmc = KMC(
+        SimpleNamespace(
+            control=SimpleNamespace(random_seed=12345),
+            partn=SimpleNamespace(amsel_recomb_seed=True),
+        )
+    )
+    kmc._amsel_recomb_search_suppressed = True
+    kmc.system = SimpleNamespace(
+        positions=np.zeros((4, 3), dtype=float),
+        cell=np.eye(3),
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.recombination_search_center",
+        lambda positions, cell: 3,
+        raising=False,
+    )
+
+    assert kmc._amsel_recomb_search_center() is None
+
+
 def test_event_search_logs_failed_search_reason():
     class FinishedFuture:
         def result(self):
