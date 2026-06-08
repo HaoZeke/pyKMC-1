@@ -8,9 +8,52 @@ search test the local annihilation path without material-specific labels.
 """
 from __future__ import annotations
 
-from collections import Counter
+import hashlib
+from collections import Counter, OrderedDict
 
 import numpy as np
+
+
+_TOPOLOGY_CACHE_MAX = 16
+_TOPOLOGY_CACHE: OrderedDict[
+    tuple[tuple[int, ...], bytes, float, bytes],
+    tuple[int, tuple[float, float, float], float, float] | None,
+] = OrderedDict()
+
+
+def _topology_cache_key(positions, cell, cutoff_mult: float):
+    pos = np.ascontiguousarray(np.asarray(positions, dtype=np.float64))
+    celld = np.ascontiguousarray(_cell_diag(cell).astype(np.float64))
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(pos.tobytes())
+    digest.update(celld.tobytes())
+    return tuple(pos.shape), celld.tobytes(), float(cutoff_mult), digest.digest()
+
+
+def _cacheable_topology(topology):
+    if topology is None:
+        return None
+    source_atom, target_centroid, distance, nn = topology
+    return (
+        int(source_atom),
+        tuple(float(x) for x in target_centroid),
+        float(distance),
+        float(nn),
+    )
+
+
+def _public_topology(topology):
+    if topology is None:
+        return None
+    source_atom, target_centroid, distance, nn = topology
+    return int(source_atom), list(target_centroid), float(distance), float(nn)
+
+
+def _remember_topology(key, topology):
+    _TOPOLOGY_CACHE[key] = _cacheable_topology(topology)
+    _TOPOLOGY_CACHE.move_to_end(key)
+    while len(_TOPOLOGY_CACHE) > _TOPOLOGY_CACHE_MAX:
+        _TOPOLOGY_CACHE.popitem(last=False)
 
 
 def _amsel_defect_annihilation_candidate(positions, cell, cutoff_mult: float = 1.08):
@@ -48,36 +91,47 @@ def _coordination(pos: np.ndarray, cell: np.ndarray, cutoff: float) -> np.ndarra
 
 def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
     """Return the nearest source atom and target void for local annihilation."""
+    key = _topology_cache_key(positions, cell, cutoff_mult)
+    if key in _TOPOLOGY_CACHE:
+        _TOPOLOGY_CACHE.move_to_end(key)
+        return _public_topology(_TOPOLOGY_CACHE[key])
     candidate = _amsel_defect_annihilation_candidate(
         positions, cell, cutoff_mult=cutoff_mult
     )
     if candidate is not None:
-        return (
+        topology = (
             int(candidate.source_atom),
             list(candidate.target_centroid),
             float(candidate.distance),
             float(candidate.nn_spacing),
         )
+        _remember_topology(key, topology)
+        return _public_topology(_TOPOLOGY_CACHE[key])
     try:
         from amsel import defect_clusters, estimate_nn_spacing
     except ImportError:
+        _remember_topology(key, None)
         return None
     pos = np.asarray(positions, dtype=float)
     celld = _cell_diag(cell)
     n = pos.shape[0]
     if n == 0:
+        _remember_topology(key, None)
         return None
     nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0)
     if nn is None or nn <= 0.0:
+        _remember_topology(key, None)
         return None
     cutoff = cutoff_mult * nn
     cn = _coordination(pos, celld, cutoff)
     if cn.size == 0:
+        _remember_topology(key, None)
         return None
     bulk_cn = int(Counter(int(c) for c in cn).most_common(1)[0][0])
     under = [int(i) for i in np.where(cn < bulk_cn)[0]]
     over = [int(i) for i in np.where(cn > bulk_cn)[0]]
     if not under or not over:
+        _remember_topology(key, None)
         return None
     pos_list = pos.tolist()
     cell_list = celld.tolist()
@@ -107,6 +161,7 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
 
     v_centroid, _v_cluster = _largest_cluster_centroid(under)
     if v_centroid is None:
+        _remember_topology(key, None)
         return None
     # Nearest over-coordinated source atom to the target void.
     over_arr = np.asarray(over, dtype=int)
@@ -116,7 +171,9 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
             dd[:, ax] -= celld[ax] * np.round(dd[:, ax] / celld[ax])
     dist = np.sqrt((dd * dd).sum(axis=1))
     j = int(np.argmin(dist))
-    return int(over_arr[j]), v_centroid.tolist(), float(dist[j]), float(nn)
+    topology = int(over_arr[j]), v_centroid.tolist(), float(dist[j]), float(nn)
+    _remember_topology(key, topology)
+    return _public_topology(_TOPOLOGY_CACHE[key])
 
 
 def detect_recomb(
