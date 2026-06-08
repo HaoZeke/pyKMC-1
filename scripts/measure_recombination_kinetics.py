@@ -1530,6 +1530,8 @@ def render_trial_input(
     if priority != "legacy":
         config[control]["amsel_recomb_inject"] = "True"
         config[partn]["amsel_recomb_seed"] = "True"
+        nnewchance = config[partn].getint("nnewchance", fallback=0)
+        config[partn]["nnewchance"] = str(max(nnewchance, 3))
     if disable_coverage_resampling or priority == "legacy":
         config[control]["disable_coverage_resampling"] = "True"
     if basin_search_registry_path is not None:
