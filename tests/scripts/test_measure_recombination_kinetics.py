@@ -549,6 +549,52 @@ def test_recombination_volume_rows_use_survival_exposure_for_cu():
     assert rows[1]["physical_kinetic_claim_ok_trials"] == 0
 
 
+def test_recombination_volume_rows_use_generic_transport_parameters():
+    script = _load_script()
+    trials = [
+        {
+            "case": "generic-vac-sia",
+            "selector": "amsel",
+            "temperature_K": 450.0,
+            "box_volume_A3": 120.0,
+            "recombined": True,
+            "t_recombination_s": 2.0e-12,
+            "censored_time_s": None,
+            "transport_lattice_parameter_A": 3.2,
+            "transport_diffusivity_A2_per_ps": 0.25,
+            "transport_alpha": 0.5,
+        },
+        {
+            "case": "generic-vac-sia",
+            "selector": "amsel",
+            "temperature_K": 450.0,
+            "box_volume_A3": 120.0,
+            "recombined": False,
+            "t_recombination_s": None,
+            "censored_time_s": 4.0e-12,
+            "transport_lattice_parameter_A": 3.2,
+            "transport_diffusivity_A2_per_ps": 0.25,
+            "transport_alpha": 0.5,
+        },
+    ]
+
+    rows = script.recombination_volume_rows(trials)
+
+    assert rows[0]["case"] == "generic-vac-sia"
+    assert rows[0]["lattice_parameter_A"] == pytest.approx(3.2)
+    assert rows[0]["diffusivity_A2_per_ps"] == pytest.approx(0.25)
+    assert rows[0]["alpha"] == pytest.approx(0.5)
+    expected_rate_coefficient = (1.0 / 6.0) * 120.0
+    expected_volume = expected_rate_coefficient * 0.5 * 3.2**2 / 0.25
+    assert rows[0]["rate_coefficient_A3_per_ps"] == pytest.approx(
+        expected_rate_coefficient
+    )
+    assert rows[0]["recombination_volume_A3"] == pytest.approx(expected_volume)
+    assert rows[0]["recombination_volume_atomic"] == pytest.approx(
+        expected_volume / (3.2**3 / 4.0)
+    )
+
+
 def test_seed_schedule_is_paired_by_trial():
     script = _load_script()
 
