@@ -1761,11 +1761,15 @@ def test_kinetic_guard_uses_latest_process_coverage_certificate():
             "AMSEL process coverage env=env-a; attempts=1; observations=1; "
             "unique_processes=1; singleton_processes=1; "
             "missing_process_mass=7.142857e-01; "
-            "missing_rate_mass=1.593874e-03; needs_more_search=True\n"
+            "missing_rate_mass=1.593874e-03; "
+            "missing_rate_fraction=1.591338e-03; "
+            "kinetic_coverage_lower=9.984087e-01; needs_more_search=True\n"
             "AMSEL process coverage env=env-a; attempts=15; observations=15; "
             "unique_processes=1; singleton_processes=0; "
             "missing_process_mass=4.983389e-02; "
-            "missing_rate_mass=1.668008e-03; needs_more_search=False"
+            "missing_rate_mass=1.668008e-03; "
+            "missing_rate_fraction=1.665230e-03; "
+            "kinetic_coverage_lower=9.983348e-01; needs_more_search=False"
         ),
     )
 
@@ -1775,7 +1779,36 @@ def test_kinetic_guard_uses_latest_process_coverage_certificate():
     assert guarded["coverage_total_observations"] == 15
     assert guarded["coverage_max_missing_process_mass"] == pytest.approx(0.04983389)
     assert guarded["coverage_max_missing_rate_mass"] == pytest.approx(1.668008e-03)
+    assert guarded["coverage_max_missing_rate_fraction"] == pytest.approx(1.665230e-03)
+    assert guarded["coverage_min_kinetic_coverage_lower"] == pytest.approx(0.9983348)
     assert guarded["coverage_needs_more_search"] is False
+
+
+def test_kinetic_guard_rejects_infinite_missing_rate_coverage_certificate():
+    script = _load_script()
+
+    guarded = script.apply_kinetic_guard(
+        {
+            "selector": "amsel",
+            "recombined": False,
+            "kmc_steps": 1,
+            "kinetic_claim_ok": True,
+        },
+        diagnostics=None,
+        log_text=(
+            "AMSEL process coverage env=env-a; attempts=1; observations=1; "
+            "unique_processes=1; singleton_processes=1; "
+            "missing_process_mass=1.000000e+00; "
+            "missing_rate_mass=inf; missing_rate_fraction=1.000000e+00; "
+            "kinetic_coverage_lower=0.000000e+00; needs_more_search=True"
+        ),
+    )
+
+    assert guarded["kinetic_claim_ok"] is False
+    assert guarded["coverage_max_missing_rate_mass"] == math.inf
+    assert guarded["coverage_max_missing_rate_fraction"] == pytest.approx(1.0)
+    assert guarded["coverage_min_kinetic_coverage_lower"] == pytest.approx(0.0)
+    assert guarded["coverage_needs_more_search"] is True
 
 
 def test_kinetic_guard_ignores_process_coverage_for_legacy_selector():
