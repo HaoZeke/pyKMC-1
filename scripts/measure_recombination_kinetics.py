@@ -1584,10 +1584,8 @@ def render_trial_input(
         config[partn]["nevalf_max"] = str(int(partn_search_evals))
     if temperature_K is not None:
         config[rateconstant]["T"] = str(float(temperature_K))
-    if (
-        priority != "legacy"
-        and config[rateconstant].get("style", fallback="constant") == "amsel-vtst"
-    ):
+    if priority != "legacy":
+        config[rateconstant]["style"] = "amsel-vtst"
         config[rateconstant]["compute_vineyard_prefactor"] = "True"
     config[basin]["exploration_priority"] = _exploration_priority_for_priority(
         priority=priority,
