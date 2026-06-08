@@ -65,6 +65,12 @@ PROCESS_COVERAGE_RE = re.compile(
 VINEYARD_PREFACTOR_FAILURE_MARKER = "Vineyard prefactor failed"
 ARTN_CURVATURE_PREFACTOR_MARKER = "ARTn saddle curvature prefactor"
 VINEYARD_PROJECTED_PREFACTOR_MARKER = "Vineyard projected-mode prefactor"
+AMSEL_REQUIRED_APIS = (
+    "event_completeness",
+    "defect_clusters",
+    "estimate_nn_spacing",
+    "build_recomb_product_positions",
+)
 VINEYARD_PREFACTOR_COMPLETE_RE = re.compile(
     r"Vineyard prefactor event at atom (?P<atom>\d+) complete: "
     r"forward=(?P<forward>[0-9.eE+-]+)/s "
@@ -1238,10 +1244,12 @@ def trial_commands(
     mpi_ranks: int,
     mpirun: str,
     python: str,
+    amsel_python_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     commands = []
     template_text = template_input.read_text()
     use_temperature_dirs = len(temperatures) > 1
+    env = trial_env_for_amsel_path(amsel_python_path)
     for item in seed_schedule(base_seed=seed, trials=trials, priorities=priorities):
         for temperature_K in temperatures:
             effective_frontier_event_searches = _frontier_event_searches_for_priority(
@@ -1303,6 +1311,7 @@ def trial_commands(
                     "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
                     "amsel_min_guidance": amsel_min_guidance,
                     "workdir": str(trial_dir),
+                    "env": env,
                     "command": [
                         mpirun,
                         "-np",
@@ -1564,15 +1573,60 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
+def trial_env_for_amsel_path(amsel_python_path: Path | None) -> dict[str, str] | None:
+    if amsel_python_path is None:
+        return None
+    existing = os.environ.get("PYTHONPATH")
+    pythonpath = str(amsel_python_path)
+    if existing:
+        pythonpath = f"{pythonpath}{os.pathsep}{existing}"
+    return {"PYTHONPATH": pythonpath}
+
+
+def ensure_amsel_runtime(
+    *,
+    python: str,
+    env: dict[str, str] | None = None,
+) -> None:
+    probe = (
+        "import importlib, sys; "
+        "required = " + repr(tuple(AMSEL_REQUIRED_APIS)) + "; "
+        "amsel = importlib.import_module('amsel'); "
+        "missing = [name for name in required if not hasattr(amsel, name)]; "
+        "print(','.join(missing)); "
+        "sys.exit(1 if missing else 0)"
+    )
+    process_env = os.environ.copy()
+    if env:
+        process_env.update(env)
+    result = subprocess.run(
+        [python, "-c", probe],
+        env=process_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if result.returncode == 0:
+        return
+    missing = result.stdout.strip() or "amsel"
+    raise RuntimeError(f"AMSEL runtime missing required APIs: {missing}")
+
+
 def run_trial_subprocess(
     command: list[str],
     *,
     cwd: Path,
     timeout: float | None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
+    process_env = os.environ.copy()
+    if env:
+        process_env.update(env)
     process = subprocess.Popen(
         command,
         cwd=cwd,
+        env=process_env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1617,6 +1671,7 @@ def execute_trials(
                     command["command"],
                     cwd=workdir,
                     timeout=trial_timeout_s,
+                    env=command.get("env"),
                 )
             except subprocess.TimeoutExpired as error:
                 (workdir / "harness.log").write_text(_timeout_output(error))
@@ -1800,6 +1855,14 @@ def main(argv: list[str] | None = None) -> int:
         choices=("amsel", "amsel-diverse"),
         default="amsel",
     )
+    parser.add_argument(
+        "--amsel-python-path",
+        type=Path,
+        help=(
+            "Path prepended to PYTHONPATH for AMSEL-priority child runs, "
+            "for example /path/to/amsel/amsel-python/python."
+        ),
+    )
     parser.add_argument("--amsel-duplicate-family-penalty", type=float, default=1.0)
     parser.add_argument("--amsel-min-guidance", type=float, default=0.0)
     parser.add_argument(
@@ -1880,7 +1943,16 @@ def main(argv: list[str] | None = None) -> int:
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
         python=args.python,
+        amsel_python_path=args.amsel_python_path,
     )
+    if not args.dry_run and any(priority == "amsel" for priority in args.priority):
+        try:
+            ensure_amsel_runtime(
+                python=args.python,
+                env=trial_env_for_amsel_path(args.amsel_python_path),
+            )
+        except RuntimeError as error:
+            parser.error(str(error))
     manifest = {
         "case": args.case,
         "template_input": str(template_input),
@@ -1907,6 +1979,9 @@ def main(argv: list[str] | None = None) -> int:
         "basin_frontier_committor_tol": args.basin_frontier_committor_tol,
         "basin_frontier_event_searches": args.basin_frontier_event_searches,
         "amsel_selector": args.amsel_selector,
+        "amsel_python_path": (
+            str(args.amsel_python_path) if args.amsel_python_path else None
+        ),
         "amsel_exploration_priority": args.amsel_exploration_priority,
         "amsel_duplicate_family_penalty": args.amsel_duplicate_family_penalty,
         "amsel_min_guidance": args.amsel_min_guidance,
