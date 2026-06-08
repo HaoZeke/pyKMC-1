@@ -17,7 +17,6 @@ import hashlib
 import pandas as pd
 import copy
 import numpy as np
-import random
 from scipy.spatial import cKDTree
 
 
@@ -1173,6 +1172,7 @@ class BasinsGenericEvents() :
             state,
             search_environments,
             nsearch,
+            state_index=state_index,
         )
         if not central_atoms:
             return False
@@ -1219,31 +1219,59 @@ class BasinsGenericEvents() :
         state: StateData,
         unknown_environments,
         nsearch: int,
+        state_index: int | None = None,
     ) -> list[int]:
-        central_atom_research_list: list[int] = []
+        candidate_atoms: set[int] = set()
         atomic_environment_list = state.environment.atomic_environment_list
         for env in unknown_environments:
-            atoms = [
+            candidate_atoms.update(
                 int(i)
                 for i, atom_env in enumerate(atomic_environment_list)
                 if atom_env == env
-            ]
-            if not atoms:
-                continue
-            n_unique = min(int(nsearch), len(atoms))
-            selected = random.sample(atoms, n_unique)
-            if int(nsearch) > n_unique:
-                selected += [
-                    random.choice(atoms) for _i in range(int(nsearch) - n_unique)
-                ]
-            central_atom_research_list.extend(selected)
+            )
         recomb_center = self._frontier_recomb_search_center(state)
-        if (
-            recomb_center is not None
-            and int(recomb_center) not in central_atom_research_list
-        ):
-            central_atom_research_list.insert(0, int(recomb_center))
-        return central_atom_research_list
+        incoming_center = self._frontier_incoming_center(state_index)
+        if recomb_center is not None:
+            candidate_atoms.add(int(recomb_center))
+        if incoming_center is not None:
+            candidate_atoms.add(int(incoming_center))
+        if not candidate_atoms:
+            return []
+        ranked = sorted(
+            candidate_atoms,
+            key=lambda atom: self._frontier_atom_priority(
+                int(atom),
+                recomb_center=recomb_center,
+                incoming_center=incoming_center,
+            ),
+        )
+        return ranked[: max(0, int(nsearch))]
+
+    def _frontier_incoming_center(self, state_index: int | None):
+        if state_index is None or getattr(self, "connectivity_table", None) is None:
+            return None
+        try:
+            _from_state, _event_idx, central_atom, _sym_idx, _is_transient = (
+                self.connectivity_table.get_transition_to_state(
+                    target_state=int(state_index)
+                )
+            )
+        except Exception:
+            return None
+        return int(central_atom)
+
+    def _frontier_atom_priority(
+        self,
+        atom: int,
+        *,
+        recomb_center,
+        incoming_center,
+    ) -> tuple[int, int]:
+        if recomb_center is not None and int(atom) == int(recomb_center):
+            return (0, int(atom))
+        if incoming_center is not None and int(atom) == int(incoming_center):
+            return (1, int(atom))
+        return (2, int(atom))
 
     def _frontier_recomb_search_center(self, state: StateData):
         partn = getattr(self.config, "partn", None)

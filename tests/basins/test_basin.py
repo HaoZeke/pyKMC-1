@@ -293,6 +293,63 @@ def test_frontier_state_search_suppresses_duplicate_failed_environments(monkeypa
     assert executions == [[0]]
 
 
+def test_frontier_state_search_budget_limits_total_search_centers(monkeypatch):
+    executions = []
+
+    class FakeEventSearch:
+        def __init__(self, config, system, manager, loggers):
+            self.config = config
+
+        def execute(self, central_atom_research_list):
+            executions.append(list(central_atom_research_list))
+
+        def get_successes_results(self):
+            return []
+
+    class FakeReferenceTable:
+        def add_events(self, events):
+            return []
+
+    config = SimpleNamespace(
+        basin=SimpleNamespace(
+            frontier_event_searches=1,
+            frontier_search_nevalf_max=80,
+        ),
+        partn=SimpleNamespace(
+            amsel_recomb_seed=False,
+            nevalf_max=1200,
+            evalf_max=2400,
+        ),
+    )
+    state = StateData(
+        system=System(
+            positions=np.zeros((3, 3)),
+            types=np.array(["Cu", "Cu", "Cu"]),
+            cell=np.eye(3) * 10.0,
+            pbc=True,
+            index=np.arange(3),
+        ),
+        environment=SimpleNamespace(
+            atomic_environment_list=["unknown-a", "unknown-b", "unknown-c"]
+        ),
+        neighbors_list=None,
+        transient=True,
+    )
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=FakeReferenceTable(),
+        known_environments=set(),
+        manager=SimpleNamespace(use_local=lambda: None, use_global=lambda: None),
+    )
+
+    monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
+
+    assert (
+        basin._try_search_unknown_state_environments(state, state_index=1) is False
+    )
+    assert executions == [[0]]
+
+
 class TestBasin : 
 
     def test_connectivity_table_construction(self, test_logger, config_Cu, reference_table_Cu_fake, system_Cu, visited_environments_Cu) : 

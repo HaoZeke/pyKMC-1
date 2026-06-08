@@ -685,7 +685,7 @@ class BasinConfig(BaseModel):
     frontier_event_searches: int = Field(
         default=0,
         ge=0,
-        description="Number of pARTn event searches per unknown atomic environment in reconstructed basin frontier states.",
+        description="Number of ranked pARTn event-search centers used for unresolved reconstructed basin frontier states.",
     )
     frontier_search_nevalf_max: int = Field(
         default=80,
