@@ -192,6 +192,18 @@ def event_search_attempt_evidence(
     return evidence
 
 
+def _zero_observation_attempt_budget_exhausted(
+    evidence: EnvironmentSearchEvidence | None,
+    attempt_limit: int | None,
+) -> bool:
+    return bool(
+        evidence is not None
+        and attempt_limit is not None
+        and not evidence.process_counts
+        and int(evidence.attempts) >= int(attempt_limit)
+    )
+
+
 def undercovered_environments_for_search(
     *,
     current_environments,
@@ -215,6 +227,12 @@ def undercovered_environments_for_search(
     for environment in list(new_environments):
         if environment not in current_environment_set or environment in seen:
             continue
+        evidence = environment_search_evidence.get(environment)
+        if _zero_observation_attempt_budget_exhausted(
+            evidence,
+            zero_observation_attempt_limit,
+        ):
+            continue
         searchable.append(environment)
         seen.add(environment)
 
@@ -237,11 +255,9 @@ def undercovered_environments_for_search(
         if environment == "crystal" or environment in seen:
             continue
         evidence = environment_search_evidence.get(environment)
-        if (
-            evidence is not None
-            and zero_observation_attempt_limit is not None
-            and not evidence.process_counts
-            and int(evidence.attempts) >= int(zero_observation_attempt_limit)
+        if _zero_observation_attempt_budget_exhausted(
+            evidence,
+            zero_observation_attempt_limit,
         ):
             continue
         if (
