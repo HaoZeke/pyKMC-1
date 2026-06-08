@@ -13,6 +13,7 @@ from pykmc.kmc import (
     KMC,
     basin_exploration_trace_line,
     coverage_resampling_attempt_limit,
+    coverage_repair_search_batch,
     environment_search_evidence_trace_lines,
     environments_with_cataloged_searches,
     event_search_attempt_evidence,
@@ -1145,6 +1146,49 @@ def test_undercovered_environments_for_search_prioritizes_missing_rate_mass(
         visited_environments={"a-low-gap", "z-high-gap"},
         environment_search_evidence=evidence,
     ) == ["z-high-gap", "a-low-gap"]
+
+
+def test_coverage_repair_search_batch_repeats_largest_rate_gap(monkeypatch):
+    class FakeCertificate:
+        def __init__(self, missing_rate):
+            self.attempts = 2
+            self.observations = 1
+            self.unique_processes = 1
+            self.singleton_processes = 1
+            self.unseen_process_probability = 0.5
+            self.missing_rate_mass_estimate = missing_rate
+            self.needs_more_search = True
+
+    def event_completeness(**kwargs):
+        if ("high-rate-gap",) in kwargs["process_counts"]:
+            return FakeCertificate(10.0)
+        return FakeCertificate(0.2)
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=event_completeness),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "low-gap": EnvironmentSearchEvidence(
+            attempts=2,
+            process_counts=Counter({("low-rate-gap",): 1}),
+            process_rates={("low-rate-gap",): 0.2},
+        ),
+        "high-gap": EnvironmentSearchEvidence(
+            attempts=2,
+            process_counts=Counter({("high-rate-gap",): 1}),
+            process_rates={("high-rate-gap",): 10.0},
+        ),
+    }
+
+    assert coverage_repair_search_batch(
+        ["low-gap", "high-gap"],
+        evidence,
+        searches_per_environment=3,
+        known_rate_scale=None,
+    ) == ["high-gap", "low-gap", "high-gap", "high-gap"]
 
 
 def test_kmc_reference_search_repeats_current_environment_until_process_covered():
