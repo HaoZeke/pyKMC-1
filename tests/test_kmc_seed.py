@@ -149,6 +149,70 @@ def test_rejected_amsel_capture_restores_local_manager_mode(monkeypatch):
     assert calls == ["global", "local"]
 
 
+def test_amsel_capture_uses_global_minimizer(monkeypatch):
+    class FakeSystem(SimpleNamespace):
+        def update_positions(self, positions):
+            self.positions = np.asarray(positions, dtype=float)
+
+    class FakeManager:
+        def __init__(self):
+            self.calls = []
+
+        def use_global(self):
+            self.calls.append("global")
+
+        def use_local(self):
+            self.calls.append("local")
+
+        def minimize_with_results(self, *_args, **_kwargs):
+            raise AssertionError("direct capture must use the global minimizer")
+
+        def global_minimize_with_results(self, _config, positions=None):
+            self.calls.append("global_minimize")
+            return np.asarray(positions, dtype=float), -1.0
+
+        def set_all_positions(self, positions):
+            self.calls.append("set_all")
+            self.positions = np.asarray(positions, dtype=float)
+
+    kmc = KMC.__new__(KMC)
+    kmc.config = SimpleNamespace(
+        partn=SimpleNamespace(amsel_recomb_capture_mult=1.6),
+        rateconstant=SimpleNamespace(prefactor=5.0e12),
+    )
+    product = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]], dtype=float)
+    kmc.system = FakeSystem(
+        positions=np.array([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]], dtype=float),
+        cell=np.eye(3) * 20.0,
+    )
+    kmc.total_energy = 0.0
+    manager = FakeManager()
+    kmc.manager = manager
+    kmc.loggers = SimpleNamespace(info=lambda *_args, **_kwargs: None)
+    n_defects = iter([10, 0])
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.detect_recomb",
+        lambda positions, cell, capture_mult: (1, [0.0, 0.0, 0.0]),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.build_product",
+        lambda positions, cell, source, target: product,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.n_defects",
+        lambda positions, cell: next(n_defects),
+        raising=False,
+    )
+
+    dt = kmc._try_amsel_capture()
+
+    assert np.isclose(dt, 2.0e-13)
+    assert manager.calls == ["global", "global_minimize", "local", "set_all"]
+    np.testing.assert_allclose(kmc.system.positions, product)
+
+
 def test_suppressed_amsel_capture_skips_recombination_center(monkeypatch):
     kmc = KMC(
         SimpleNamespace(
