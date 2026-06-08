@@ -1344,6 +1344,7 @@ def test_render_trial_input_enables_amsel_recombination_capture(tmp_path):
     config.read_string(text)
     assert config["Control"]["amsel_recomb_inject"] == "True"
     assert config["pARTn"]["amsel_recomb_seed"] == "True"
+    assert config["pARTn"]["nnewchance"] == "3"
 
 
 def test_render_trial_input_keeps_legacy_recombination_capture_disabled(tmp_path):
@@ -1375,6 +1376,7 @@ def test_render_trial_input_keeps_legacy_recombination_capture_disabled(tmp_path
     config.read_string(text)
     assert "amsel_recomb_inject" not in config["Control"]
     assert "amsel_recomb_seed" not in config["pARTn"]
+    assert "nnewchance" not in config["pARTn"]
 
 
 def test_render_trial_input_keeps_legacy_prefactors_configured(tmp_path):
