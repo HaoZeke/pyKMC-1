@@ -1406,6 +1406,8 @@ def render_trial_input(
     )
     if priority != "legacy" and basin_max_absorbing_refinements is None:
         config[basin].pop("max_absorbing_refinements", None)
+    if priority != "legacy" and basin_max_closed_states is None:
+        config[basin].pop("max_closed_states", None)
     if basin_energy_thr is not None:
         config[basin]["energy_thr"] = str(float(basin_energy_thr))
     if basin_max_expansions is not None:

@@ -1039,6 +1039,77 @@ def test_render_trial_input_uses_committor_tolerance_without_default_absorbing_c
     assert config["BASIN"]["frontier_committor_tol"] == "0.1"
 
 
+def test_render_trial_input_drops_template_closed_state_cap_for_amsel(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text=(
+            "[Control]\n"
+            "[pARTn]\n"
+            "[BASIN]\n"
+            "max_closed_states = 100\n"
+            "max_absorbing_refinements = 4\n"
+        ),
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert "max_closed_states" not in config["BASIN"]
+
+
+def test_render_trial_input_preserves_explicit_closed_state_cap(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text=(
+            "[Control]\n"
+            "[pARTn]\n"
+            "[BASIN]\n"
+            "max_closed_states = 100\n"
+        ),
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=None,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=12,
+        basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
+        amsel_selector="amsel-adaptive",
+        amsel_exploration_priority="amsel-diverse",
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert config["BASIN"]["max_closed_states"] == "12"
+
+
 def test_render_trial_input_preserves_explicit_absorbing_refinement_cap(tmp_path):
     script = _load_script()
 
