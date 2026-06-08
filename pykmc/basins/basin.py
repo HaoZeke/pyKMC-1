@@ -743,130 +743,139 @@ class BasinsGenericEvents() :
 
     def refine_absorbing(self, system) :
         """When connectivity table is build, and that we have dict of states, we refine the energy barrier and k_forward of the transient -> absorbing event"""
-        #compute the energy of the state 
-        #for all row in connectivity table where we need to refine
-        futures_context = {} #idx → { "min": f_min, "saddle": f_sad }
-        for idx, row in self.connectivity_table.df.loc[
-            self._absorbing_refinement_rows()
-        ].iterrows() :
-            if row['transient']  == False : #need to refine
-                #tmp_system = copy.deepcopy(self.states[row["state"]].system)
-                tmp_system = System(positions=self.states[row["state"]].system.positions.copy(), types=self.states[row["state"]].system.types, cell=self.states[row["state"]].system.cell, pbc=True, index=np.arange(len(self.states[row["state"]].system.types)))
-                #get tmp_system energy 
-                future1 = self.manager.get_total_energy(positions=tmp_system.positions.copy()) #Send copy not reference
-                #move to generic saddle positions 
-                ref_event = self.reference_table.table[self.reference_table.table["idx_ref"] == row["event_connexion"]] 
-                if ref_event.empty:
-                    raise ValueError(f"idx_ref={row['event_connexion']} not found in reference table")
-                ref_event = ref_event.iloc[0].copy()
-                #ref_event = self.reference_table.table.iloc[row["event_connexion"]].copy()
-                saddle_positions = ref_event['saddle_positions'].copy()
-                #Apply PSR between event initial position and environment positions of the central_atoms
+        self._absorbing_refinement_refined_rows = set()
+        while True:
+            rows_to_refine = self._absorbing_refinement_rows()
+            if not rows_to_refine:
+                break
+            #compute the energy of the state
+            #for all row in connectivity table where we need to refine
+            futures_context = {} #idx → { "min": f_min, "saddle": f_sad }
+            resolved_rows = set()
+            for idx, row in self.connectivity_table.df.loc[
+                rows_to_refine
+            ].iterrows() :
+                if row['transient']  == False : #need to refine
+                    #tmp_system = copy.deepcopy(self.states[row["state"]].system)
+                    tmp_system = System(positions=self.states[row["state"]].system.positions.copy(), types=self.states[row["state"]].system.types, cell=self.states[row["state"]].system.cell, pbc=True, index=np.arange(len(self.states[row["state"]].system.types)))
+                    #get tmp_system energy
+                    future1 = self.manager.get_total_energy(positions=tmp_system.positions.copy()) #Send copy not reference
+                    #move to generic saddle positions
+                    ref_event = self.reference_table.table[self.reference_table.table["idx_ref"] == row["event_connexion"]]
+                    if ref_event.empty:
+                        raise ValueError(f"idx_ref={row['event_connexion']} not found in reference table")
+                    ref_event = ref_event.iloc[0].copy()
+                    #ref_event = self.reference_table.table.iloc[row["event_connexion"]].copy()
+                    saddle_positions = ref_event['saddle_positions'].copy()
+                    #Apply PSR between event initial position and environment positions of the central_atoms
 
 
-                #ENSURE "STATE" FULL 
-                self.states[row["state"]].ensure_full_state(self.config)
+                    #ENSURE "STATE" FULL
+                    self.states[row["state"]].ensure_full_state(self.config)
 
-                result = PointSetRegistration(self.config, tmp_system, ref_event , self.states[row["state"]].neighbors_list, row["central_atom"]).match()
-                if not result.is_ok(): #PSR Err
-                    return result
-                    # Check if PointSetRegistration match is valid 
-                result = check_match(result, self.config.psr.matching_score_thr)
-                if not result.is_ok() : #PSR matching score not valid : 
-                    return result
-                else : 
-                    psr_output = result.ok_value() #get psr results
+                    result = PointSetRegistration(self.config, tmp_system, ref_event , self.states[row["state"]].neighbors_list, row["central_atom"]).match()
+                    if not result.is_ok(): #PSR Err
+                        return result
+                        # Check if PointSetRegistration match is valid
+                    result = check_match(result, self.config.psr.matching_score_thr)
+                    if not result.is_ok() : #PSR matching score not valid :
+                        return result
+                    else :
+                        psr_output = result.ok_value() #get psr results
 
-                # Apply symmetry matrix if sym != 0
-                if row["sym"] != 0 :
-                    sym_matrices = ref_event['sym_matrix']
-                    sym_matrix = sym_matrices[row["sym"]]
-                    saddle_positions = geometry.transform_positions(saddle_positions, sym_matrix,0, ref_event["sym_perm"][row["sym"]])
-                saddle_positions = geometry.transform_positions(saddle_positions, psr_output.rotation_matrix, psr_output.translation_matrix, psr_output.permutation_matrix)
-                neighbors = self.states[row["state"]].neighbors_list.get_neighbors('rcut', row["central_atom"])
+                    # Apply symmetry matrix if sym != 0
+                    if row["sym"] != 0 :
+                        sym_matrices = ref_event['sym_matrix']
+                        sym_matrix = sym_matrices[row["sym"]]
+                        saddle_positions = geometry.transform_positions(saddle_positions, sym_matrix,0, ref_event["sym_perm"][row["sym"]])
+                    saddle_positions = geometry.transform_positions(saddle_positions, psr_output.rotation_matrix, psr_output.translation_matrix, psr_output.permutation_matrix)
+                    neighbors = self.states[row["state"]].neighbors_list.get_neighbors('rcut', row["central_atom"])
 
-                # AMSEL BasinSearchRegistry deduplication: claim a search
-                # channel keyed by the mode (saddle - reactant). When the
-                # registry suppresses the claim because an equivalent mode
-                # was already searched (same trial or persisted across
-                # trials via the JSONL file), skip the ARTn call and let
-                # the catalog rate stand for this row -- the connectivity
-                # table's k_forward already carries the catalog value, so
-                # not overwriting it is the correct behaviour.
-                registry = getattr(self, "basin_search_registry", None)
-                claim = None
-                if registry is not None and registry.available:
-                    reactant_for_claim = self.states[row["state"]].system.positions[
-                        neighbors
-                    ].copy()
-                    claim = registry.claim_refinement(
-                        state=int(row["state"]),
-                        wuid=int(idx),
-                        saddle_positions=saddle_positions[neighbors],
-                        reactant_positions=reactant_for_claim,
-                        displacement_type="absorbing-refinement",
-                    )
-                if claim is not None and not claim.accepted:
-                    self._record_suppressed_refinement(int(idx), claim)
+                    # AMSEL BasinSearchRegistry deduplication: claim a search
+                    # channel keyed by the mode (saddle - reactant). When the
+                    # registry suppresses the claim because an equivalent mode
+                    # was already searched (same trial or persisted across
+                    # trials via the JSONL file), skip the ARTn call and let
+                    # the catalog rate stand for this row -- the connectivity
+                    # table's k_forward already carries the catalog value, so
+                    # not overwriting it is the correct behaviour.
+                    registry = getattr(self, "basin_search_registry", None)
+                    claim = None
+                    if registry is not None and registry.available:
+                        reactant_for_claim = self.states[row["state"]].system.positions[
+                            neighbors
+                        ].copy()
+                        claim = registry.claim_refinement(
+                            state=int(row["state"]),
+                            wuid=int(idx),
+                            saddle_positions=saddle_positions[neighbors],
+                            reactant_positions=reactant_for_claim,
+                            displacement_type="absorbing-refinement",
+                        )
+                    if claim is not None and not claim.accepted:
+                        self._record_suppressed_refinement(int(idx), claim)
+                        resolved_rows.add(int(idx))
+                        self.states[row["state"]].release_heavy_objects()
+                        continue
+                    if self.config.control.active_volume==True:
+                        # add a job to manager queue
+                        future2 = self.manager.partn_refine(self.config, row["central_atom"],
+                                                      tmp_system.positions.copy(),
+                                                      tmp_system.cell,
+                                                      tmp_system.types.copy(),
+                                                      neighbors.copy(),
+                                                      saddle_positions.copy())
+                    # Move system do saddle positions
+                    else:
+                        tmp_system.update_positions(saddle_positions, atom_idx = neighbors)
+                        #refine
+                        future2 = self.manager.partn_refine(self.config, row["central_atom"], tmp_system.positions.copy()) #send copy not reference !
+
+                    #save future in context :
+                    futures_context[int(idx)] = {
+                "min": future1,
+                "saddle": future2,
+                "neighbors": neighbors,
+                "registry_wuid": int(idx) if (claim is not None and claim.accepted) else None}
+
+                    #RELEASE MEMORY :
                     self.states[row["state"]].release_heavy_objects()
-                    continue
-                if self.config.control.active_volume==True:
-                    # add a job to manager queue
-                    future2 = self.manager.partn_refine(self.config, row["central_atom"],
-                                                  tmp_system.positions.copy(),
-                                                  tmp_system.cell,
-                                                  tmp_system.types.copy(),
-                                                  neighbors.copy(),
-                                                  saddle_positions.copy())
-                # Move system do saddle positions
-                else:
-                    tmp_system.update_positions(saddle_positions, atom_idx = neighbors)
-                    #refine
-                    future2 = self.manager.partn_refine(self.config, row["central_atom"], tmp_system.positions.copy()) #send copy not reference !
 
-                #save future in context :
-                futures_context[idx] = {
-            "min": future1,
-            "saddle": future2,
-            "neighbors": neighbors,
-            "registry_wuid": int(idx) if (claim is not None and claim.accepted) else None}
-
-                #RELEASE MEMORY :
-                self.states[row["state"]].release_heavy_objects()
-
-        #modify connectivity table entry future1 hold min energy, future2 holds E_saddle
-        for idx, ctx in futures_context.items():
-            E_min    = ctx["min"].result()
-            result_sad = ctx["saddle"].result()
-            if not result_sad.is_ok() : 
-                row = self.connectivity_table.df.loc[idx]
-                return Err(
-                    _refinement_error_with_row_context(
-                        result_sad.err_value(),
-                        row_index=idx,
-                        row=row,
+            #modify connectivity table entry future1 hold min energy, future2 holds E_saddle
+            for idx, ctx in futures_context.items():
+                E_min    = ctx["min"].result()
+                result_sad = ctx["saddle"].result()
+                if not result_sad.is_ok() :
+                    row = self.connectivity_table.df.loc[idx]
+                    return Err(
+                        _refinement_error_with_row_context(
+                            result_sad.err_value(),
+                            row_index=idx,
+                            row=row,
+                        )
                     )
-                )
-            E_sad = result_sad.ok_value().E_saddle
-            if self.config.control.active_volume==True:
-                dE = E_sad
-            else:
-                dE = E_sad - E_min
-            k = compute_rate_Eyring(dE, self.config)
+                E_sad = result_sad.ok_value().E_saddle
+                if self.config.control.active_volume==True:
+                    dE = E_sad
+                else:
+                    dE = E_sad - E_min
+                k = compute_rate_Eyring(dE, self.config)
 
-            #also save saddle positions refined 
-            idx_state = self.connectivity_table.df.loc[idx].at['state_connexion']
-            central_atom = self.connectivity_table.df.loc[idx].at['central_atom']
-            #self.absorbing_saddle_positions[idx_state] = result.ok_value().saddle_positions[self.states[idx_state].neighbors_list.get_neighbors("rcut", central_atom)]
-            self.absorbing_saddle_positions[idx_state] = result_sad.ok_value().saddle_positions[ctx["neighbors"]]
-            # update connectivity table row
-            self.connectivity_table.df.loc[idx, "dE_forward"] = dE
-            self.connectivity_table.df.loc[idx, "k_forward"] = k
-            registry = getattr(self, "basin_search_registry", None)
-            wuid = ctx.get("registry_wuid")
-            if registry is not None and registry.available and wuid is not None:
-                registry.mark_completed(int(wuid), result="ok")
-        self._refresh_absorbing_refinement_diagnostics()
+                #also save saddle positions refined
+                idx_state = self.connectivity_table.df.loc[idx].at['state_connexion']
+                central_atom = self.connectivity_table.df.loc[idx].at['central_atom']
+                #self.absorbing_saddle_positions[idx_state] = result.ok_value().saddle_positions[self.states[idx_state].neighbors_list.get_neighbors("rcut", central_atom)]
+                self.absorbing_saddle_positions[idx_state] = result_sad.ok_value().saddle_positions[ctx["neighbors"]]
+                # update connectivity table row
+                self.connectivity_table.df.loc[idx, "dE_forward"] = dE
+                self.connectivity_table.df.loc[idx, "k_forward"] = k
+                resolved_rows.add(int(idx))
+                registry = getattr(self, "basin_search_registry", None)
+                wuid = ctx.get("registry_wuid")
+                if registry is not None and registry.available and wuid is not None:
+                    registry.mark_completed(int(wuid), result="ok")
+            self._absorbing_refinement_refined_rows.update(resolved_rows)
+            self._refresh_absorbing_refinement_diagnostics()
         return Ok(None)
 
     def _record_suppressed_refinement(self, idx: int, claim) -> None:
@@ -887,6 +896,11 @@ class BasinsGenericEvents() :
         absorbing_rows = [
             int(idx) for idx, row in df.iterrows() if not bool(row["transient"])
         ]
+        refined_rows = {
+            int(idx)
+            for idx in getattr(self, "_absorbing_refinement_refined_rows", set())
+            if int(idx) in absorbing_rows
+        }
         max_refinements = getattr(
             getattr(self.config, "basin", None),
             "max_absorbing_refinements",
@@ -894,7 +908,7 @@ class BasinsGenericEvents() :
         )
         scores = self._absorbing_refinement_scores()
         ordered_rows = sorted(
-            absorbing_rows,
+            [idx for idx in absorbing_rows if idx not in refined_rows],
             key=lambda idx: (
                 -float(scores.get(int(df.loc[idx, "state_connexion"]), 0.0)),
                 -float(df.loc[idx, "k_forward"]),
@@ -907,11 +921,14 @@ class BasinsGenericEvents() :
                 scores,
             )
         else:
-            selected_rows = ordered_rows[: max(0, int(max_refinements))]
+            remaining = max(0, int(max_refinements) - len(refined_rows))
+            selected_rows = ordered_rows[:remaining]
 
-        selected_set = set(selected_rows)
+        selected_set = set(selected_rows).union(refined_rows)
         skipped_rows = [idx for idx in ordered_rows if idx not in selected_set]
-        self._absorbing_refinement_selected_rows = selected_rows
+        self._absorbing_refinement_selected_rows = [
+            idx for idx in absorbing_rows if idx in selected_set
+        ]
         self._absorbing_refinement_skipped_rows = skipped_rows
         self._absorbing_refinement_total_rows = len(absorbing_rows)
         self._refresh_absorbing_refinement_diagnostics()
