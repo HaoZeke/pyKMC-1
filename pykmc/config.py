@@ -682,6 +682,11 @@ class BasinConfig(BaseModel):
         ge=0.0,
         description="Maximum unresolved basin-boundary committor allowed before basin exit selection.",
     )
+    frontier_event_searches: int = Field(
+        default=0,
+        ge=0,
+        description="Number of pARTn event searches per unknown atomic environment in reconstructed basin frontier states.",
+    )
     reconstruction_minimize: Optional[str] = Field(
         default=None,
         description="LAMMPS minimize command used when reconstructing catalog states inside a basin graph.",

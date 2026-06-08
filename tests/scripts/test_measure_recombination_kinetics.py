@@ -936,6 +936,7 @@ def test_render_trial_input_can_request_diverse_amsel_exploration(tmp_path):
     config.read_string(text)
     assert config["BASIN"]["selector"] == "amsel-adaptive"
     assert config["BASIN"]["exploration_priority"] == "amsel-diverse"
+    assert config["BASIN"]["frontier_event_searches"] == "1"
 
 
 def test_render_trial_input_enables_vineyard_prefactors_for_amsel_priority(tmp_path):

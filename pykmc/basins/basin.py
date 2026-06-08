@@ -8,6 +8,7 @@ from .amsel_search_registry import BasinSearchRegistryAdapter
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from pykmc import System, Config, NeighborsList, AtomicEnvironment, ReferenceEventTable, PointSetRegistration, check_match, Reconstruction
+from pykmc.eventsearch import EventSearch
 from typing import Optional
 from ..utils import geometry
 from ..rate_constant import compute_rate_Eyring
@@ -16,6 +17,7 @@ import hashlib
 import pandas as pd
 import copy
 import numpy as np
+import random
 from scipy.spatial import cKDTree
 
 
@@ -114,11 +116,21 @@ class StateData:
 
 class BasinsGenericEvents() : 
 
-    def __init__(self, config: Config, reference_table,known_environments, manager ) -> None :  
+    def __init__(
+        self,
+        config: Config,
+        reference_table,
+        known_environments,
+        manager,
+        loggers=None,
+        prefactor_attacher=None,
+    ) -> None :  
         self.config = config #Config object with basins parameters
         self.explorer = None #object to explore a state in the basin 
         self.reference_table = reference_table #Object with reference generic events
         self.manager = manager #object to do external task (minimize, refine)
+        self.loggers = loggers
+        self.prefactor_attacher = prefactor_attacher
 
         self.connectivity_table = None #Dataframe of basin connexion state
         self.selected_event = None #The selected event after basin exploration
@@ -134,6 +146,7 @@ class BasinsGenericEvents() :
         self.last_exploration_guidance: dict[int, float] = {}
         self.exploration_order: list[int] = []
         self.exploration_decisions: list[dict[str, object]] = []
+        self.frontier_search_attempted_states: set[int] = set()
 
     def detection(self, params) -> bool : 
         """Utility method."""
@@ -231,6 +244,7 @@ class BasinsGenericEvents() :
         self.registry_suppressed_rows: list[dict[str, object]] = []
         self.exploration_order = []
         self.exploration_decisions = []
+        self.frontier_search_attempted_states = set()
         self.absorbing_refinement_diagnostics = {}
         self.unresolved_frontier_diagnostics = {}
         self.frontier_boundary_diagnostics = {}
@@ -424,11 +438,15 @@ class BasinsGenericEvents() :
                     is_transient = False
                 #Check if unknown atomic environments
                 elif self.is_states_has_unknown_environments(self.states[to_explore]) : 
-                    #We consider that this state is an absorbing one because we need to search new events (in main KMC loop) 
-                    #Need to update the connectivity table 
-                    self.connectivity_table.change_state_to_absorbing(to_explore) 
-                    self.states[to_explore].transient = False
-                    is_transient = False
+                    if not self._try_search_unknown_state_environments(
+                        self.states[to_explore],
+                        state_index=int(to_explore),
+                    ):
+                        #We consider that this state is an absorbing one because we need to search new events (in main KMC loop) 
+                        #Need to update the connectivity table 
+                        self.connectivity_table.change_state_to_absorbing(to_explore) 
+                        self.states[to_explore].transient = False
+                        is_transient = False
                 
                 if not is_transient : 
                     self.states_to_explore.remove(to_explore)
@@ -1092,6 +1110,138 @@ class BasinsGenericEvents() :
 
     def is_state_terminal_environment(self, state: StateData) -> bool:
         return set(state.environment.atomic_environment_list) == {"crystal"}
+
+    def _try_search_unknown_state_environments(
+        self,
+        state: StateData,
+        state_index: int | None = None,
+    ) -> bool:
+        nsearch = int(
+            getattr(
+                getattr(self.config, "basin", None),
+                "frontier_event_searches",
+                0,
+            )
+            or 0
+        )
+        if nsearch <= 0:
+            return False
+        if state_index is not None and int(state_index) in self.frontier_search_attempted_states:
+            return False
+        if state_index is not None:
+            self.frontier_search_attempted_states.add(int(state_index))
+        if state.environment is None:
+            state.ensure_full_state(self.config)
+        unknown_environments = [
+            env
+            for env in sorted(
+                set(state.environment.atomic_environment_list).difference(
+                    self.known_environments
+                ),
+                key=str,
+            )
+            if env != "crystal"
+        ]
+        if not unknown_environments:
+            return True
+
+        central_atoms = self._frontier_central_atoms_research(
+            state,
+            unknown_environments,
+            nsearch,
+        )
+        if not central_atoms:
+            return False
+        self._log(
+            "\t :=> AMSEL frontier search over {} unknown basin environments".format(
+                len(unknown_environments)
+            )
+        )
+        if hasattr(self.manager, "use_global"):
+            self.manager.use_global()
+        event_search = EventSearch(self.config, state.system, self.manager, self.loggers)
+        event_search.execute(central_atoms)
+        events = event_search.get_successes_results()
+        if self.prefactor_attacher is not None:
+            self.prefactor_attacher(events)
+        valid_results = self.reference_table.add_events(events)
+        searched = self._searched_frontier_environments(
+            state.environment.atomic_environment_list,
+            events,
+            valid_results,
+        )
+        self.known_environments.update(searched)
+        self._log(
+            "\t :=> AMSEL frontier search cataloged {} basin environments".format(
+                len(searched)
+            )
+        )
+        return not self.is_states_has_unknown_environments(state)
+
+    def _frontier_central_atoms_research(
+        self,
+        state: StateData,
+        unknown_environments,
+        nsearch: int,
+    ) -> list[int]:
+        central_atom_research_list: list[int] = []
+        atomic_environment_list = state.environment.atomic_environment_list
+        for env in unknown_environments:
+            atoms = [
+                int(i)
+                for i, atom_env in enumerate(atomic_environment_list)
+                if atom_env == env
+            ]
+            if not atoms:
+                continue
+            n_unique = min(int(nsearch), len(atoms))
+            selected = random.sample(atoms, n_unique)
+            if int(nsearch) > n_unique:
+                selected += [
+                    random.choice(atoms) for _i in range(int(nsearch) - n_unique)
+                ]
+            central_atom_research_list.extend(selected)
+        recomb_center = self._frontier_recomb_search_center(state)
+        if (
+            recomb_center is not None
+            and int(recomb_center) not in central_atom_research_list
+        ):
+            central_atom_research_list.insert(0, int(recomb_center))
+        return central_atom_research_list
+
+    def _frontier_recomb_search_center(self, state: StateData):
+        partn = getattr(self.config, "partn", None)
+        if not bool(getattr(partn, "amsel_recomb_seed", False)):
+            return None
+        try:
+            from .amsel_recomb import recombination_search_center
+        except Exception:
+            return None
+        try:
+            return recombination_search_center(state.system.positions, state.system.cell)
+        except Exception:
+            return None
+
+    def _searched_frontier_environments(
+        self,
+        atomic_environment_list,
+        event_outputs,
+        valid_event_results,
+    ) -> set[str | bytes]:
+        searched: set[str | bytes] = set()
+        for event_output, valid_result in zip(event_outputs, valid_event_results):
+            if valid_result.is_ok():
+                searched.add(atomic_environment_list[int(event_output.central_atom_index)])
+                continue
+            error = valid_result.err_value()
+            error_type = getattr(error, "type", error)
+            if error_type == ErrorType.EVENT_NOT_NEW:
+                searched.add(atomic_environment_list[int(event_output.central_atom_index)])
+        return searched
+
+    def _log(self, message: str) -> None:
+        if self.loggers is not None:
+            self.loggers.info("log", message)
 
     def _add_state(self, state_index, system=None, transient=True, applicable_events=None, visited=False, full=False ) :
         """Add a new state in the `self.states` dictionnary."""

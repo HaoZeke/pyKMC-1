@@ -1228,8 +1228,9 @@ def trial_commands(
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
     basin_frontier_committor_tol: float | None,
-    amsel_selector: str,
-    amsel_exploration_priority: str,
+    basin_frontier_event_searches: int | None = None,
+    amsel_selector: str = "amsel-adaptive",
+    amsel_exploration_priority: str = "amsel",
     amsel_duplicate_family_penalty: float = 1.0,
     amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
@@ -1267,6 +1268,7 @@ def trial_commands(
                 basin_max_closed_states=basin_max_closed_states,
                 basin_max_absorbing_refinements=basin_max_absorbing_refinements,
                 basin_frontier_committor_tol=basin_frontier_committor_tol,
+                basin_frontier_event_searches=basin_frontier_event_searches,
                 amsel_selector=amsel_selector,
                 amsel_exploration_priority=amsel_exploration_priority,
                 amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
@@ -1291,6 +1293,7 @@ def trial_commands(
                     "basin_max_closed_states": basin_max_closed_states,
                     "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
                     "basin_frontier_committor_tol": basin_frontier_committor_tol,
+                    "basin_frontier_event_searches": basin_frontier_event_searches,
                     "amsel_selector": amsel_selector,
                     "amsel_exploration_priority": amsel_exploration_priority,
                     "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
@@ -1336,8 +1339,9 @@ def render_trial_input(
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
     basin_frontier_committor_tol: float | None,
-    amsel_selector: str,
-    amsel_exploration_priority: str,
+    basin_frontier_event_searches: int | None = None,
+    amsel_selector: str = "amsel-adaptive",
+    amsel_exploration_priority: str = "amsel",
     amsel_duplicate_family_penalty: float = 1.0,
     amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
@@ -1412,6 +1416,13 @@ def render_trial_input(
         config[basin]["frontier_committor_tol"] = str(
             float(basin_frontier_committor_tol)
         )
+    if priority != "legacy":
+        frontier_searches = (
+            int(basin_frontier_event_searches)
+            if basin_frontier_event_searches is not None
+            else max(1, int(event_searches or 1))
+        )
+        config[basin]["frontier_event_searches"] = str(frontier_searches)
     absolutize_lammps_paths(config, template_dir=template_dir)
 
     from io import StringIO
@@ -1442,10 +1453,11 @@ def write_trial_input(
     basin_max_closed_states: int | None,
     basin_max_absorbing_refinements: int | None,
     basin_frontier_committor_tol: float | None,
-    amsel_selector: str,
-    amsel_exploration_priority: str,
-    amsel_duplicate_family_penalty: float,
-    amsel_min_guidance: float,
+    basin_frontier_event_searches: int | None = None,
+    amsel_selector: str = "amsel-adaptive",
+    amsel_exploration_priority: str = "amsel",
+    amsel_duplicate_family_penalty: float = 1.0,
+    amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
     basin_search_registry_path: str | None = None,
 ) -> None:
@@ -1470,6 +1482,7 @@ def write_trial_input(
             basin_max_closed_states=basin_max_closed_states,
             basin_max_absorbing_refinements=basin_max_absorbing_refinements,
             basin_frontier_committor_tol=basin_frontier_committor_tol,
+            basin_frontier_event_searches=basin_frontier_event_searches,
             amsel_selector=amsel_selector,
             amsel_exploration_priority=amsel_exploration_priority,
             amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
@@ -1759,6 +1772,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--basin-max-closed-states", type=int)
     parser.add_argument("--basin-max-absorbing-refinements", type=int)
     parser.add_argument("--basin-frontier-committor-tol", type=float)
+    parser.add_argument("--basin-frontier-event-searches", type=int)
     parser.add_argument(
         "--amsel-selector",
         choices=("amsel-sampled", "amsel-mean", "amsel-adaptive"),
@@ -1839,6 +1853,7 @@ def main(argv: list[str] | None = None) -> int:
         basin_max_closed_states=args.basin_max_closed_states,
         basin_max_absorbing_refinements=args.basin_max_absorbing_refinements,
         basin_frontier_committor_tol=args.basin_frontier_committor_tol,
+        basin_frontier_event_searches=args.basin_frontier_event_searches,
         amsel_selector=args.amsel_selector,
         amsel_exploration_priority=args.amsel_exploration_priority,
         amsel_duplicate_family_penalty=args.amsel_duplicate_family_penalty,
@@ -1873,6 +1888,7 @@ def main(argv: list[str] | None = None) -> int:
         "basin_max_closed_states": args.basin_max_closed_states,
         "basin_max_absorbing_refinements": args.basin_max_absorbing_refinements,
         "basin_frontier_committor_tol": args.basin_frontier_committor_tol,
+        "basin_frontier_event_searches": args.basin_frontier_event_searches,
         "amsel_selector": args.amsel_selector,
         "amsel_exploration_priority": args.amsel_exploration_priority,
         "amsel_duplicate_family_penalty": args.amsel_duplicate_family_penalty,

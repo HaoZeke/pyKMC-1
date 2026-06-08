@@ -18,6 +18,70 @@ from pykmc.result import BasinSelectorOutput, Err, ErrorInfo, ErrorType, Ok
 
 logger = logging.getLogger("tests")
 
+
+def test_frontier_state_searches_unknown_environments(monkeypatch):
+    known = "known-env"
+    unknown = "unknown-env"
+    event_output = SimpleNamespace(central_atom_index=1)
+
+    class FakeEventSearch:
+        def __init__(self, config, system, manager, loggers):
+            self.config = config
+            self.system = system
+            self.manager = manager
+            self.loggers = loggers
+            self.results = [Ok(event_output)]
+
+        def execute(self, central_atom_research_list):
+            self.central_atom_research_list = list(central_atom_research_list)
+
+        def get_successes_results(self):
+            return [event_output]
+
+    class FakeReferenceTable:
+        def __init__(self):
+            self.added_events = None
+
+        def add_events(self, events):
+            self.added_events = list(events)
+            return [Ok(pd.DataFrame({"idx_ref": [0]}))]
+
+    prefactor_events = []
+    manager = SimpleNamespace(use_global=lambda: None)
+    config = SimpleNamespace(
+        basin=SimpleNamespace(frontier_event_searches=1),
+        partn=SimpleNamespace(amsel_recomb_seed=False),
+    )
+    state = StateData(
+        system=System(
+            positions=np.zeros((2, 3)),
+            types=np.array(["Cu", "Cu"]),
+            cell=np.eye(3) * 10.0,
+            pbc=True,
+            index=np.arange(2),
+        ),
+        environment=SimpleNamespace(atomic_environment_list=[known, unknown]),
+        neighbors_list=None,
+        transient=True,
+    )
+    reference_table = FakeReferenceTable()
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=reference_table,
+        known_environments={known},
+        manager=manager,
+        prefactor_attacher=lambda events: prefactor_events.extend(events),
+    )
+
+    monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
+
+    searched = basin._try_search_unknown_state_environments(state)
+
+    assert searched is True
+    assert reference_table.added_events == [event_output]
+    assert prefactor_events == [event_output]
+    assert basin.known_environments == {known, unknown}
+
 class TestBasin : 
 
     def test_connectivity_table_construction(self, test_logger, config_Cu, reference_table_Cu_fake, system_Cu, visited_environments_Cu) : 

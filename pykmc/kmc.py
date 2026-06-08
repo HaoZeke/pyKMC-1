@@ -737,7 +737,14 @@ class KMC:
                 self.loggers.info("log","\t :=> System is in a Basin." )
                 self.loggers.info("log","\t :=> Exploring the Basin." )
                 #get basin info/explore
-                basin = BasinsGenericEvents(self.config, self.reference_table, self.visited_environments, self.manager)
+                basin = BasinsGenericEvents(
+                    self.config,
+                    self.reference_table,
+                    self.visited_environments,
+                    self.manager,
+                    loggers=self.loggers,
+                    prefactor_attacher=self._attach_vineyard_prefactors,
+                )
                 self.system.update_positions(result_reconstruction.ok_value().min1_positions)
                 result_basin = basin.execute(self.system)
                 trace_line = basin_exploration_trace_line(basin)
