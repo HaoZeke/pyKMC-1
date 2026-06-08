@@ -343,6 +343,9 @@ def coverage_repair_search_batch(
     )
     if not ranked_environments:
         return []
+    top_evidence = environment_search_evidence.get(ranked_environments[0])
+    if top_evidence is None or not top_evidence.process_counts:
+        return ranked_environments
     extra_searches = max(0, int(searches_per_environment) - 1)
     return ranked_environments + [ranked_environments[0]] * extra_searches
 
