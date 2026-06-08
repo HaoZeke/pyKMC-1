@@ -204,6 +204,30 @@ def _zero_observation_attempt_budget_exhausted(
     )
 
 
+def _coverage_search_priority_key(
+    environment,
+    evidence: EnvironmentSearchEvidence | None,
+    *,
+    known_rate_scale: float | None,
+) -> tuple[int, float, float, int, str]:
+    if evidence is None:
+        return (0, 0.0, -1.0, 0, _environment_label(environment))
+    certificate = _process_search_certificate_with_rate_scale(
+        evidence,
+        known_rate_scale=known_rate_scale,
+    )
+    missing_rate_mass = float(certificate["missing_rate_mass"])
+    missing_rate_rank = 0.0 if math.isinf(missing_rate_mass) else -missing_rate_mass
+    missing_rate_group = 0 if math.isinf(missing_rate_mass) else 1
+    return (
+        missing_rate_group,
+        missing_rate_rank,
+        -float(certificate["missing_process_mass"]),
+        int(certificate["attempts"]),
+        _environment_label(environment),
+    )
+
+
 def undercovered_environments_for_search(
     *,
     current_environments,
@@ -278,9 +302,27 @@ def undercovered_environments_for_search(
             zero_yield_searchable.append(environment)
         seen.add(environment)
     if productive_searchable:
-        searchable.extend(productive_searchable)
+        searchable.extend(
+            sorted(
+                productive_searchable,
+                key=lambda environment: _coverage_search_priority_key(
+                    environment,
+                    environment_search_evidence.get(environment),
+                    known_rate_scale=known_rate_scale,
+                ),
+            )
+        )
     else:
-        searchable.extend(zero_yield_searchable)
+        searchable.extend(
+            sorted(
+                zero_yield_searchable,
+                key=lambda environment: _coverage_search_priority_key(
+                    environment,
+                    environment_search_evidence.get(environment),
+                    known_rate_scale=known_rate_scale,
+                ),
+            )
+        )
     return searchable
 
 
