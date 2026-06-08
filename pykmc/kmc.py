@@ -1289,10 +1289,25 @@ class KMC:
             except (IndexError, TypeError):
                 recomb_environment = None
             if recomb_environment in requested_environments:
+                replacement_index = None
+                for idx, atom in enumerate(central_atom_research_list):
+                    if int(atom) == recomb_center:
+                        replacement_index = idx
+                        break
+                if replacement_index is None:
+                    for idx, atom in enumerate(central_atom_research_list):
+                        if (
+                            self.atomic_environment.atomic_environment_list[int(atom)]
+                            == recomb_environment
+                        ):
+                            replacement_index = idx
+                            break
+                if replacement_index is None:
+                    return central_atom_research_list
                 return [recomb_center] + [
                     int(atom)
-                    for atom in central_atom_research_list
-                    if int(atom) != recomb_center
+                    for idx, atom in enumerate(central_atom_research_list)
+                    if idx != replacement_index
                 ]
         return central_atom_research_list
 
