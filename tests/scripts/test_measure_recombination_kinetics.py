@@ -1,6 +1,7 @@
 import configparser
 import importlib.util
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -561,6 +562,46 @@ def test_seed_schedule_is_paired_by_trial():
     ]
 
 
+def test_generate_cu_vac_sia_config_targets_requested_separation(tmp_path):
+    script = _load_script()
+    output = tmp_path / "cu-sep2.xyz"
+
+    metadata = script.generate_cu_vac_sia_config(
+        output,
+        target_separation_nn=2.0,
+        cells=3,
+        lattice_parameter_A=3.6,
+    )
+
+    lines = output.read_text().splitlines()
+    assert int(lines[0]) == 108
+    assert "Lattice=\"10.8 0.0 0.0 0.0 10.8 0.0 0.0 0.0 10.8\"" in lines[1]
+    assert metadata["atom_count"] == 108
+    assert metadata["target_separation_nn"] == 2.0
+    assert metadata["actual_separation_nn"] == pytest.approx(2.0)
+    assert metadata["vacancy_position_A"] != metadata["sia_center_A"]
+
+    positions = [
+        tuple(float(value) for value in line.split()[1:4])
+        for line in lines[2:]
+    ]
+    vacancy = tuple(metadata["vacancy_position_A"])
+    center = tuple(metadata["sia_center_A"])
+    dumbbell_half = float(metadata["dumbbell_half_separation_A"])
+    assert vacancy not in positions
+    assert center not in positions
+    assert (
+        center[0] - dumbbell_half,
+        center[1],
+        center[2],
+    ) in positions
+    assert (
+        center[0] + dumbbell_half,
+        center[1],
+        center[2],
+    ) in positions
+
+
 def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     script = _load_script()
     out = tmp_path / "out"
@@ -696,6 +737,72 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["partn_search_evals"] == 41
     assert manifest["amsel_python_path"] == str(tmp_path / "amsel-python" / "python")
+
+
+def test_cli_dry_run_generates_cu_separation_config(tmp_path):
+    script = _load_script()
+    out = tmp_path / "out"
+    template = tmp_path / "input.in"
+    template.write_text(
+        "[Control]\n"
+        "initial_config = ./old.xyz\n"
+        "n_steps = 1\n"
+        "[pARTn]\n"
+        "path_artnso = ./old.so\n"
+        "zseed = 0\n"
+        "[EventSearch]\n"
+        "nsearch = 20\n"
+        "[Lammps]\n"
+        "pair_coeff = * * ./Cu.eam Cu\n"
+        "[BASIN]\n"
+        "energy_thr = 0.5\n"
+    )
+    (tmp_path / "Cu.eam").write_text("potential")
+
+    code = script.main(
+        [
+            "--case",
+            "cu-vac-sia",
+            "--template-input",
+            str(template),
+            "--partn-path",
+            str(tmp_path / "libartn-lmp.so"),
+            "--priority",
+            "amsel",
+            "--trials",
+            "1",
+            "--seed",
+            "10",
+            "--max-steps",
+            "5",
+            "--cu-target-separation-nn",
+            "2.0",
+            "--dry-run",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    generated = out / "generated-initial" / "cu-vac-sia-sep2nn.xyz"
+    assert generated.exists()
+    assert int(generated.read_text().splitlines()[0]) == 8788
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(out / "amsel" / "trial-0" / "input.in")
+    assert config["Control"]["initial_config"] == str(generated)
+
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["initial_config"] == str(generated)
+    assert manifest["cu_target_separation_nn"] == 2.0
+    assert manifest["cu_initial_config_metadata"]["actual_separation_nn"] == pytest.approx(
+        2.0
+    )
+    assert math.isclose(
+        manifest["cu_initial_config_metadata"]["nearest_neighbor_A"],
+        3.61 / math.sqrt(2.0),
+    )
 
 
 def test_cli_rejects_amsel_priority_when_runtime_probe_fails(tmp_path, monkeypatch):
