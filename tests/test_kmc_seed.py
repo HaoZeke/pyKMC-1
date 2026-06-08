@@ -1,3 +1,4 @@
+import math
 import random
 from collections import Counter
 from types import SimpleNamespace
@@ -1091,6 +1092,14 @@ def test_undercovered_environments_for_search_skips_duplicate_saturated_environm
         visited_environments={"crystal", "env-a"},
         environment_search_evidence={"env-a": evidence},
     ) == []
+
+
+def test_coverage_resampling_attempt_limit_covers_relative_rate_tolerance():
+    expected = (
+        int(math.ceil(1.0 / kmc_module.PROCESS_SEARCH_MISSING_RATE_REL_TOL)) + 1
+    )
+
+    assert coverage_resampling_attempt_limit(1) == expected
 
 
 def test_undercovered_environments_for_search_prioritizes_missing_rate_mass(
