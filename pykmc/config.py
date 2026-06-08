@@ -670,7 +670,7 @@ class BasinConfig(BaseModel):
     max_closed_states: Optional[int] = Field(
         default=None,
         gt=0,
-        description="Maximum number of basin states to close before selecting an exit.",
+        description="Maximum number of basin states to close before selecting an exit. None keeps legacy FPTA unbounded and lets AMSEL use its finite graph budget.",
     )
     max_absorbing_refinements: Optional[int] = Field(
         default=None,

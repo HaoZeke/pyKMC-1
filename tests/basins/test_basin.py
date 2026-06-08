@@ -1519,6 +1519,92 @@ class TestBasin :
         assert not result.is_ok()
         assert calls == {"max_expansions": 3, "max_closed_states": 2}
 
+    def test_execute_uses_finite_amsel_basin_exploration_budget(self, monkeypatch):
+        calls = {}
+
+        def fake_initialize(self, system):
+            self.states = {}
+            self.connectivity_table = SimpleNamespace(
+                reorder_states_index=lambda: {},
+            )
+
+        def fake_construct(self, max_expansions=None, max_closed_states=None):
+            calls["max_expansions"] = max_expansions
+            calls["max_closed_states"] = max_closed_states
+            return Ok(None)
+
+        monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "construct_connexion_table",
+            fake_construct,
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "refine_absorbing",
+            lambda self, system: Err(
+                ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="stop")
+            ),
+        )
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(
+                max_expansions=None,
+                max_closed_states=None,
+                selector="amsel-adaptive",
+            )
+        )
+        basin.manager = SimpleNamespace(use_local=lambda: None)
+
+        result = basin.execute(system=object())
+
+        assert not result.is_ok()
+        assert calls == {"max_expansions": None, "max_closed_states": 8}
+
+    def test_execute_keeps_legacy_basin_exploration_unbounded(self, monkeypatch):
+        calls = {}
+
+        def fake_initialize(self, system):
+            self.states = {}
+            self.connectivity_table = SimpleNamespace(
+                reorder_states_index=lambda: {},
+            )
+
+        def fake_construct(self, max_expansions=None, max_closed_states=None):
+            calls["max_expansions"] = max_expansions
+            calls["max_closed_states"] = max_closed_states
+            return Ok(None)
+
+        monkeypatch.setattr(BasinsGenericEvents, "_initialize", fake_initialize)
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "construct_connexion_table",
+            fake_construct,
+        )
+        monkeypatch.setattr(
+            BasinsGenericEvents,
+            "refine_absorbing",
+            lambda self, system: Err(
+                ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="stop")
+            ),
+        )
+
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(
+                max_expansions=None,
+                max_closed_states=None,
+                selector="legacy-fpta",
+            )
+        )
+        basin.manager = SimpleNamespace(use_local=lambda: None)
+
+        result = basin.execute(system=object())
+
+        assert not result.is_ok()
+        assert calls == {"max_expansions": None, "max_closed_states": None}
+
     def test_execute_drops_states_removed_by_connectivity_reorder(self, monkeypatch):
         kept_state = object()
 

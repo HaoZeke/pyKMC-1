@@ -30,6 +30,7 @@ REFINEMENT_CONTEXT_COLUMNS = (
 )
 
 _NO_FRONTIER_EVALF_OVERRIDE = object()
+_AMSEL_DEFAULT_MAX_CLOSED_STATES = 8
 
 
 def _refinement_error_with_row_context(
@@ -164,7 +165,7 @@ class BasinsGenericEvents() :
         basin_config = getattr(self.config, "basin", None)
         result = self.construct_connexion_table(
             max_expansions=getattr(basin_config, "max_expansions", None),
-            max_closed_states=getattr(basin_config, "max_closed_states", None),
+            max_closed_states=self._effective_max_closed_states(basin_config),
         )
         if not result.is_ok() : 
             return result
@@ -272,6 +273,17 @@ class BasinsGenericEvents() :
         if selector == "auto" and _AMSEL_AVAILABLE:
             return FPTASelector()
         return None
+
+    def _effective_max_closed_states(self, basin_config):
+        configured = getattr(basin_config, "max_closed_states", None)
+        if configured is not None:
+            return configured
+        selector = getattr(basin_config, "selector", "auto")
+        if selector == "legacy-fpta":
+            return None
+        if selector == "auto" and not _AMSEL_AVAILABLE:
+            return None
+        return _AMSEL_DEFAULT_MAX_CLOSED_STATES
 
     def _make_basin_search_registry(self):
         path = getattr(self.config.control, "basin_search_registry_path", None)
