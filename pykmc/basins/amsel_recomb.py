@@ -173,7 +173,9 @@ def recomb_push(
     det = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
     if det is None:
         return None
-    source_atom, v_centroid, _distance, _nn = det
+    source_atom, v_centroid, distance, nn = det
+    if distance > capture_mult * nn:
+        return None
     # Only seed when the search is centred on the SIA filler itself.
     if int(central_atom_idx) != int(source_atom):
         return None
