@@ -70,7 +70,7 @@ def test_central_atoms_research_uses_amsel_recombination_center(monkeypatch):
     assert central_atoms == [3]
 
 
-def test_rejected_amsel_capture_suppresses_search_center(monkeypatch):
+def test_rejected_amsel_capture_keeps_search_center_available(monkeypatch):
     kmc = KMC.__new__(KMC)
     kmc.config = SimpleNamespace(
         partn=SimpleNamespace(amsel_recomb_capture_mult=1.6),
@@ -105,7 +105,7 @@ def test_rejected_amsel_capture_suppresses_search_center(monkeypatch):
     )
 
     assert kmc._try_amsel_capture() is None
-    assert kmc._amsel_recomb_search_suppressed is True
+    assert kmc._amsel_recomb_search_suppressed is False
 
 
 def test_suppressed_amsel_capture_skips_recombination_center(monkeypatch):
