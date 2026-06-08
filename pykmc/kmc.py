@@ -992,7 +992,6 @@ class KMC:
         det = detect_recomb(pos, cell, capture_mult=cap)
         if det is None:
             return None
-        self._amsel_recomb_search_suppressed = True
         source, v_centroid = det
         try:
             product = build_product(pos, cell, source, v_centroid)
