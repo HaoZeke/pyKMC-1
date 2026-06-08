@@ -111,3 +111,46 @@ def test_nearest_recomb_topology_uses_generic_amsel_candidate(monkeypatch):
         0.75,
         1.0,
     )
+
+
+def test_nearest_recomb_topology_reuses_position_cache(monkeypatch):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.eye(3) * 10.0
+    candidate = SimpleNamespace(
+        source_atom=1,
+        target_centroid=(0.25, 0.0, 0.0),
+        distance=0.75,
+        nn_spacing=1.0,
+    )
+    calls = []
+
+    def fake_candidate(positions, cell, cutoff_mult=1.08):
+        calls.append(1)
+        return candidate
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_amsel_defect_annihilation_candidate",
+        fake_candidate,
+    )
+    amsel_recomb._TOPOLOGY_CACHE.clear()
+
+    assert amsel_recomb._nearest_recomb_topology(positions, cell) == (
+        1,
+        [0.25, 0.0, 0.0],
+        0.75,
+        1.0,
+    )
+    assert amsel_recomb._nearest_recomb_topology(positions.copy(), cell.copy()) == (
+        1,
+        [0.25, 0.0, 0.0],
+        0.75,
+        1.0,
+    )
+    assert len(calls) == 1
