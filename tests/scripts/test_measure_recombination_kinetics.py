@@ -2,6 +2,7 @@ import configparser
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -621,6 +622,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "0.01",
             "--amsel-selector",
             "amsel-adaptive",
+            "--amsel-python-path",
+            str(tmp_path / "amsel-python" / "python"),
             "--work-budget",
             "closed-states:2",
             "--dry-run",
@@ -654,6 +657,9 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert commands[0]["priority"] == "legacy"
     assert commands[0]["event_searches"] == 3
     assert commands[1]["priority"] == "amsel"
+    assert commands[1]["env"]["PYTHONPATH"].split(":")[0] == str(
+        tmp_path / "amsel-python" / "python"
+    )
 
     config = configparser.ConfigParser()
     config.optionxform = str
@@ -689,6 +695,62 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert "disable_coverage_resampling" not in config["Control"]
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["partn_search_evals"] == 41
+    assert manifest["amsel_python_path"] == str(tmp_path / "amsel-python" / "python")
+
+
+def test_cli_rejects_amsel_priority_when_runtime_probe_fails(tmp_path, monkeypatch):
+    script = _load_script()
+    template = tmp_path / "input.in"
+    template.write_text("[Control]\n[pARTn]\n[Lammps]\n[BASIN]\n")
+
+    def fail_probe(**_kwargs):
+        raise RuntimeError("AMSEL runtime missing required APIs: event_completeness")
+
+    monkeypatch.setattr(script, "ensure_amsel_runtime", fail_probe)
+
+    with pytest.raises(SystemExit) as exc:
+        script.main(
+            [
+                "--case",
+                "cu-vac-sia",
+                "--template-input",
+                str(template),
+                "--initial-config",
+                str(tmp_path / "initial_config.xyz"),
+                "--partn-path",
+                str(tmp_path / "libartn-lmp.so"),
+                "--priority",
+                "amsel",
+                "--trials",
+                "1",
+                "--seed",
+                "10",
+                "--max-steps",
+                "1",
+                "--out",
+                str(tmp_path / "out"),
+            ]
+        )
+
+    assert exc.value.code == 2
+
+
+def test_run_trial_subprocess_merges_env(tmp_path):
+    script = _load_script()
+
+    result = script.run_trial_subprocess(
+        [
+            sys.executable,
+            "-c",
+            "import os; print(os.environ.get('PYKMC_ENV_PROBE'))",
+        ],
+        cwd=tmp_path,
+        timeout=None,
+        env={"PYKMC_ENV_PROBE": "ok"},
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "ok"
 
 
 def test_cli_dry_run_writes_temperature_sweep_inputs(tmp_path):
