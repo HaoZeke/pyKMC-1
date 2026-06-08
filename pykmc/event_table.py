@@ -43,6 +43,22 @@ def duplicate_event_error_info(
     )
 
 
+def _same_local_geometry(
+    positions_a,
+    positions_b,
+    tolerance: float,
+) -> bool:
+    a = np.asarray(positions_a, dtype=float)
+    b = np.asarray(positions_b, dtype=float)
+    if a.shape != b.shape:
+        return False
+    if a.size == 0:
+        return True
+    a_centered = a - a.mean(axis=0)
+    b_centered = b - b.mean(axis=0)
+    return bool(np.allclose(a_centered, b_centered, atol=float(tolerance), rtol=0.0))
+
+
 def _optional_int(value: Any) -> int | None:
     if value is None or pd.isna(value):
         return None
@@ -350,6 +366,7 @@ class ReferenceEventTable:
         nat_event = len(event_saddle)
         #TODO I guess we should save atoms types in reference table
         typ_event = nat_event*['X']
+        geometry_fallback_tol = float(getattr(self.config.ira, "sym_thr", 1.0e-2))
 
         for _, ev in subset.iterrows() :
 
@@ -359,10 +376,22 @@ class ReferenceEventTable:
             result = simple_ira(nat_event, typ_event, event_saddle, nat_ref, typ_ref, ref_saddle, self.config.ira.kmax_factor)
 
             if not result.is_ok() : #no match
+                if _same_local_geometry(
+                    event_saddle,
+                    ref_saddle,
+                    geometry_fallback_tol,
+                ):
+                    return ev.copy()
                 continue
 
             result = check_match(result, self.config.psr.matching_score_thr)
             if not result.is_ok() : #matching score > thr
+                if _same_local_geometry(
+                    event_saddle,
+                    ref_saddle,
+                    geometry_fallback_tol,
+                ):
+                    return ev.copy()
                 continue
 
             return ev.copy()
