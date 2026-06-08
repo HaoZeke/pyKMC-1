@@ -163,6 +163,47 @@ def test_event_search_logs_failed_search_reason():
     assert any("partn_search: pARTn failed" in message for message in log_messages)
 
 
+def test_event_search_passes_amsel_topology_hint(monkeypatch):
+    class FinishedFuture:
+        def result(self):
+            return Err(ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="stop"))
+
+    captured = {}
+
+    class FakeManager:
+        def partn_search(self, **kwargs):
+            captured.update(kwargs)
+            return [FinishedFuture()]
+
+    topology = (7, [1.0, 2.0, 3.0], 0.5, 1.0)
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb._nearest_recomb_topology",
+        lambda positions, cell: topology,
+        raising=False,
+    )
+
+    event_search = EventSearch(
+        config=SimpleNamespace(
+            control=SimpleNamespace(active_volume=False),
+            partn=SimpleNamespace(amsel_recomb_seed=True),
+        ),
+        system=SimpleNamespace(
+            positions=np.zeros((2, 3)),
+            cell=np.eye(3),
+            types=["Cu", "Cu"],
+        ),
+        manager=FakeManager(),
+        loggers=SimpleNamespace(
+            info=lambda *_args: None,
+            progress_bar=lambda *_args: None,
+        ),
+    )
+
+    event_search.execute([7])
+
+    assert captured["amsel_recomb_topology"] == topology
+
+
 def test_kmc_attaches_vineyard_prefactors_to_event_search_outputs(monkeypatch):
     kmc = KMC.__new__(KMC)
     kmc.config = SimpleNamespace(
