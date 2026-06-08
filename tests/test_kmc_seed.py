@@ -877,6 +877,70 @@ def test_kmc_reference_search_repeats_current_environment_until_process_covered(
     )
 
 
+def test_kmc_reference_search_bounds_singleton_process_resampling():
+    kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
+    kmc.atomic_environment = SimpleNamespace(
+        atomic_environment_list=["env-a", "env-a"]
+    )
+    kmc.visited_environments = set()
+    kmc.environment_search_evidence = {}
+    kmc.reference_table = SimpleNamespace(table=[object()])
+    kmc.loggers = SimpleNamespace(info=lambda *_args: None)
+    kmc._close = lambda: None
+    batches = []
+    attempt_limit = 8
+
+    class FakeEventSearch:
+        def __init__(self, outputs):
+            self.results = [Ok(output) for output in outputs]
+            self._outputs = outputs
+
+        def get_successes_results(self):
+            return self._outputs
+
+    def execute_event_searches(central_atoms):
+        batches.append(list(central_atoms))
+        if len(batches) > attempt_limit + 1:
+            raise AssertionError("coverage resampling did not stop")
+        return FakeEventSearch(
+            [SimpleNamespace(central_atom_index=int(central_atoms[0]))]
+        )
+
+    def add_reference_events(_event_outputs):
+        process_index = len(batches)
+        return [
+            Ok(
+                pd.DataFrame(
+                    [
+                        {
+                            "idx_ref": process_index,
+                            "event_id": "env-a",
+                            "id_final": f"env-{process_index}",
+                            "k": 1.0,
+                        }
+                    ]
+                )
+            )
+        ]
+
+    kmc.execute_event_searches = execute_event_searches
+    kmc.add_reference_events = add_reference_events
+
+    search_results, valid_results = kmc.search_reference_events_until_covered(
+        ["env-a"], nsearch=1
+    )
+
+    assert len(batches) == attempt_limit
+    assert len(search_results) == attempt_limit
+    assert len(valid_results) == attempt_limit
+    evidence = kmc.environment_search_evidence["env-a"]
+    assert evidence.attempts == attempt_limit
+    assert sum(evidence.process_counts.values()) == attempt_limit
+    assert environment_search_evidence_trace_lines({"env-a": evidence})[0].endswith(
+        "needs_more_search=True"
+    )
+
+
 def test_kmc_reference_search_respects_disabled_coverage_resampling():
     kmc = KMC(
         SimpleNamespace(

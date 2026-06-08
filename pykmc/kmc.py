@@ -200,6 +200,7 @@ def undercovered_environments_for_search(
     environment_search_evidence,
     disable_coverage_resampling: bool = False,
     zero_observation_attempt_limit: int | None = None,
+    process_observation_attempt_limit: int | None = None,
 ) -> list[str | bytes]:
     """Return current environment IDs that should receive event-search work.
 
@@ -243,6 +244,13 @@ def undercovered_environments_for_search(
             and int(evidence.attempts) >= int(zero_observation_attempt_limit)
         ):
             continue
+        if (
+            evidence is not None
+            and process_observation_attempt_limit is not None
+            and evidence.process_counts
+            and int(evidence.attempts) >= int(process_observation_attempt_limit)
+        ):
+            continue
         if evidence is None or not _needs_more_process_search(
             evidence,
             known_rate_scale=known_rate_scale,
@@ -258,6 +266,11 @@ def undercovered_environments_for_search(
     else:
         searchable.extend(zero_yield_searchable)
     return searchable
+
+
+def coverage_resampling_attempt_limit(searches_per_environment: int) -> int:
+    """Return the finite retry budget for adaptive coverage resampling."""
+    return max(8, 4 * max(1, int(searches_per_environment)))
 
 
 def merge_environment_search_evidence(
@@ -1041,6 +1054,9 @@ class KMC:
             environment_search_evidence=self.environment_search_evidence,
             disable_coverage_resampling=disable_coverage_resampling,
             zero_observation_attempt_limit=searches_per_environment,
+            process_observation_attempt_limit=coverage_resampling_attempt_limit(
+                searches_per_environment
+            ),
         )
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
@@ -1122,6 +1138,9 @@ class KMC:
                     environment_search_evidence=self.environment_search_evidence,
                     disable_coverage_resampling=disable_coverage_resampling,
                     zero_observation_attempt_limit=searches_per_environment,
+                    process_observation_attempt_limit=coverage_resampling_attempt_limit(
+                        searches_per_environment
+                    ),
                 )
                 if len(self.reference_table.table) == 0 and not search_environments:
                     self.loggers.error(
