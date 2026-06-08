@@ -98,6 +98,9 @@ TRIAL_FIELDS = [
     "trial",
     "seed",
     "temperature_K",
+    "transport_lattice_parameter_A",
+    "transport_diffusivity_A2_per_ps",
+    "transport_alpha",
     "box_volume_A3",
     "recombined",
     "t_recombination_s",
@@ -962,6 +965,55 @@ def _joined_unique_strings(values) -> str:
     return ";".join(entries)
 
 
+def _first_nonempty_float(values) -> float | None:
+    for value in values:
+        if value is None or value == "":
+            continue
+        return float(value)
+    return None
+
+
+def transport_parameters_for_group(
+    *,
+    case: str,
+    temperature_K: float | None,
+    trials: list[dict[str, Any]],
+) -> dict[str, float | None]:
+    lattice_parameter = _first_nonempty_float(
+        trial.get("transport_lattice_parameter_A") for trial in trials
+    )
+    diffusivity = _first_nonempty_float(
+        trial.get("transport_diffusivity_A2_per_ps") for trial in trials
+    )
+    alpha = _first_nonempty_float(trial.get("transport_alpha") for trial in trials)
+    if (
+        lattice_parameter is not None
+        and diffusivity is not None
+        and alpha is not None
+    ):
+        return {
+            "lattice_parameter_A": lattice_parameter,
+            "diffusivity_A2_per_ps": diffusivity,
+            "alpha": alpha,
+        }
+    transport = (
+        cu_transport_at_temperature(float(temperature_K))
+        if case == "cu-vac-sia" and temperature_K is not None
+        else None
+    )
+    if transport is None:
+        return {
+            "lattice_parameter_A": None,
+            "diffusivity_A2_per_ps": None,
+            "alpha": None,
+        }
+    return {
+        "lattice_parameter_A": transport["lattice_parameter_A"],
+        "diffusivity_A2_per_ps": transport["diffusivity_A2_per_ps"],
+        "alpha": CU_SIA_MIGRATION_ALPHA,
+    }
+
+
 def recombination_volume_rows(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
     group_keys = sorted(
@@ -1002,18 +1054,14 @@ def recombination_volume_rows(trials: list[dict[str, Any]]) -> list[dict[str, An
             if event_rate is not None and box_volume is not None
             else None
         )
-        transport = (
-            cu_transport_at_temperature(float(temperature_K))
-            if case == "cu-vac-sia" and temperature_K is not None
-            else None
+        transport = transport_parameters_for_group(
+            case=case,
+            temperature_K=float(temperature_K) if temperature_K is not None else None,
+            trials=group,
         )
-        lattice_parameter = (
-            transport["lattice_parameter_A"] if transport is not None else None
-        )
-        diffusivity = (
-            transport["diffusivity_A2_per_ps"] if transport is not None else None
-        )
-        alpha = CU_SIA_MIGRATION_ALPHA if transport is not None else None
+        lattice_parameter = transport["lattice_parameter_A"]
+        diffusivity = transport["diffusivity_A2_per_ps"]
+        alpha = transport["alpha"]
         atomic_volume = (
             lattice_parameter**3 / 4.0 if lattice_parameter is not None else None
         )
@@ -1396,6 +1444,18 @@ def _trial_time(trial: dict[str, Any]) -> float:
     return float(trial["censored_time_s"])
 
 
+def transport_command_fields(command: dict[str, Any]) -> dict[str, float | None]:
+    return {
+        "transport_lattice_parameter_A": command.get(
+            "transport_lattice_parameter_A"
+        ),
+        "transport_diffusivity_A2_per_ps": command.get(
+            "transport_diffusivity_A2_per_ps"
+        ),
+        "transport_alpha": command.get("transport_alpha"),
+    }
+
+
 def trial_commands(
     *,
     out: Path,
@@ -1415,6 +1475,9 @@ def trial_commands(
     max_steps: int,
     work_budget: str | None,
     trial_timeout_s: float | None,
+    transport_lattice_parameter_A: float | None = None,
+    transport_diffusivity_A2_per_ps: float | None = None,
+    transport_alpha: float | None = None,
     basin_energy_thr: float | None,
     basin_max_expansions: int | None,
     basin_max_closed_states: int | None,
@@ -1481,6 +1544,11 @@ def trial_commands(
                     "trial": item["trial"],
                     "seed": item["seed"],
                     "temperature_K": float(temperature_K),
+                    "transport_lattice_parameter_A": transport_lattice_parameter_A,
+                    "transport_diffusivity_A2_per_ps": (
+                        transport_diffusivity_A2_per_ps
+                    ),
+                    "transport_alpha": transport_alpha,
                     "max_steps": int(max_steps),
                     "work_budget": work_budget,
                     "event_searches": event_searches,
@@ -1888,6 +1956,7 @@ def execute_trials(
                         seed=int(command["seed"]),
                         output_dir=workdir,
                     )
+                    row.update(transport_command_fields(command))
                     row["detector_reason"] = f"timeout-{trial_timeout_s}s"
                     row["event_searches"] = command.get("event_searches")
                     row["kinetic_claim_ok"] = False
@@ -1921,6 +1990,7 @@ def execute_trials(
                                 "trajectory_recombination_frame": None,
                                 "kinetic_claim_ok": False,
                                 "output_dir": str(workdir),
+                                **transport_command_fields(command),
                             },
                             diagnostics=None,
                             log_text="",
@@ -1943,16 +2013,16 @@ def execute_trials(
                 + "\n"
             )
             if (workdir / "pykmc.out").exists() and (workdir / "pykmc.log").exists():
-                rows.append(
-                    trial_row_from_outputs(
-                        case=str(command["case"]),
-                        selector=str(command["priority"]),
-                        trial=int(command["trial"]),
-                        seed=int(command["seed"]),
-                        output_dir=workdir,
-                    )
+                row = trial_row_from_outputs(
+                    case=str(command["case"]),
+                    selector=str(command["priority"]),
+                    trial=int(command["trial"]),
+                    seed=int(command["seed"]),
+                    output_dir=workdir,
                 )
-                rows[-1]["event_searches"] = command.get("event_searches")
+                row.update(transport_command_fields(command))
+                row["event_searches"] = command.get("event_searches")
+                rows.append(row)
             else:
                 rows.append(
                     apply_kinetic_guard(
@@ -1976,6 +2046,7 @@ def execute_trials(
                             "event_searches": command.get("event_searches"),
                             "kinetic_claim_ok": False,
                             "output_dir": str(workdir),
+                            **transport_command_fields(command),
                         },
                         diagnostics=None,
                         log_text="",
@@ -2031,6 +2102,9 @@ def main(argv: list[str] | None = None) -> int:
             "is closest to this nearest-neighbor separation."
         ),
     )
+    parser.add_argument("--transport-lattice-parameter-A", type=float)
+    parser.add_argument("--transport-diffusivity-A2-per-ps", type=float)
+    parser.add_argument("--transport-alpha", type=float)
     parser.add_argument("--event-searches", type=int)
     parser.add_argument("--partn-search-evals", type=int)
     parser.add_argument("--refine-thr", type=float)
@@ -2147,6 +2221,9 @@ def main(argv: list[str] | None = None) -> int:
         max_steps=args.max_steps,
         work_budget=args.work_budget,
         trial_timeout_s=args.trial_timeout_s,
+        transport_lattice_parameter_A=args.transport_lattice_parameter_A,
+        transport_diffusivity_A2_per_ps=args.transport_diffusivity_A2_per_ps,
+        transport_alpha=args.transport_alpha,
         basin_energy_thr=args.basin_energy_thr,
         basin_max_expansions=args.basin_max_expansions,
         basin_max_closed_states=args.basin_max_closed_states,
@@ -2189,6 +2266,9 @@ def main(argv: list[str] | None = None) -> int:
         "max_steps": args.max_steps,
         "cu_target_separation_nn": args.cu_target_separation_nn,
         "cu_initial_config_metadata": cu_initial_config_metadata,
+        "transport_lattice_parameter_A": args.transport_lattice_parameter_A,
+        "transport_diffusivity_A2_per_ps": args.transport_diffusivity_A2_per_ps,
+        "transport_alpha": args.transport_alpha,
         "event_searches": args.event_searches,
         "partn_search_evals": args.partn_search_evals,
         "refine_thr": args.refine_thr,
