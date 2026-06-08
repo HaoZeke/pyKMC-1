@@ -29,6 +29,19 @@ class EventSearch:
         self.loggers = loggers
         self.results = None
 
+    def _amsel_recomb_topology_hint(self):
+        partn = getattr(self.config, "partn", None)
+        if not bool(getattr(partn, "amsel_recomb_seed", False)):
+            return None
+        try:
+            from .basins.amsel_recomb import _nearest_recomb_topology
+        except Exception:
+            return None
+        try:
+            return _nearest_recomb_topology(self.system.positions, self.system.cell)
+        except Exception:
+            return None
+
     def execute(self, central_atom_research_list: list[int]) -> None:
         """Execute an event search for each central atom in the central_atom_research_list list.
 
@@ -47,14 +60,16 @@ class EventSearch:
                 len(central_atom_research_list)
             ),
         )
+        amsel_recomb_topology = self._amsel_recomb_topology_hint()
         if self.config.control.active_volume==True:
             if self.config.activevolume.ract <= self.config.atomicenvironment.rcut:
                 raise ValueError('Active Volume radius is smaller than cutoff radius. Please increase ract or decrease rcut')
-            futures = self.manager.partn_search(config=self.config, central_atom=central_atom_research_list, positions=self.system.positions.copy(), cell=self.system.cell.copy(), type=self.system.types.copy())
+            futures = self.manager.partn_search(config=self.config, central_atom=central_atom_research_list, positions=self.system.positions.copy(), cell=self.system.cell.copy(), type=self.system.types.copy(), amsel_recomb_topology=amsel_recomb_topology)
         else:
             futures = self.manager.partn_search(config=self.config, central_atom=central_atom_research_list,
                                                 positions=self.system.positions.copy(),
-                                                cell=self.system.cell.copy(), type=self.system.types.copy())
+                                                cell=self.system.cell.copy(), type=self.system.types.copy(),
+                                                amsel_recomb_topology=amsel_recomb_topology)
         for f in futures :
             result = f.result()
             self.results.append(result)

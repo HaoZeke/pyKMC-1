@@ -229,7 +229,7 @@ def minimize_freeze_core(engine, central_atom_positions: np.ndarray, rcut: float
     engine.command("group frozen_group delete")
     engine.command("region sphere_region delete")
 
-def partn_search(engine, config, central_atom_idx: int, positions = None, cell = None, type=None) :
+def partn_search(engine, config, central_atom_idx: int, positions = None, cell = None, type=None, amsel_recomb_topology=None) :
     original_stdout_fd = os.dup(1)
     devnull = os.open(os.devnull, os.O_WRONLY)
     # Redirect stdout (fd 1) to /dev/null, only way to deal with pARTn error write
@@ -287,6 +287,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
             _g = recomb_push(
                 positions, cell, central_atom_idx,
                 push_step_size=config.partn.push_step_size,
+                topology=amsel_recomb_topology,
             )
             if _g is not None:
                 # Restrict the full-system push to the atoms pARTn sees.

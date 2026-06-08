@@ -230,6 +230,7 @@ def recomb_push(
     push_step_size: float = 0.1,
     cutoff_mult: float = 1.08,
     capture_mult: float | None = None,
+    topology=None,
 ):
     """Per-atom initial-push array (nat, 3) seeding a pARTn search ALONG
     the local annihilation direction, or None when this central atom is not
@@ -243,7 +244,9 @@ def recomb_push(
     of a random direction. numpy (nat, 3) C-order maps to ARTn's fortran
     (3, nat).
     """
-    det = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
+    det = topology
+    if det is None:
+        det = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
     if det is None:
         return None
     source_atom, v_centroid, distance, nn = det

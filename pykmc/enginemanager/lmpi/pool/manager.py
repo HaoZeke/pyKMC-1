@@ -173,10 +173,10 @@ class Manager:
         future = self.submit_job("get_forces", {"positions": positions})
         return future
 
-    def partn_search(self, config, central_atom: list[int], positions=None, cell=None, type=None) -> list[Future] :
+    def partn_search(self, config, central_atom: list[int], positions=None, cell=None, type=None, amsel_recomb_topology=None) -> list[Future] :
         futures = []
         for atom in central_atom :
-            f = self.submit_job("partn_search", {"config": config, "central_atom_idx": atom, "positions": positions, "cell":cell, "type":type})
+            f = self.submit_job("partn_search", {"config": config, "central_atom_idx": atom, "positions": positions, "cell":cell, "type":type, "amsel_recomb_topology": amsel_recomb_topology})
             futures.append(f) 
         return futures
 
@@ -211,4 +211,3 @@ class Manager:
             return global_method
 
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-

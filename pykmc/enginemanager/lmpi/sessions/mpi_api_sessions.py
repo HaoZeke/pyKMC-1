@@ -263,11 +263,11 @@ class MpiApiSession :
             self._is_busy = False
 
     #@session_locked
-    def partn_search(self, config, central_atom_idx, positions=None, cell=None, type=None) :
+    def partn_search(self, config, central_atom_idx, positions=None, cell=None, type=None, amsel_recomb_topology=None) :
         self._is_busy = True 
         #print(f"[Session] Launching pARTn search")
         try : 
-            self.send_message({"type": "partn_search", "value": {"config": config, "central_atom_idx": central_atom_idx, "positions": positions, "cell": cell, "type": type}})
+            self.send_message({"type": "partn_search", "value": {"config": config, "central_atom_idx": central_atom_idx, "positions": positions, "cell": cell, "type": type, "amsel_recomb_topology": amsel_recomb_topology}})
             msg = self.messenger.recv(source=self.engine_master_rank, tag=1)
             if msg.get("type") == "result" : 
                 result = _failed_event_search(msg["value"])
