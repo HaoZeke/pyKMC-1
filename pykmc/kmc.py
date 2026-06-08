@@ -1076,6 +1076,12 @@ class KMC:
                 searches_per_environment
             ),
         )
+        remaining_search_budget = None
+        if not disable_coverage_resampling:
+            initial_budget = searches_per_environment * max(1, len(search_environments))
+            remaining_search_budget = initial_budget + coverage_resampling_attempt_limit(
+                searches_per_environment
+            )
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
         first_round = True
@@ -1090,12 +1096,25 @@ class KMC:
             for _search_round in range(round_count):
                 if not search_environments:
                     break
+                round_search_environments = list(search_environments)
+                if remaining_search_budget is not None:
+                    if remaining_search_budget <= 0:
+                        self.loggers.info(
+                            "log",
+                            "\t :=> AMSEL coverage resampling budget exhausted; "
+                            "proceeding with current reference table",
+                        )
+                        search_environments = []
+                        break
+                    round_search_environments = round_search_environments[
+                        :remaining_search_budget
+                    ]
                 if first_round:
-                    repeated_environments = set(search_environments).difference(
+                    repeated_environments = set(round_search_environments).difference(
                         set(new_environments)
                     )
                 else:
-                    repeated_environments = set(search_environments)
+                    repeated_environments = set(round_search_environments)
                 if repeated_environments:
                     self.loggers.info(
                         "log",
@@ -1105,9 +1124,18 @@ class KMC:
                     )
 
                 central_atom_research_list = self.central_atoms_research(
-                    search_environments, round_nsearch
+                    round_search_environments, round_nsearch
                 )
+                if remaining_search_budget is not None:
+                    central_atom_research_list = central_atom_research_list[
+                        :remaining_search_budget
+                    ]
+                    if not central_atom_research_list:
+                        search_environments = []
+                        break
                 event_search = self.execute_event_searches(central_atom_research_list)
+                if remaining_search_budget is not None:
+                    remaining_search_budget -= len(central_atom_research_list)
                 all_event_search_results.extend(event_search.results)
 
                 event_search_outputs = event_search.get_successes_results()
