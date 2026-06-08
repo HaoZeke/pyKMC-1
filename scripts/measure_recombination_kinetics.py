@@ -1244,6 +1244,10 @@ def trial_commands(
     use_temperature_dirs = len(temperatures) > 1
     for item in seed_schedule(base_seed=seed, trials=trials, priorities=priorities):
         for temperature_K in temperatures:
+            effective_frontier_event_searches = _frontier_event_searches_for_priority(
+                priority=str(item["priority"]),
+                basin_frontier_event_searches=basin_frontier_event_searches,
+            )
             trial_dir = out / str(item["priority"])
             if use_temperature_dirs:
                 trial_dir = trial_dir / temperature_label(temperature_K)
@@ -1268,7 +1272,7 @@ def trial_commands(
                 basin_max_closed_states=basin_max_closed_states,
                 basin_max_absorbing_refinements=basin_max_absorbing_refinements,
                 basin_frontier_committor_tol=basin_frontier_committor_tol,
-                basin_frontier_event_searches=basin_frontier_event_searches,
+                basin_frontier_event_searches=effective_frontier_event_searches,
                 amsel_selector=amsel_selector,
                 amsel_exploration_priority=amsel_exploration_priority,
                 amsel_duplicate_family_penalty=amsel_duplicate_family_penalty,
@@ -1293,7 +1297,7 @@ def trial_commands(
                     "basin_max_closed_states": basin_max_closed_states,
                     "basin_max_absorbing_refinements": basin_max_absorbing_refinements,
                     "basin_frontier_committor_tol": basin_frontier_committor_tol,
-                    "basin_frontier_event_searches": basin_frontier_event_searches,
+                    "basin_frontier_event_searches": effective_frontier_event_searches,
                     "amsel_selector": amsel_selector,
                     "amsel_exploration_priority": amsel_exploration_priority,
                     "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
@@ -1417,10 +1421,9 @@ def render_trial_input(
             float(basin_frontier_committor_tol)
         )
     if priority != "legacy":
-        frontier_searches = (
-            int(basin_frontier_event_searches)
-            if basin_frontier_event_searches is not None
-            else max(1, int(event_searches or 1))
+        frontier_searches = _frontier_event_searches_for_priority(
+            priority=priority,
+            basin_frontier_event_searches=basin_frontier_event_searches,
         )
         config[basin]["frontier_event_searches"] = str(frontier_searches)
     absolutize_lammps_paths(config, template_dir=template_dir)
@@ -1499,6 +1502,18 @@ def _selector_for_priority(*, priority: str, amsel_selector: str) -> str:
     if priority == "amsel":
         return amsel_selector
     raise ValueError(f"unknown priority: {priority}")
+
+
+def _frontier_event_searches_for_priority(
+    *,
+    priority: str,
+    basin_frontier_event_searches: int | None,
+) -> int | None:
+    if priority == "legacy":
+        return None
+    if basin_frontier_event_searches is None:
+        return 1
+    return int(basin_frontier_event_searches)
 
 
 def _exploration_priority_for_priority(

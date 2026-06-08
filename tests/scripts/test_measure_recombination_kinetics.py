@@ -969,6 +969,35 @@ def test_render_trial_input_enables_vineyard_prefactors_for_amsel_priority(tmp_p
     assert config["RateConstant"]["compute_vineyard_prefactor"] == "True"
 
 
+def test_render_trial_input_defaults_to_single_frontier_search(tmp_path):
+    script = _load_script()
+
+    text = script.render_trial_input(
+        template_text="[Control]\n[pARTn]\n[BASIN]\n",
+        template_dir=tmp_path,
+        initial_config=tmp_path / "initial.xyz",
+        reference_table=None,
+        visited_environments=None,
+        max_steps=1,
+        event_searches=3,
+        refine_thr=None,
+        priority="amsel",
+        partn_path=tmp_path / "libartn-lmp.so",
+        seed=1000,
+        basin_energy_thr=None,
+        basin_max_expansions=None,
+        basin_max_closed_states=None,
+        basin_max_absorbing_refinements=None,
+        basin_frontier_committor_tol=None,
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read_string(text)
+    assert config["EventSearch"]["nsearch"] == "3"
+    assert config["BASIN"]["frontier_event_searches"] == "1"
+
+
 def test_render_trial_input_uses_committor_tolerance_without_default_absorbing_cap(
     tmp_path,
 ):
