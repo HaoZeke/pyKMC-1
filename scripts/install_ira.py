@@ -29,17 +29,24 @@ def _source_dir(explicit: str | None) -> Path:
 
     for candidate in candidates:
         candidate = candidate.expanduser().resolve()
+        has_python_build = (candidate / "setup.py").exists() or (
+            candidate / "pyproject.toml"
+        ).exists()
+        has_cmake_build = (candidate / "CMakeLists.txt").exists() or (
+            candidate / "src" / "CMakeLists.txt"
+        ).exists()
         if (
-            (candidate / "setup.py").exists()
+            has_python_build
             and (candidate / "interface" / "ira_mod.py").exists()
-            and (candidate / "src" / "CMakeLists.txt").exists()
+            and has_cmake_build
         ):
             return candidate
 
     searched = "\n".join(f"  - {path}" for path in candidates)
     raise SystemExit(
         "Could not find IRA source. Set PYKMC_IRA_DIR to a checkout containing "
-        "setup.py, interface/ira_mod.py, and src/CMakeLists.txt.\nSearched:\n"
+        "setup.py or pyproject.toml, interface/ira_mod.py, and CMakeLists.txt.\n"
+        "Searched:\n"
         + searched
     )
 
@@ -65,12 +72,21 @@ def _copy_source(source: Path, work_root: Path) -> Path:
 
 
 def _patch_native_flags(source: Path) -> None:
-    cmake_file = source / "src" / "CMakeLists.txt"
-    text = cmake_file.read_text(encoding="utf-8")
-    patched = text.replace("-march=native", "-mtune=generic")
-    if patched == text:
-        return
-    cmake_file.write_text(patched, encoding="utf-8")
+    for cmake_file in (source / "CMakeLists.txt", source / "src" / "CMakeLists.txt"):
+        if not cmake_file.exists():
+            continue
+        text = cmake_file.read_text(encoding="utf-8")
+        patched = text
+        patched = patched.replace("-march=native", "-mtune=generic")
+        patched = patched.replace("-xHost", "-mtune=generic")
+        patched = patched.replace("-ffast-math", "")
+        patched = patched.replace("-Ofast", "-O2")
+        patched = patched.replace(
+            'equivalent)" ON)',
+            'equivalent)" OFF)',
+        )
+        if patched != text:
+            cmake_file.write_text(patched, encoding="utf-8")
 
 
 def _run(cmd: list[str], cwd: Path) -> None:
