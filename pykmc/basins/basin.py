@@ -1159,15 +1159,15 @@ class BasinsGenericEvents() :
                 len(unknown_environments)
             )
         )
-        if hasattr(self.manager, "use_global"):
-            self.manager.use_global()
         event_search = EventSearch(self.config, state.system, self.manager, self.loggers)
+        restore_global_manager = self._enter_frontier_search_manager_mode()
         original_evalf_limits = self._set_frontier_search_evalf_limits()
         try:
             self._log_frontier_search_evalf_limits()
             event_search.execute(central_atoms)
         finally:
             self._restore_frontier_search_evalf_limits(original_evalf_limits)
+            self._restore_frontier_search_manager_mode(restore_global_manager)
         events = event_search.get_successes_results()
         if self.prefactor_attacher is not None:
             self.prefactor_attacher(events)
@@ -1261,6 +1261,16 @@ class BasinsGenericEvents() :
             return
         for name, original in originals.items():
             setattr(partn, name, original)
+
+    def _enter_frontier_search_manager_mode(self) -> bool:
+        was_global = bool(getattr(self.manager, "using_global", False))
+        if hasattr(self.manager, "use_local"):
+            self.manager.use_local()
+        return was_global
+
+    def _restore_frontier_search_manager_mode(self, restore_global: bool) -> None:
+        if restore_global and hasattr(self.manager, "use_global"):
+            self.manager.use_global()
 
     def _log_frontier_search_evalf_limits(self) -> None:
         partn = getattr(self.config, "partn", None)

@@ -155,6 +155,80 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
         for message in log_messages
     )
 
+
+def test_frontier_state_search_uses_local_pool_and_restores_global(monkeypatch):
+    known = "known-env"
+    unknown = "unknown-env"
+    event_output = SimpleNamespace(central_atom_index=1)
+
+    class FakeManager:
+        def __init__(self):
+            self.using_global = True
+            self.calls = []
+
+        def use_local(self):
+            self.calls.append("use_local")
+            self.using_global = False
+
+        def use_global(self):
+            self.calls.append("use_global")
+            self.using_global = True
+
+    manager = FakeManager()
+
+    class FakeEventSearch:
+        def __init__(self, config, system, manager, loggers):
+            self.config = config
+            self.manager = manager
+            self.results = [Ok(event_output)]
+
+        def execute(self, central_atom_research_list):
+            assert self.manager.using_global is False
+
+        def get_successes_results(self):
+            return [event_output]
+
+    class FakeReferenceTable:
+        def add_events(self, events):
+            return [Ok(pd.DataFrame({"idx_ref": [0]}))]
+
+    config = SimpleNamespace(
+        basin=SimpleNamespace(
+            frontier_event_searches=1,
+            frontier_search_nevalf_max=80,
+        ),
+        partn=SimpleNamespace(
+            amsel_recomb_seed=False,
+            nevalf_max=1200,
+            evalf_max=2400,
+        ),
+    )
+    state = StateData(
+        system=System(
+            positions=np.zeros((2, 3)),
+            types=np.array(["Cu", "Cu"]),
+            cell=np.eye(3) * 10.0,
+            pbc=True,
+            index=np.arange(2),
+        ),
+        environment=SimpleNamespace(atomic_environment_list=[known, unknown]),
+        neighbors_list=None,
+        transient=True,
+    )
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=FakeReferenceTable(),
+        known_environments={known},
+        manager=manager,
+    )
+
+    monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
+
+    assert basin._try_search_unknown_state_environments(state) is True
+    assert manager.calls == ["use_local", "use_global"]
+    assert manager.using_global is True
+
+
 class TestBasin : 
 
     def test_connectivity_table_construction(self, test_logger, config_Cu, reference_table_Cu_fake, system_Cu, visited_environments_Cu) : 
