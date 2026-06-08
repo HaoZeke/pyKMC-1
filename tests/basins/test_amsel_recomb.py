@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 
 from pykmc.basins import amsel_recomb
@@ -59,4 +61,53 @@ def test_recombination_search_center_requires_capture_radius(monkeypatch):
             capture_mult=1.5,
         )
         is None
+    )
+
+
+def test_recombination_search_center_defaults_to_local_candidate(monkeypatch):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [4.0, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.eye(3) * 20.0
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_nearest_recomb_topology",
+        lambda positions, cell, cutoff_mult=1.08: (1, [0.0, 0.0, 0.0], 4.0, 2.0),
+    )
+
+    assert amsel_recomb.recombination_search_center(positions, cell) == 1
+
+
+def test_nearest_recomb_topology_uses_generic_amsel_candidate(monkeypatch):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.eye(3) * 10.0
+    candidate = SimpleNamespace(
+        source_atom=1,
+        target_centroid=(0.25, 0.0, 0.0),
+        distance=0.75,
+        nn_spacing=1.0,
+    )
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_amsel_defect_annihilation_candidate",
+        lambda positions, cell, cutoff_mult=1.08: candidate,
+    )
+
+    assert amsel_recomb._nearest_recomb_topology(positions, cell) == (
+        1,
+        [0.25, 0.0, 0.0],
+        0.75,
+        1.0,
     )
