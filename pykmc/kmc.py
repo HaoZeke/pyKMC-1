@@ -1000,9 +1000,11 @@ class KMC:
         nd_cur = n_defects(pos, cell)
         self.manager.use_global()
         try:
-            res = self.manager.minimize_with_results(
+            res = self.manager.global_minimize_with_results(
                 self.config, positions=np.asarray(product, dtype=float)
-            ).result()
+            )
+            if hasattr(res, "result"):
+                res = res.result()
             if res is None:
                 return None
             min_pos, e_prod = res

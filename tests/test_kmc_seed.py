@@ -83,7 +83,7 @@ def test_rejected_amsel_capture_keeps_search_center_available(monkeypatch):
     kmc.total_energy = 0.0
     kmc.manager = SimpleNamespace(
         use_global=lambda: None,
-        minimize_with_results=lambda config, positions: SimpleNamespace(
+        global_minimize_with_results=lambda config, positions: SimpleNamespace(
             result=lambda: (positions, -1.0)
         ),
     )
@@ -123,7 +123,7 @@ def test_rejected_amsel_capture_restores_local_manager_mode(monkeypatch):
     kmc.manager = SimpleNamespace(
         use_global=lambda: calls.append("global"),
         use_local=lambda: calls.append("local"),
-        minimize_with_results=lambda config, positions: SimpleNamespace(
+        global_minimize_with_results=lambda config, positions: SimpleNamespace(
             result=lambda: (positions, -1.0)
         ),
     )
