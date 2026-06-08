@@ -2,12 +2,13 @@ import pandas as pd
 import numpy as np
 from types import SimpleNamespace
 
+from pykmc.result import Err, ErrorInfo, ErrorType
 from pykmc.event_table import (
     ActiveEventTable,
     ReferenceEventTable,
     duplicate_event_error_info,
 )
-from pykmc.result import ErrorType, EventRefinementOutput
+from pykmc.result import EventRefinementOutput
 
 
 def test_duplicate_event_error_info_preserves_matched_process_identity():
@@ -131,6 +132,49 @@ def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch
     assert calls[1][2]["prefactor_inv_s"] == 2.2e13
     assert calls[0][2]["saddle_freq_invcm"] == 120.0
     assert calls[1][2]["barrier_omega_rad_per_s"] == 2.4e13
+
+
+def test_matching_event_uses_geometry_fallback_when_ira_is_unavailable(monkeypatch):
+    import pykmc.event_table as event_table
+
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.config = SimpleNamespace(
+        ira=SimpleNamespace(kmax_factor=2.0),
+        psr=SimpleNamespace(matching_score_thr=0.4),
+    )
+    saddle = np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=float)
+    table.table = pd.DataFrame(
+        [
+            {
+                "idx_ref": 7,
+                "event_id": "env-a",
+                "energy_barrier": 0.2,
+                "saddle_positions": saddle,
+            }
+        ]
+    )
+    dfevent = pd.Series(
+        {
+            "event_id": "env-a",
+            "energy_barrier": 0.21,
+            "saddle_positions": saddle.copy(),
+        }
+    )
+    monkeypatch.setattr(
+        event_table,
+        "simple_ira",
+        lambda *_args, **_kwargs: Err(
+            ErrorInfo(
+                type=ErrorType.PSR_NO_MATCH_FOUND,
+                message="native matcher unavailable",
+            )
+        ),
+    )
+
+    matched = table.matching_event(dfevent)
+
+    assert matched is not None
+    assert matched["idx_ref"] == 7
 
 
 def test_active_event_series_uses_vineyard_prefactor(monkeypatch):
