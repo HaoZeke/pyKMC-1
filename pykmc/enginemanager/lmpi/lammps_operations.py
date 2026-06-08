@@ -403,6 +403,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
                             saddle_positions=saddlepositions,
                             min2_positions=min2positions,
                             move_atom_index=index_move,
+                            types=None if type is None else np.asarray(type).copy(),
                             saddle_eigenvalue_ev_per_A2=saddle_eigenvalue,
                         )
                     )
@@ -416,6 +417,7 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
                             saddle_positions=saddlepositions,
                             min2_positions=min1positions,
                             move_atom_index=index_move,
+                            types=None if type is None else np.asarray(type).copy(),
                             saddle_eigenvalue_ev_per_A2=saddle_eigenvalue,
                         )
                     )

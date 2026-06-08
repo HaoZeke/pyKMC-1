@@ -154,6 +154,7 @@ class EventSearchOutput:
     move_atom_index: int
     #map: np.ndarray
     cell: Optional[np.ndarray] = None
+    types: Optional[np.ndarray] = None
     prefactor_inv_s: Optional[float] = None
     product_prefactor_inv_s: Optional[float] = None
     prefactor_source: Optional[str] = None

@@ -59,6 +59,34 @@ def _same_local_geometry(
     return bool(np.allclose(a_centered, b_centered, atol=float(tolerance), rtol=0.0))
 
 
+def _local_types(types, indices):
+    if types is None:
+        return None
+    return np.asarray(types)[np.asarray(indices, dtype=int)]
+
+
+def _event_row_types(row: pd.Series, natoms: int) -> list[str] | None:
+    if "types" not in row:
+        return None
+    value = row.get("types", None)
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    values = np.asarray(value)
+    if values.shape[0] != natoms:
+        return None
+    return [str(atom_type) for atom_type in values.tolist()]
+
+
+def _typed_match_inputs(row_a: pd.Series, nat_a: int, row_b: pd.Series, nat_b: int):
+    types_a = _event_row_types(row_a, nat_a)
+    types_b = _event_row_types(row_b, nat_b)
+    if types_a is None or types_b is None:
+        return nat_a * ["X"], nat_b * ["X"]
+    return types_a, types_b
+
+
 def _optional_int(value: Any) -> int | None:
     if value is None or pd.isna(value):
         return None
@@ -142,6 +170,7 @@ class ReferenceEventTable:
                     dE_forward=ev.dE_forward,
                     dE_backward=ev.dE_backward,
                     cell=ev.cell,
+                    types=getattr(ev, "types", None),
                     prefactor_inv_s=getattr(ev, "prefactor_inv_s", None),
                     product_prefactor_inv_s=getattr(
                         ev, "product_prefactor_inv_s", None
@@ -177,6 +206,7 @@ class ReferenceEventTable:
         dE_forward: float,
         dE_backward: float,
         cell: np.ndarray,
+        types: np.ndarray | None = None,
         prefactor_inv_s: float | None = None,
         product_prefactor_inv_s: float | None = None,
         prefactor_source: str | None = None,
@@ -272,6 +302,7 @@ class ReferenceEventTable:
                 dE_forward=dE_forward,
                 dE_backward=dE_backward,
                 cell=cell,
+                types=types,
                 prefactor_inv_s=prefactor_inv_s,
                 product_prefactor_inv_s=product_prefactor_inv_s,
                 prefactor_source=prefactor_source,
@@ -296,8 +327,12 @@ class ReferenceEventTable:
                     if abs(dfevent_forward["energy_barrier"]-dfevent_backward["energy_barrier"]) < 0.25 : #maybe same event so IRA check
                         ref_saddle = dfevent_forward['saddle_positions'].copy()
                         nat_ref = len(ref_saddle)
-                        typ_event = nat_ref*['X']
-                        typ_ref = typ_event
+                        typ_event, typ_ref = _typed_match_inputs(
+                            dfevent_backward,
+                            nat_ref,
+                            dfevent_forward,
+                            nat_ref,
+                        )
                         result = simple_ira(nat_ref, typ_event, dfevent_backward["saddle_positions"].copy(), nat_ref, typ_ref, ref_saddle, self.config.ira.kmax_factor)
 
                         #if match 
@@ -364,15 +399,18 @@ class ReferenceEventTable:
         #if all same, check PSR  saddle_initial
         event_saddle = dfevent['saddle_positions']
         nat_event = len(event_saddle)
-        #TODO I guess we should save atoms types in reference table
-        typ_event = nat_event*['X']
         geometry_fallback_tol = float(getattr(self.config.ira, "sym_thr", 1.0e-2))
 
         for _, ev in subset.iterrows() :
 
             ref_saddle = ev['saddle_positions']
             nat_ref = len(ref_saddle)
-            typ_ref = typ_event
+            typ_event, typ_ref = _typed_match_inputs(
+                dfevent,
+                nat_event,
+                ev,
+                nat_ref,
+            )
             result = simple_ira(nat_event, typ_event, event_saddle, nat_ref, typ_ref, ref_saddle, self.config.ira.kmax_factor)
 
             if not result.is_ok() : #no match
@@ -477,6 +515,7 @@ class ReferenceEventTable:
         dE_forward: float,
         dE_backward: float,
         cell: np.ndarray,
+        types: np.ndarray | None = None,
         prefactor_inv_s: float | None = None,
         product_prefactor_inv_s: float | None = None,
         prefactor_source: str | None = None,
@@ -562,6 +601,8 @@ class ReferenceEventTable:
         neighbor_list_backward = np.asarray(
             min2neighbors_list.neighbors_list["rcut"][index_move], dtype=int
         )
+        types_forward = _local_types(types, neighbor_list_forwward)
+        types_backward = _local_types(types, neighbor_list_backward)
 
         # Symmetries :
         sym_matrix, sym_perm = unique_symmetries(
@@ -595,6 +636,7 @@ class ReferenceEventTable:
                 "initial_positions": min1_positions[neighbor_list_forwward],
                 "saddle_positions": saddle_positions[neighbor_list_forwward],
                 "final_positions": min2_positions[neighbor_list_forwward],
+                "types": types_forward,
                 "energy_barrier": dE_forward,
                 "k": compute_rate(
                     dE_forward, dE_backward, self.config, **forward_rate_kwargs
@@ -625,6 +667,7 @@ class ReferenceEventTable:
                 "initial_positions": min2_positions[neighbor_list_backward],
                 "saddle_positions": saddle_positions[neighbor_list_backward],
                 "final_positions": min1_positions[neighbor_list_backward],
+                "types": types_backward,
                 "energy_barrier": dE_backward,
                 "k": compute_rate(
                     dE_backward, dE_forward, self.config, **backward_rate_kwargs
@@ -678,6 +721,7 @@ class ReferenceEventTable:
                     "idx_ref": pd.Series(dtype="int64"),
                     "event_id": pd.Series(dtype="str"),
                     "initial_positions": pd.Series(dtype="object"),
+                    "types": pd.Series(dtype="object"),
                      "saddle_positions": pd.Series(dtype="object"),
                     "final_positions": pd.Series(dtype="object"),
                     "energy_barrier": pd.Series(dtype="float64"),
@@ -698,6 +742,8 @@ class ReferenceEventTable:
             self.table["idx_backward"] = self.table["idx_ref"]
         if "dra" not in self.table.columns:
             self.table["dra"] = 0.0
+        if "types" not in self.table.columns:
+            self.table["types"] = None
         self.table["idx_ref"] = self.table["idx_ref"].astype("int64")
         self.table["idx_backward"] = self.table["idx_backward"].astype("int64")
 

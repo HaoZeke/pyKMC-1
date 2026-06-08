@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from scipy.optimize import linear_sum_assignment
 from .result import Result, ErrorInfo, PSROutput, Ok, Err, ErrorType
 from .config import Config 
 from .system import System 
@@ -86,13 +87,14 @@ class PointSetRegistration:
         coords1 = self.system.positions[neighbor_list]
 
 
-        #GREY ALLOY
-        typ1 = ['X']*len(coords1)
-        typ2 = typ1 
-
-        #typ1 = np.array(self.system.types)[neighbor_list]
-
-        #typ2 = typ1  # If they have same topology id should be always true ?
+        system_types = _system_neighbor_types(self.system, neighbor_list, len(coords1))
+        event_types = _event_types(self.dfevent, nat2)
+        if system_types is not None and event_types is not None:
+            typ1 = system_types
+            typ2 = event_types
+        else:
+            typ1 = ["X"] * len(coords1)
+            typ2 = ["X"] * nat2
 
         # unwrap if close to cell limits :
         alat = self.system.cell[0][0]
@@ -142,7 +144,12 @@ class PointSetRegistration:
         result = simple_ira(nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor)
         if result.is_ok():
             return result
-        fallback = _translation_psr_fallback(coords1, coords2)
+        fallback = _translation_psr_fallback(
+            coords1,
+            coords2,
+            typ1=system_types,
+            typ2=event_types,
+        )
         if fallback is not None:
             return Ok(fallback)
         return result
@@ -194,7 +201,36 @@ def _psr_no_match(message: str = "IRA did not find a match"):
     )
 
 
-def _translation_psr_fallback(coords1, coords2) -> PSROutput | None:
+def _system_neighbor_types(system, neighbor_list, natoms: int) -> list[str] | None:
+    types = getattr(system, "types", None)
+    if types is None:
+        return None
+    values = np.asarray(types)[np.asarray(neighbor_list, dtype=int)]
+    if len(values) != natoms:
+        return None
+    return [str(atom_type) for atom_type in values.tolist()]
+
+
+def _event_types(dfevent: pd.Series, natoms: int) -> list[str] | None:
+    if "types" not in dfevent:
+        return None
+    value = dfevent.get("types", None)
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    values = np.asarray(value)
+    if values.shape[0] != natoms:
+        return None
+    return [str(atom_type) for atom_type in values.tolist()]
+
+
+def _translation_psr_fallback(
+    coords1,
+    coords2,
+    typ1: list[str] | None = None,
+    typ2: list[str] | None = None,
+) -> PSROutput | None:
     current = np.asarray(coords1, dtype=float)
     reference = np.asarray(coords2, dtype=float)
     if current.shape != reference.shape:
@@ -208,12 +244,32 @@ def _translation_psr_fallback(coords1, coords2) -> PSROutput | None:
         )
     translation = current.mean(axis=0) - reference.mean(axis=0)
     mapped = reference + translation
-    residual = current - mapped
+    distances = np.linalg.norm(current[:, None, :] - mapped[None, :, :], axis=2)
+    if typ1 is not None and typ2 is not None:
+        current_types = np.asarray(typ1, dtype=str)
+        reference_types = np.asarray(typ2, dtype=str)
+        if len(current_types) != len(current) or len(reference_types) != len(reference):
+            return None
+        allowed = current_types[:, None] == reference_types[None, :]
+        if not np.all(allowed.any(axis=1)) or not np.all(allowed.any(axis=0)):
+            return None
+        costs = np.where(allowed, distances, 1.0e30)
+    else:
+        allowed = None
+        costs = distances
+    row_ind, col_ind = linear_sum_assignment(costs)
+    if len(row_ind) != len(current):
+        return None
+    if allowed is not None and not np.all(allowed[row_ind, col_ind]):
+        return None
+    permutation = np.empty(len(current), dtype=int)
+    permutation[row_ind] = col_ind
+    residual = current - mapped[permutation]
     score = float(np.max(np.linalg.norm(residual, axis=1)))
     return PSROutput(
         rotation_matrix=np.eye(3),
         translation_matrix=translation,
-        permutation_matrix=np.arange(len(reference)),
+        permutation_matrix=permutation,
         matching_score=score,
     )
 
