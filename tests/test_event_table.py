@@ -134,6 +134,40 @@ def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch
     assert calls[1][2]["barrier_omega_rad_per_s"] == 2.4e13
 
 
+def test_reference_event_series_preserves_event_local_atom_types(monkeypatch):
+    import pykmc.event_table as event_table
+
+    monkeypatch.setattr(event_table, "compute_rate", lambda *_args, **_kwargs: 1.0)
+    monkeypatch.setattr(event_table, "graph", lambda *_args, **_kwargs: ["env"])
+    monkeypatch.setattr(
+        event_table,
+        "unique_symmetries",
+        lambda *_args, **_kwargs: ([np.eye(3)], [np.array([0, 1])]),
+    )
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.config = SimpleNamespace(
+        atomicenvironment=SimpleNamespace(rnei=0.1, rcut=0.5),
+        ira=SimpleNamespace(sym_thr=0.1),
+        rateconstant=SimpleNamespace(style="amsel-vtst", T=300.0),
+    )
+    positions = np.array([[1.0, 1.0, 1.0], [1.2, 1.0, 1.0]], dtype=float)
+    cell = np.eye(3) * 10.0
+
+    forward, backward = table._build_event_series(
+        min1_positions=positions,
+        saddle_positions=positions + np.array([[0.1, 0.0, 0.0], [0.0, 0.1, 0.0]]),
+        min2_positions=positions + np.array([[0.2, 0.0, 0.0], [0.0, 0.2, 0.0]]),
+        index_move=0,
+        dE_forward=0.2,
+        dE_backward=0.3,
+        cell=cell,
+        types=np.array(["Fe", "Cr"]),
+    )
+
+    np.testing.assert_array_equal(forward["types"], np.array(["Fe", "Cr"]))
+    np.testing.assert_array_equal(backward["types"], np.array(["Fe", "Cr"]))
+
+
 def test_matching_event_uses_geometry_fallback_when_ira_is_unavailable(monkeypatch):
     import pykmc.event_table as event_table
 

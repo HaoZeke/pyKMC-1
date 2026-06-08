@@ -77,3 +77,53 @@ def test_point_set_registration_uses_translation_fallback_without_ira(monkeypatc
     np.testing.assert_allclose(result.ok_value().translation_matrix, [1.0, 2.0, 3.0])
     np.testing.assert_array_equal(result.ok_value().permutation_matrix, np.arange(2))
     assert result.ok_value().matching_score == 0.0
+
+
+def test_point_set_registration_fallback_assigns_permuted_typed_neighbors(
+    monkeypatch,
+):
+    calls = []
+
+    def unavailable_ira(nat1, typ1, coords1, nat2, typ2, coords2, kmax_factor):
+        calls.append((list(typ1), list(typ2)))
+        return Err(
+            ErrorInfo(
+                type=ErrorType.PSR_NO_MATCH_FOUND,
+                message="native matcher unavailable",
+            )
+        )
+
+    monkeypatch.setattr(psr, "simple_ira", unavailable_ira)
+    config = SimpleNamespace(
+        psr=SimpleNamespace(style="ira", matching_score_thr=0.1),
+        ira=SimpleNamespace(kmax_factor=2.0),
+    )
+    system = SimpleNamespace(
+        positions=np.array([[1.2, 2.0, 3.0], [1.0, 2.0, 3.0]], dtype=float),
+        types=np.array(["O", "H"]),
+        cell=np.eye(3) * 10.0,
+    )
+    dfevent = pd.Series(
+        {
+            "initial_positions": np.array(
+                [[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]],
+                dtype=float,
+            ),
+            "types": np.array(["H", "O"]),
+        }
+    )
+    neighbors_list = SimpleNamespace(get_neighbors=lambda _style, _idx: [0, 1])
+
+    result = PointSetRegistration(
+        config,
+        system,
+        dfevent,
+        neighbors_list,
+        central_atom_index=0,
+    ).match()
+
+    assert calls == [(["O", "H"], ["H", "O"])]
+    assert result.is_ok()
+    np.testing.assert_allclose(result.ok_value().translation_matrix, [1.0, 2.0, 3.0])
+    np.testing.assert_array_equal(result.ok_value().permutation_matrix, [1, 0])
+    assert result.ok_value().matching_score == 0.0
