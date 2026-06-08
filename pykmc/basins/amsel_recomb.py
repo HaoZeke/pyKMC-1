@@ -127,12 +127,19 @@ def detect_recomb(
     return int(source_atom), v_centroid
 
 
-def recombination_search_center(positions, cell, cutoff_mult: float = 1.08):
+def recombination_search_center(
+    positions,
+    cell,
+    cutoff_mult: float = 1.08,
+    capture_mult: float = 1.6,
+):
     """Return the SIA filler atom that should receive a recombination seed."""
     topology = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
     if topology is None:
         return None
-    source_atom, _v_centroid, _distance, _nn = topology
+    source_atom, _v_centroid, distance, nn = topology
+    if distance > capture_mult * nn:
+        return None
     return int(source_atom)
 
 
