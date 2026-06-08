@@ -1059,6 +1059,51 @@ def test_undercovered_environments_for_search_skips_duplicate_saturated_environm
     ) == []
 
 
+def test_undercovered_environments_for_search_prioritizes_missing_rate_mass(
+    monkeypatch,
+):
+    class FakeCertificate:
+        def __init__(self, missing_rate):
+            self.attempts = 2
+            self.observations = 1
+            self.unique_processes = 1
+            self.singleton_processes = 1
+            self.unseen_process_probability = 0.5
+            self.missing_rate_mass_estimate = missing_rate
+            self.needs_more_search = True
+
+    def event_completeness(**kwargs):
+        if ("high-rate-gap",) in kwargs["process_counts"]:
+            return FakeCertificate(10.0)
+        return FakeCertificate(0.2)
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=event_completeness),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "a-low-gap": EnvironmentSearchEvidence(
+            attempts=2,
+            process_counts=Counter({("low-rate-gap",): 1}),
+            process_rates={("low-rate-gap",): 0.2},
+        ),
+        "z-high-gap": EnvironmentSearchEvidence(
+            attempts=2,
+            process_counts=Counter({("high-rate-gap",): 1}),
+            process_rates={("high-rate-gap",): 10.0},
+        ),
+    }
+
+    assert undercovered_environments_for_search(
+        current_environments=["a-low-gap", "z-high-gap"],
+        new_environments=[],
+        visited_environments={"a-low-gap", "z-high-gap"},
+        environment_search_evidence=evidence,
+    ) == ["z-high-gap", "a-low-gap"]
+
+
 def test_kmc_reference_search_repeats_current_environment_until_process_covered():
     kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
     kmc.atomic_environment = SimpleNamespace(
