@@ -1205,11 +1205,8 @@ class KMC:
                 tmp2 += [random.choice(tmp1) for _i in range(int(nsearch) - n_unique)]
             central_atom_research_list += tmp2
         recomb_center = self._amsel_recomb_search_center()
-        if (
-            recomb_center is not None
-            and int(recomb_center) not in central_atom_research_list
-        ):
-            central_atom_research_list.insert(0, int(recomb_center))
+        if recomb_center is not None:
+            return [int(recomb_center)]
         return central_atom_research_list
 
     def _amsel_recomb_search_center(self):
