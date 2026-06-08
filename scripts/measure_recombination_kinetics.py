@@ -52,14 +52,17 @@ KINETIC_GUARD_COMMITTOR_TOL = 1.0e-12
 # authoritative gate (logical OR of confidence_gap > 0 and missing_mass_gap >
 # 0). The kinetic guard reads that field directly instead of duplicating the
 # tolerance here. Tune via pyKMC's [BASIN] amsel_completeness_* knobs.
+PROCESS_COVERAGE_FLOAT_RE = r"(?:inf|[0-9.eE+-]+)"
 PROCESS_COVERAGE_RE = re.compile(
     r"AMSEL process coverage env=(?P<env>[^;]+); "
     r"attempts=(?P<attempts>\d+); "
     r"observations=(?P<observations>\d+); "
     r"unique_processes=(?P<unique>\d+); "
     r"singleton_processes=(?P<singletons>\d+); "
-    r"missing_process_mass=(?P<missing_process>[0-9.eE+-]+); "
-    r"missing_rate_mass=(?P<missing_rate>[0-9.eE+-]+); "
+    rf"missing_process_mass=(?P<missing_process>{PROCESS_COVERAGE_FLOAT_RE}); "
+    rf"missing_rate_mass=(?P<missing_rate>{PROCESS_COVERAGE_FLOAT_RE}); "
+    rf"(?:(?:missing_rate_fraction=(?P<missing_rate_fraction>{PROCESS_COVERAGE_FLOAT_RE}); "
+    rf"kinetic_coverage_lower=(?P<kinetic_coverage_lower>{PROCESS_COVERAGE_FLOAT_RE}); ))?"
     r"needs_more_search=(?P<needs_more>True|False)"
 )
 VINEYARD_PREFACTOR_FAILURE_MARKER = "Vineyard prefactor failed"
@@ -125,6 +128,8 @@ TRIAL_FIELDS = [
     "coverage_total_observations",
     "coverage_max_missing_process_mass",
     "coverage_max_missing_rate_mass",
+    "coverage_max_missing_rate_fraction",
+    "coverage_min_kinetic_coverage_lower",
     "coverage_needs_more_search",
     "output_dir",
 ]
@@ -813,6 +818,16 @@ def apply_kinetic_guard(
             "observations": int(match.group("observations")),
             "missing_process": float(match.group("missing_process")),
             "missing_rate": float(match.group("missing_rate")),
+            "missing_rate_fraction": (
+                None
+                if match.group("missing_rate_fraction") is None
+                else float(match.group("missing_rate_fraction"))
+            ),
+            "kinetic_coverage_lower": (
+                None
+                if match.group("kinetic_coverage_lower") is None
+                else float(match.group("kinetic_coverage_lower"))
+            ),
             "needs_more": match.group("needs_more") == "True",
         }
     if latest_coverage_by_env:
@@ -836,6 +851,22 @@ def apply_kinetic_guard(
         )
         guarded["coverage_max_missing_process_mass"] = coverage_max_missing
         guarded["coverage_max_missing_rate_mass"] = coverage_max_missing_rate
+        missing_rate_fractions = [
+            float(item["missing_rate_fraction"])
+            for item in latest_coverage_by_env.values()
+            if item["missing_rate_fraction"] is not None
+        ]
+        if missing_rate_fractions:
+            guarded["coverage_max_missing_rate_fraction"] = max(missing_rate_fractions)
+        kinetic_coverage_lowers = [
+            float(item["kinetic_coverage_lower"])
+            for item in latest_coverage_by_env.values()
+            if item["kinetic_coverage_lower"] is not None
+        ]
+        if kinetic_coverage_lowers:
+            guarded["coverage_min_kinetic_coverage_lower"] = min(
+                kinetic_coverage_lowers
+            )
         guarded["coverage_needs_more_search"] = coverage_needs_more
         selector = str(guarded.get("selector", ""))
         if (
