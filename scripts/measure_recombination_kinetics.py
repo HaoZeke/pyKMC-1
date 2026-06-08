@@ -86,6 +86,9 @@ CU_RECOMBINATION_TRANSPORT = {
     600.0: {"lattice_parameter_A": 3.649, "diffusivity_A2_per_ps": 0.728},
     700.0: {"lattice_parameter_A": 3.655, "diffusivity_A2_per_ps": 0.910},
 }
+CU_FCC_LATTICE_PARAMETER_A = 3.61
+CU_FCC_CELLS = 13
+CU_DUMBBELL_HALF_SEPARATION_FRACTION = 0.25
 TRIAL_FIELDS = [
     "case",
     "selector",
@@ -463,6 +466,158 @@ def trajectory_recombination_summary(
             summary["trajectory_recombination_time_s"] = 0.0
         break
     return summary
+
+
+def _fcc_positions(
+    cells: int,
+    lattice_parameter_A: float,
+) -> list[tuple[float, float, float]]:
+    basis = (
+        (0.0, 0.0, 0.0),
+        (0.0, 0.5, 0.5),
+        (0.5, 0.0, 0.5),
+        (0.5, 0.5, 0.0),
+    )
+    positions = []
+    for i in range(int(cells)):
+        for j in range(int(cells)):
+            for k in range(int(cells)):
+                for bx, by, bz in basis:
+                    positions.append(
+                        (
+                            (i + bx) * lattice_parameter_A,
+                            (j + by) * lattice_parameter_A,
+                            (k + bz) * lattice_parameter_A,
+                        )
+                    )
+    return positions
+
+
+def _minimum_image_delta(
+    position: tuple[float, float, float],
+    origin: tuple[float, float, float],
+    cell_length_A: float,
+) -> tuple[float, float, float]:
+    return tuple(
+        (coord - ref) - round((coord - ref) / cell_length_A) * cell_length_A
+        for coord, ref in zip(position, origin)
+    )
+
+
+def _round_position(position: tuple[float, float, float]) -> list[float]:
+    return [round(float(coord), 8) for coord in position]
+
+
+def _format_xyz_float(value: float) -> str:
+    return f"{float(value):.8f}"
+
+
+def _separation_label_nn(value: float) -> str:
+    return f"sep{'{:g}'.format(float(value)).replace('.', 'p')}nn"
+
+
+def generate_cu_vac_sia_config(
+    output: Path,
+    *,
+    target_separation_nn: float,
+    cells: int = CU_FCC_CELLS,
+    lattice_parameter_A: float = CU_FCC_LATTICE_PARAMETER_A,
+) -> dict[str, Any]:
+    if int(cells) < 3:
+        raise ValueError("cells must be at least 3 for a separated V-SIA pair")
+    if float(target_separation_nn) <= 0.0:
+        raise ValueError("target_separation_nn must be positive")
+
+    cells = int(cells)
+    lattice_parameter_A = float(lattice_parameter_A)
+    cell_length_A = cells * lattice_parameter_A
+    nearest_neighbor_A = lattice_parameter_A / math.sqrt(2.0)
+    positions = _fcc_positions(cells, lattice_parameter_A)
+    mid = cells // 2
+    vacancy = (
+        mid * lattice_parameter_A,
+        (mid + 0.5) * lattice_parameter_A,
+        (mid + 0.5) * lattice_parameter_A,
+    )
+    dumbbell_half_A = lattice_parameter_A * CU_DUMBBELL_HALF_SEPARATION_FRACTION
+
+    candidates = []
+    for position in positions:
+        if position == vacancy:
+            continue
+        delta = _minimum_image_delta(position, vacancy, cell_length_A)
+        distance_A = math.sqrt(sum(component * component for component in delta))
+        if distance_A == 0.0:
+            continue
+        separation_nn = distance_A / nearest_neighbor_A
+        boundary_penalty = int(
+            position[0] - dumbbell_half_A < 0.0
+            or position[0] + dumbbell_half_A >= cell_length_A
+        )
+        negative_components = sum(component < -1.0e-12 for component in delta)
+        candidates.append(
+            (
+                abs(separation_nn - float(target_separation_nn)),
+                boundary_penalty,
+                negative_components,
+                distance_A,
+                tuple(abs(component) for component in delta),
+                position,
+                separation_nn,
+            )
+        )
+    if not candidates:
+        raise ValueError("could not choose a Cu SIA site")
+    *_sort_values, sia_center, actual_separation_nn = min(candidates)
+
+    def same_site(a: tuple[float, float, float], b: tuple[float, float, float]) -> bool:
+        return all(
+            math.isclose(x, y, rel_tol=0.0, abs_tol=1.0e-8)
+            for x, y in zip(a, b)
+        )
+
+    output_positions = [
+        position
+        for position in positions
+        if not same_site(position, vacancy) and not same_site(position, sia_center)
+    ]
+    output_positions.extend(
+        [
+            (
+                (sia_center[0] - dumbbell_half_A) % cell_length_A,
+                sia_center[1],
+                sia_center[2],
+            ),
+            (
+                (sia_center[0] + dumbbell_half_A) % cell_length_A,
+                sia_center[1],
+                sia_center[2],
+            ),
+        ]
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    lattice = f"{cell_length_A:g} 0.0 0.0 0.0 {cell_length_A:g} 0.0 0.0 0.0 {cell_length_A:g}"
+    lines = [
+        str(len(output_positions)),
+        f'Lattice="{lattice}" Properties=species:S:1:pos:R:3 pbc="T T T"',
+    ]
+    lines.extend(
+        "Cu      "
+        + "      ".join(_format_xyz_float(coord) for coord in position)
+        for position in output_positions
+    )
+    output.write_text("\n".join(lines) + "\n")
+    return {
+        "atom_count": len(output_positions),
+        "cells": cells,
+        "lattice_parameter_A": lattice_parameter_A,
+        "nearest_neighbor_A": nearest_neighbor_A,
+        "target_separation_nn": float(target_separation_nn),
+        "actual_separation_nn": float(actual_separation_nn),
+        "vacancy_position_A": _round_position(vacancy),
+        "sia_center_A": _round_position(sia_center),
+        "dumbbell_half_separation_A": round(float(dumbbell_half_A), 8),
+    }
 
 
 def seed_schedule(
@@ -1836,6 +1991,15 @@ def main(argv: list[str] | None = None) -> int:
             "temperature sweep. Defaults to [RateConstant] T from the template."
         ),
     )
+    parser.add_argument(
+        "--cu-target-separation-nn",
+        type=float,
+        help=(
+            "For --case cu-vac-sia, generate a Cu FCC vacancy-SIA dumbbell "
+            "initial configuration whose vacancy-to-dumbbell-center distance "
+            "is closest to this nearest-neighbor separation."
+        ),
+    )
     parser.add_argument("--event-searches", type=int)
     parser.add_argument("--partn-search-evals", type=int)
     parser.add_argument("--refine-thr", type=float)
@@ -1906,7 +2070,30 @@ def main(argv: list[str] | None = None) -> int:
     template_input = args.template_input or defaults.get("template_input")
     initial_config = args.initial_config or defaults.get("initial_config")
     if template_input is None or initial_config is None:
-        parser.error("--template-input and --initial-config are required for generic-defect")
+        parser.error(
+            "--template-input and --initial-config are required for generic-defect"
+        )
+    args.out.mkdir(parents=True, exist_ok=True)
+    cu_initial_config_metadata = None
+    if args.cu_target_separation_nn is not None:
+        if args.case != "cu-vac-sia":
+            parser.error(
+                "--cu-target-separation-nn is only valid for --case cu-vac-sia"
+            )
+        if args.initial_config is not None:
+            parser.error(
+                "--cu-target-separation-nn cannot be combined with --initial-config"
+            )
+        generated_initial_config = (
+            args.out
+            / "generated-initial"
+            / f"cu-vac-sia-{_separation_label_nn(args.cu_target_separation_nn)}.xyz"
+        )
+        cu_initial_config_metadata = generate_cu_vac_sia_config(
+            generated_initial_config,
+            target_separation_nn=args.cu_target_separation_nn,
+        )
+        initial_config = generated_initial_config
     temperatures = args.temperature or [
         template_temperature_K(template_input.read_text())
     ]
@@ -1969,6 +2156,8 @@ def main(argv: list[str] | None = None) -> int:
         "trials": args.trials,
         "seed": args.seed,
         "max_steps": args.max_steps,
+        "cu_target_separation_nn": args.cu_target_separation_nn,
+        "cu_initial_config_metadata": cu_initial_config_metadata,
         "event_searches": args.event_searches,
         "partn_search_evals": args.partn_search_evals,
         "refine_thr": args.refine_thr,
@@ -1991,7 +2180,6 @@ def main(argv: list[str] | None = None) -> int:
         "dry_run": bool(args.dry_run),
     }
 
-    args.out.mkdir(parents=True, exist_ok=True)
     write_json(args.out / "manifest.json", manifest)
     write_json(args.out / "commands.json", commands)
     events_path = args.out / "events.jsonl"
