@@ -1,31 +1,31 @@
-"""amsel-driven barrierless recombination capture for vacancy/SIA pairs.
+"""amsel-driven local defect-annihilation hints.
 
-The recombined perfect crystal is a strong attractive sink: one side is a
-defect pair, the other is a defect-free minimum at much lower energy. The
-capture step (SIA dropping into the vacancy) is downhill with little or no
-barrier, so a saddle / min-mode search (pARTn) never proposes it -- it
-just rolls back downhill and reports "no event found". The kMC then only
-ever sees the lateral migration hops and random-walks forever without
-recombining.
-
-This module supplies the missing transition directly, using amsel only:
-
-  detect_recomb : CNA/coordination detect an over-coordinated SIA atom
-                  within the capture radius of an under-coordinated
-                  vacancy site (the recombinable topology).
-  build_product : amsel.build_recomb_product_positions translates the SIA
-                  filler onto the vacancy site -> the recombined geometry.
-
-The caller relaxes that product; if it removes defects it is applied as a
-single downhill, effectively absorbing kMC step (the attractive sink).
-This is the pyKMC analogue of the eOn product-difference dimer seed --
-make the capture transition available so the sink does the rest.
+This module identifies a topology with an over-coordinated source atom and
+an under-coordinated target void. The same candidate can be used in two
+ways: direct downhill injection after product minimization validates a
+defect-removing sink, or a directed pARTn initial push that lets the saddle
+search test the local annihilation path without material-specific labels.
 """
 from __future__ import annotations
 
 from collections import Counter
 
 import numpy as np
+
+
+def _amsel_defect_annihilation_candidate(positions, cell, cutoff_mult: float = 1.08):
+    try:
+        from amsel import defect_annihilation_candidate
+    except ImportError:
+        return None
+    try:
+        return defect_annihilation_candidate(
+            np.asarray(positions, dtype=float).tolist(),
+            _cell_diag(cell).tolist(),
+            cutoff_mult=cutoff_mult,
+        )
+    except Exception:
+        return None
 
 
 def _cell_diag(cell) -> np.ndarray:
@@ -47,7 +47,17 @@ def _coordination(pos: np.ndarray, cell: np.ndarray, cutoff: float) -> np.ndarra
 
 
 def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
-    """Return the nearest SIA filler and vacancy centroid for a V/SIA topology."""
+    """Return the nearest source atom and target void for local annihilation."""
+    candidate = _amsel_defect_annihilation_candidate(
+        positions, cell, cutoff_mult=cutoff_mult
+    )
+    if candidate is not None:
+        return (
+            int(candidate.source_atom),
+            list(candidate.target_centroid),
+            float(candidate.distance),
+            float(candidate.nn_spacing),
+        )
     try:
         from amsel import defect_clusters, estimate_nn_spacing
     except ImportError:
@@ -57,7 +67,9 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
     n = pos.shape[0]
     if n == 0:
         return None
-    nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0) or 2.56
+    nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0)
+    if nn is None or nn <= 0.0:
+        return None
     cutoff = cutoff_mult * nn
     cn = _coordination(pos, celld, cutoff)
     if cn.size == 0:
@@ -72,9 +84,9 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
 
     def _largest_cluster_centroid(idx_set):
         # Cluster only idx_set via amsel.defect_clusters (synthetic codes:
-        # selected atoms -> non-bulk 8, rest -> bulk 1), take the largest
-        # cluster -- the real defect (the vacancy ring / the SIA cage) --
-        # NOT the mean of all deviant atoms, which a stray neighbour skews.
+        # selected atoms -> non-bulk 8, rest -> bulk 1), then take the
+        # largest connected component so stray defect-signal atoms do not
+        # skew the local target/source geometry.
         codes = [1] * n
         for i in idx_set:
             codes[i] = 8
@@ -96,7 +108,7 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
     v_centroid, _v_cluster = _largest_cluster_centroid(under)
     if v_centroid is None:
         return None
-    # Nearest over-coordinated SIA atom to the vacancy site.
+    # Nearest over-coordinated source atom to the target void.
     over_arr = np.asarray(over, dtype=int)
     dd = pos[over_arr] - v_centroid
     for ax in range(3):
@@ -110,13 +122,11 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
 def detect_recomb(
     positions, cell, cutoff_mult: float = 1.08, capture_mult: float = 1.6
 ):
-    """Detect a recombinable V/SIA topology.
+    """Detect a local defect-annihilation topology inside direct-capture range.
 
-    Returns (source_sia_atom_index, vacancy_centroid_xyz) when an
-    over-coordinated SIA atom sits within ``capture_mult * nn`` of the
-    under-coordinated vacancy site, else None. amsel-only (estimate_nn
-    + coordination; CNA-tolerant point defects are caught by the
-    coordination deviation).
+    Returns (source_atom_index, target_centroid_xyz) when an over-coordinated
+    source atom sits within ``capture_mult * nn`` of the under-coordinated
+    target void, else None.
     """
     topology = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
     if topology is None:
@@ -131,21 +141,20 @@ def recombination_search_center(
     positions,
     cell,
     cutoff_mult: float = 1.08,
-    capture_mult: float = 1.6,
+    capture_mult: float | None = None,
 ):
-    """Return the SIA filler atom that should receive a recombination seed."""
+    """Return the source atom that should receive a directed search seed."""
     topology = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
     if topology is None:
         return None
     source_atom, _v_centroid, distance, nn = topology
-    if distance > capture_mult * nn:
+    if capture_mult is not None and distance > capture_mult * nn:
         return None
     return int(source_atom)
 
 
 def build_product(positions, cell, source_atom: int, target_centroid):
-    """Recombined-product geometry via amsel.build_recomb_product_positions:
-    translate the SIA filler atom onto the vacancy site."""
+    """Product geometry from source-to-target translation via amsel."""
     from amsel import build_recomb_product_positions
 
     celld = _cell_diag(cell).tolist()
@@ -163,27 +172,27 @@ def recomb_push(
     central_atom_idx: int,
     push_step_size: float = 0.1,
     cutoff_mult: float = 1.08,
-    capture_mult: float = 1.6,
+    capture_mult: float | None = None,
 ):
     """Per-atom initial-push array (nat, 3) seeding a pARTn search ALONG
-    the recombination direction, or None when this central atom is not a
-    recombinable SIA filler.
+    the local annihilation direction, or None when this central atom is not
+    the source atom.
 
     The push is the min-image displacement reactant -> recombined product
     (from amsel.build_recomb_product_positions), restricted to the atoms
     that actually move and rescaled so the largest displacement equals
     push_step_size. Fed to pARTn via set("push", ...) (push_mode=input),
-    it points the min-mode search straight at the attractive recombined
-    sink instead of a random direction. numpy (nat, 3) C-order maps to
-    ARTn's fortran (3, nat).
+    it points the min-mode search at the topology-suggested product instead
+    of a random direction. numpy (nat, 3) C-order maps to ARTn's fortran
+    (3, nat).
     """
     det = _nearest_recomb_topology(positions, cell, cutoff_mult=cutoff_mult)
     if det is None:
         return None
     source_atom, v_centroid, distance, nn = det
-    if distance > capture_mult * nn:
+    if capture_mult is not None and distance > capture_mult * nn:
         return None
-    # Only seed when the search is centred on the SIA filler itself.
+    # Only seed when the search is centred on the selected source atom.
     if int(central_atom_idx) != int(source_atom):
         return None
     product = np.asarray(
@@ -210,7 +219,9 @@ def n_defects(positions, cell, cutoff_mult: float = 1.08) -> int:
         return -1
     pos = np.asarray(positions, dtype=float)
     celld = _cell_diag(cell)
-    nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0) or 2.56
+    nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0)
+    if nn is None or nn <= 0.0:
+        return -1
     cn = _coordination(pos, celld, cutoff_mult * nn)
     if cn.size == 0:
         return 0

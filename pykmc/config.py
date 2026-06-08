@@ -55,11 +55,10 @@ class ControlConfig(BaseModel):
 
     amsel_recomb_inject: bool = Field(
         default=False,
-        description="When True, apply the barrierless V/SIA capture directly "
-        "as a downhill kMC step when the pair is within the spontaneous "
-        "capture radius (validated by minimizing the amsel recomb product). "
-        "Supplies the saddle-less recombination transition that pARTn cannot "
-        "find; metastable separations fall through to normal migration.",
+        description="When True, apply an AMSEL local defect-annihilation "
+        "candidate directly as a downhill kMC step only when product "
+        "minimization validates a lower-energy defect-removing sink. "
+        "Metastable separations fall through to normal migration.",
     )
     kdb_path: Optional[str] = Field(
         default=None,
@@ -253,18 +252,18 @@ class PartnConfig(BaseModel):
     amsel_recomb_seed: bool = Field(
         default=False,
         description="When True, seed the pARTn initial push toward the "
-        "recombined crystal (the barrierless attractive sink) whenever the "
-        "central atom is an SIA filler within the capture radius of a "
-        "vacancy. The push is amsel.build_recomb_product_positions minus the "
-        "reactant, set via ARTn push_mode=input. Makes the otherwise "
-        "saddle-invisible capture event discoverable. In active-volume mode "
-        "the push is remapped onto the active atom set (atom_map).",
+        "AMSEL local-annihilation product whenever the central atom is the "
+        "topology-selected source atom. The push is "
+        "amsel.build_recomb_product_positions minus the reactant, set via "
+        "ARTn push_mode=input. In active-volume mode the push is remapped "
+        "onto the active atom set (atom_map).",
     )
     amsel_recomb_capture_mult: float = Field(
         default=1.6,
-        description="Capture radius for amsel recomb seeding, as a multiple "
-        "of the nearest-neighbour spacing. The seed fires only when an SIA "
-        "sits within this distance of a vacancy.",
+        description="Direct-capture validation radius for AMSEL local "
+        "defect annihilation, as a multiple of the inferred nearest-"
+        "neighbour spacing. Directed pARTn seeding uses the local topology "
+        "candidate and lets pARTn validate the saddle.",
     )
 
     push_dist_thr: float = Field(
@@ -550,8 +549,7 @@ class RateConstantConfig(BaseModel):
     saddle_freq_invcm: float = Field(
         default=0.0,
         description="Magnitude of the saddle imaginary frequency (cm^-1) for "
-        "the amsel-vtst Wigner+Eckart factors. 0 disables them (Cu: quantum "
-        "tunnelling negligible).",
+        "the amsel-vtst Wigner+Eckart factors. 0 disables them.",
     )
     friction_inv_s: float = Field(
         default=0.0,

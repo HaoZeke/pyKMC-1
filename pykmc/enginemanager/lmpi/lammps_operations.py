@@ -20,9 +20,9 @@ from ...result import  (
 add_pypartn_interface_paths()
 
 # A saddle whose two relaxed minima differ by more than this (eV) is treated as
-# a transition to a strong sink (e.g. V/SIA recombination, which releases
-# ~5 eV) and accepted even when neither minimum sits within delr_threshold of
-# the search origin. Ordinary migrations have small |dE| and are unaffected.
+# a transition to a strong local sink and accepted even when neither minimum
+# sits within delr_threshold of the search origin. Ordinary migrations have
+# small |dE| and are unaffected.
 _RECOMB_SINK_DE_EV = 2.0
 
 
@@ -273,11 +273,9 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
     )  # if true fortran runtime error when event not found
     artn.set("zseed", config.partn.zseed)
 
-    #Initial push (optionally amsel-seeded toward the recombination sink)
-    # The recombined crystal is a barrierless attractive sink; a random
-    # min-mode push never finds the capture. When the central atom is the
-    # SIA filler, seed pARTn's initial push along (product - reactant)
-    # toward the vacancy via set("push", ...) (forces push_mode=input).
+    # Initial push optionally seeded toward the AMSEL local-annihilation
+    # product. The central atom must match the topology-selected source
+    # atom, and pARTn still validates whether the path has a saddle.
     _seed = None
     if (
         getattr(config.partn, "amsel_recomb_seed", False)
@@ -289,8 +287,6 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
             _g = recomb_push(
                 positions, cell, central_atom_idx,
                 push_step_size=config.partn.push_step_size,
-                capture_mult=getattr(
-                    config.partn, "amsel_recomb_capture_mult", 1.6),
             )
             if _g is not None:
                 # Restrict the full-system push to the atoms pARTn sees.
@@ -364,13 +360,12 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
             E_min2 = artn.extract("etot_min2")
             saddle_eigenvalue = artn.extract("eigval_sad")
             # Ordinarily a process is accepted when one relaxed minimum sits
-            # within delr_threshold of the search origin. A V/SIA recombination
-            # saddle does not: its product is the recombined crystal, a distant
-            # NEW minimum (delr large on the product side), and the shallow
-            # metastable reactant relaxes collectively (delr also > threshold).
-            # Such a transition is physical when one minimum is strongly
-            # downhill -- the recombination sink releases ~5 eV. Accept it even
-            # though neither relaxed minimum is within delr_threshold of origin.
+            # within delr_threshold of the search origin. A local-annihilation
+            # saddle can connect to a distant product minimum, while the
+            # shallow metastable reactant relaxes collectively. Such a
+            # transition is physical when one minimum is strongly downhill.
+            # Accept it even though neither relaxed minimum is within
+            # delr_threshold of origin.
             connected = (delr1 < delr_threshold or delr2 < delr_threshold)
             strong_downhill = abs(E_min1 - E_min2) > _RECOMB_SINK_DE_EV
             if connected or strong_downhill:

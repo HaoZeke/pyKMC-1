@@ -684,12 +684,10 @@ class KMC:
                 ),
             )
 
-            # == amsel barrierless capture (recombination sink) ==
-            # The final V/SIA capture is downhill with no saddle, so neither
-            # pARTn nor any min-mode search ever proposes it. When the defect
-            # pair is within the SPONTANEOUS capture radius (the amsel
-            # recomb product minimizes to a defect-free lower-energy state),
-            # apply it directly as one downhill kMC step instead of searching.
+            # == amsel downhill local-annihilation capture ==
+            # A topology-suggested product can be applied directly only when
+            # minimization validates a lower-energy, defect-removing sink.
+            # Other local candidates fall through to saddle-based search.
             if getattr(self.config.control, "amsel_recomb_inject", False):
                 dt_cap = self._try_amsel_capture()
                 if dt_cap is not None:
@@ -974,15 +972,13 @@ class KMC:
         return remaining
 
     def _try_amsel_capture(self):
-        """Apply the barrierless V/SIA recombination directly when the pair
-        is within the spontaneous capture radius. Returns dt (seconds) on
-        capture, else None.
+        """Apply an AMSEL local-annihilation product directly when it is
+        inside the direct-capture radius. Returns dt (seconds) on capture,
+        else None.
 
-        Validated by minimizing the amsel recomb product: fires ONLY when
-        the product is defect-free AND lower in energy than the current
-        state (a true downhill sink), so metastable separations fall
-        through to normal saddle-based migration. This supplies the one
-        transition no saddle search can find (the sink has no saddle)."""
+        Product minimization must reduce the defect signal and lower the
+        energy, so metastable separations fall through to normal saddle-based
+        migration."""
         self._amsel_recomb_search_suppressed = False
         try:
             from .basins.amsel_recomb import (
@@ -1029,7 +1025,7 @@ class KMC:
         dt = (1.0 / pref) if pref > 0 else 1.0e-13
         self.loggers.info(
             "log",
-            "\t :=> amsel barrierless capture applied (downhill sink, "
+            "\t :=> amsel local-annihilation capture applied (downhill sink, "
             "n_defects {}->{}); dt={:.3e}s".format(nd_cur, nd_prod, dt),
         )
         return dt
