@@ -229,6 +229,70 @@ def test_frontier_state_search_uses_local_pool_and_restores_global(monkeypatch):
     assert manager.using_global is True
 
 
+def test_frontier_state_search_suppresses_duplicate_failed_environments(monkeypatch):
+    unknown = "unknown-env"
+    executions = []
+
+    class FakeEventSearch:
+        def __init__(self, config, system, manager, loggers):
+            self.config = config
+
+        def execute(self, central_atom_research_list):
+            executions.append(list(central_atom_research_list))
+
+        def get_successes_results(self):
+            return []
+
+    class FakeReferenceTable:
+        def add_events(self, events):
+            return []
+
+    config = SimpleNamespace(
+        basin=SimpleNamespace(
+            frontier_event_searches=1,
+            frontier_search_nevalf_max=80,
+        ),
+        partn=SimpleNamespace(
+            amsel_recomb_seed=False,
+            nevalf_max=1200,
+            evalf_max=2400,
+        ),
+    )
+
+    def make_state():
+        return StateData(
+            system=System(
+                positions=np.zeros((1, 3)),
+                types=np.array(["Cu"]),
+                cell=np.eye(3) * 10.0,
+                pbc=True,
+                index=np.arange(1),
+            ),
+            environment=SimpleNamespace(atomic_environment_list=[unknown]),
+            neighbors_list=None,
+            transient=True,
+        )
+
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=FakeReferenceTable(),
+        known_environments=set(),
+        manager=SimpleNamespace(use_local=lambda: None, use_global=lambda: None),
+    )
+
+    monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
+
+    assert (
+        basin._try_search_unknown_state_environments(make_state(), state_index=1)
+        is False
+    )
+    assert (
+        basin._try_search_unknown_state_environments(make_state(), state_index=2)
+        is False
+    )
+    assert executions == [[0]]
+
+
 class TestBasin : 
 
     def test_connectivity_table_construction(self, test_logger, config_Cu, reference_table_Cu_fake, system_Cu, visited_environments_Cu) : 

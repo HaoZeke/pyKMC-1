@@ -149,6 +149,7 @@ class BasinsGenericEvents() :
         self.exploration_order: list[int] = []
         self.exploration_decisions: list[dict[str, object]] = []
         self.frontier_search_attempted_states: set[int] = set()
+        self.frontier_search_attempted_environments: set[object] = set()
 
     def detection(self, params) -> bool : 
         """Utility method."""
@@ -247,6 +248,7 @@ class BasinsGenericEvents() :
         self.exploration_order = []
         self.exploration_decisions = []
         self.frontier_search_attempted_states = set()
+        self.frontier_search_attempted_environments = set()
         self.absorbing_refinement_diagnostics = {}
         self.unresolved_frontier_diagnostics = {}
         self.frontier_boundary_diagnostics = {}
@@ -1146,17 +1148,37 @@ class BasinsGenericEvents() :
         ]
         if not unknown_environments:
             return True
+        if not hasattr(self, "frontier_search_attempted_environments"):
+            self.frontier_search_attempted_environments = set()
+        search_environments = [
+            env
+            for env in unknown_environments
+            if self._frontier_environment_key(env)
+            not in self.frontier_search_attempted_environments
+        ]
+        suppressed = len(unknown_environments) - len(search_environments)
+        if suppressed:
+            self._log(
+                "\t :=> AMSEL frontier search suppressed {} duplicate unknown basin environments".format(
+                    suppressed
+                )
+            )
+        if not search_environments:
+            return False
+        self.frontier_search_attempted_environments.update(
+            self._frontier_environment_key(env) for env in search_environments
+        )
 
         central_atoms = self._frontier_central_atoms_research(
             state,
-            unknown_environments,
+            search_environments,
             nsearch,
         )
         if not central_atoms:
             return False
         self._log(
             "\t :=> AMSEL frontier search over {} unknown basin environments".format(
-                len(unknown_environments)
+                len(search_environments)
             )
         )
         event_search = EventSearch(self.config, state.system, self.manager, self.loggers)
@@ -1184,6 +1206,13 @@ class BasinsGenericEvents() :
             )
         )
         return not self.is_states_has_unknown_environments(state)
+
+    def _frontier_environment_key(self, environment):
+        try:
+            hash(environment)
+        except TypeError:
+            return repr(environment)
+        return environment
 
     def _frontier_central_atoms_research(
         self,
