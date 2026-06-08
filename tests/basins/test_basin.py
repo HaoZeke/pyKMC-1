@@ -1014,6 +1014,140 @@ class TestBasin :
             "unresolved_rate": pytest.approx(1.0),
         }
 
+    def test_absorbing_refinement_continues_after_rate_update_committor_drift(
+        self, monkeypatch
+    ):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": state_connexion,
+                    "event_connexion": state_connexion,
+                    "central_atom": central_atom,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                }
+                for state_connexion, central_atom in ((1, 10), (2, 20), (3, 30))
+            ]
+        )
+
+        class FakeSelector:
+            def diagnose_connectivity(self, connectivity_table, entry=0):
+                df = connectivity_table.df
+                total_rate = float(df["k_forward"].sum())
+                return {
+                    "ok": True,
+                    "ngt_outlets": [
+                        {
+                            "ok": True,
+                            "absorbing_state": int(row["state_connexion"]),
+                            "committor": float(row["k_forward"]) / total_rate,
+                        }
+                        for _, row in df.iterrows()
+                    ],
+                }
+
+        class FakeFuture:
+            def __init__(self, value):
+                self.value = value
+
+            def result(self):
+                return self.value
+
+        class FakeManager:
+            def __init__(self):
+                self.refined_centers = []
+
+            def get_total_energy(self, **_kwargs):
+                return FakeFuture(0.0)
+
+            def partn_refine(self, _config, central_atom, *_args):
+                self.refined_centers.append(int(central_atom))
+                saddle_energy = 0.01 if int(central_atom) in {10, 20} else 1.0
+                return FakeFuture(Ok(SimpleNamespace(E_saddle=saddle_energy)))
+
+        class FakeNeighbors:
+            def get_neighbors(self, *_args):
+                return np.array([0])
+
+        class FakeState:
+            def __init__(self):
+                self.system = System(
+                    positions=np.array([[0.0, 0.0, 0.0]]),
+                    types=np.array(["Cu"]),
+                    cell=np.eye(3) * 10.0,
+                    pbc=True,
+                    index=np.array([0]),
+                )
+                self.neighbors_list = FakeNeighbors()
+
+            def ensure_full_state(self, _config):
+                return None
+
+            def release_heavy_objects(self):
+                return None
+
+        class FakeRegistration:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def match(self):
+                return Ok(
+                    SimpleNamespace(
+                        rotation_matrix=np.eye(3),
+                        translation_matrix=np.zeros(3),
+                        permutation_matrix=np.array([0]),
+                    )
+                )
+
+        monkeypatch.setattr(basin_module, "AmselFPTASelector", FakeSelector)
+        monkeypatch.setattr(basin_module, "PointSetRegistration", FakeRegistration)
+        monkeypatch.setattr(basin_module, "check_match", lambda result, _thr: result)
+        monkeypatch.setattr(
+            basin_module,
+            "compute_rate_Eyring",
+            lambda dE, _config: float(dE),
+        )
+
+        reference_table = SimpleNamespace(
+            table=pd.DataFrame(
+                [
+                    {
+                        "idx_ref": idx_ref,
+                        "saddle_positions": np.array([[0.5, 0.0, 0.0]]),
+                    }
+                    for idx_ref in (1, 2, 3)
+                ]
+            )
+        )
+        manager = FakeManager()
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(
+                max_absorbing_refinements=None,
+                frontier_committor_tol=0.40,
+            ),
+            control=SimpleNamespace(active_volume=True),
+            psr=SimpleNamespace(matching_score_thr=0.4),
+        )
+        basin.connectivity_table = table
+        basin.reference_table = reference_table
+        basin.manager = manager
+        basin.states = {0: FakeState()}
+        basin.absorbing_saddle_positions = {}
+        basin.basin_search_registry = None
+
+        result = basin.refine_absorbing(system=object())
+
+        assert result.is_ok(), result.err_value() if not result.is_ok() else None
+        assert manager.refined_centers == [10, 20, 30]
+        assert basin.absorbing_refinement_diagnostics["unresolved_committor"] == 0.0
+
     def test_frontier_budget_records_unresolved_committor(self, monkeypatch):
         table = BasinStatesConnectivity()
         table.df = pd.DataFrame(
