@@ -1069,7 +1069,14 @@ class TestBasin :
             def partn_refine(self, _config, central_atom, *_args):
                 self.refined_centers.append(int(central_atom))
                 saddle_energy = 0.01 if int(central_atom) in {10, 20} else 1.0
-                return FakeFuture(Ok(SimpleNamespace(E_saddle=saddle_energy)))
+                return FakeFuture(
+                    Ok(
+                        SimpleNamespace(
+                            E_saddle=saddle_energy,
+                            saddle_positions=np.array([[0.5, 0.0, 0.0]]),
+                        )
+                    )
+                )
 
         class FakeNeighbors:
             def get_neighbors(self, *_args):
