@@ -367,7 +367,8 @@ def environment_search_evidence_trace_lines(
                 "\t :=> AMSEL process coverage env={}; "
                 "attempts={}; observations={}; unique_processes={}; "
                 "singleton_processes={}; missing_process_mass={:.6e}; "
-                "missing_rate_mass={:.6e}; needs_more_search={}"
+                "missing_rate_mass={:.6e}; missing_rate_fraction={:.6e}; "
+                "kinetic_coverage_lower={:.6e}; needs_more_search={}"
             ).format(
                 _environment_label(environment),
                 int(certificate["attempts"]),
@@ -376,6 +377,8 @@ def environment_search_evidence_trace_lines(
                 int(certificate["singleton_processes"]),
                 float(certificate["missing_process_mass"]),
                 float(certificate["missing_rate_mass"]),
+                float(certificate["missing_rate_fraction"]),
+                float(certificate["kinetic_coverage_lower"]),
                 bool(certificate["needs_more_search"]),
             )
         )
@@ -430,7 +433,51 @@ def _process_search_certificate_with_rate_scale(
         missing_rate_mass=float(certificate["missing_rate_mass"]),
         known_rate_mass=rate_scale,
     )
+    certificate.update(
+        _rate_gap_certificate_terms(
+            known_rate_mass=rate_scale,
+            missing_rate_mass=float(certificate["missing_rate_mass"]),
+        )
+    )
     return certificate
+
+
+def _rate_gap_certificate_terms(
+    *,
+    known_rate_mass: float,
+    missing_rate_mass: float,
+) -> dict[str, float]:
+    if math.isinf(float(missing_rate_mass)):
+        return {
+            "relative_missing_rate": math.inf,
+            "missing_rate_fraction": 1.0,
+            "kinetic_coverage_lower": 0.0,
+        }
+    if float(known_rate_mass) > 0.0:
+        total_rate_mass_upper = float(known_rate_mass) + float(missing_rate_mass)
+        if total_rate_mass_upper > 0.0:
+            return {
+                "relative_missing_rate": (
+                    float(missing_rate_mass) / float(known_rate_mass)
+                ),
+                "missing_rate_fraction": (
+                    float(missing_rate_mass) / total_rate_mass_upper
+                ),
+                "kinetic_coverage_lower": (
+                    float(known_rate_mass) / total_rate_mass_upper
+                ),
+            }
+    if float(missing_rate_mass) > 0.0:
+        return {
+            "relative_missing_rate": math.inf,
+            "missing_rate_fraction": 1.0,
+            "kinetic_coverage_lower": 0.0,
+        }
+    return {
+        "relative_missing_rate": 0.0,
+        "missing_rate_fraction": 0.0,
+        "kinetic_coverage_lower": 1.0,
+    }
 
 
 def _process_search_rate_scale(
