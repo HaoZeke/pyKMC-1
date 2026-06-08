@@ -326,6 +326,27 @@ def undercovered_environments_for_search(
     return searchable
 
 
+def coverage_repair_search_batch(
+    search_environments,
+    environment_search_evidence,
+    *,
+    searches_per_environment: int,
+    known_rate_scale: float | None,
+) -> list[str | bytes]:
+    ranked_environments = sorted(
+        list(search_environments),
+        key=lambda environment: _coverage_search_priority_key(
+            environment,
+            environment_search_evidence.get(environment),
+            known_rate_scale=known_rate_scale,
+        ),
+    )
+    if not ranked_environments:
+        return []
+    extra_searches = max(0, int(searches_per_environment) - 1)
+    return ranked_environments + [ranked_environments[0]] * extra_searches
+
+
 def coverage_resampling_attempt_limit(searches_per_environment: int) -> int:
     """Return the finite retry budget for adaptive coverage resampling."""
     rate_gap_attempts = (
@@ -1193,6 +1214,16 @@ class KMC:
                 if not search_environments:
                     break
                 round_search_environments = list(search_environments)
+                if not disable_coverage_resampling and not first_round:
+                    round_search_environments = coverage_repair_search_batch(
+                        round_search_environments,
+                        self.environment_search_evidence,
+                        searches_per_environment=searches_per_environment,
+                        known_rate_scale=current_known_process_rate_mass(
+                            self.atomic_environment.atomic_environment_list,
+                            self.environment_search_evidence,
+                        ),
+                    )
                 if remaining_search_budget is not None:
                     if remaining_search_budget <= 0:
                         self.loggers.info(
