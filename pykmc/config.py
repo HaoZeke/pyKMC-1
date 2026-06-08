@@ -688,7 +688,7 @@ class BasinConfig(BaseModel):
         description="Number of pARTn event searches per unknown atomic environment in reconstructed basin frontier states.",
     )
     frontier_search_nevalf_max: int = Field(
-        default=300,
+        default=80,
         gt=0,
         description="pARTn force-evaluation cap used only for reconstructed basin frontier event searches.",
     )

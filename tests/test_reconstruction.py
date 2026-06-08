@@ -47,3 +47,4 @@ def test_basin_reconstruction_uses_main_minimizer_by_default():
     assert BasinConfig().reconstruction_minimize is None
     assert BasinConfig().selector == "auto"
     assert BasinConfig().exploration_priority == "auto"
+    assert BasinConfig().frontier_search_nevalf_max == 80
