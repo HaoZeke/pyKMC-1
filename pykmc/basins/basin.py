@@ -30,6 +30,8 @@ REFINEMENT_CONTEXT_COLUMNS = (
     "transient",
 )
 
+_NO_FRONTIER_NEVALF_OVERRIDE = object()
+
 
 def _refinement_error_with_row_context(
     error: ErrorInfo,
@@ -1160,7 +1162,11 @@ class BasinsGenericEvents() :
         if hasattr(self.manager, "use_global"):
             self.manager.use_global()
         event_search = EventSearch(self.config, state.system, self.manager, self.loggers)
-        event_search.execute(central_atoms)
+        original_nevalf_max = self._set_frontier_search_nevalf_max()
+        try:
+            event_search.execute(central_atoms)
+        finally:
+            self._restore_frontier_search_nevalf_max(original_nevalf_max)
         events = event_search.get_successes_results()
         if self.prefactor_attacher is not None:
             self.prefactor_attacher(events)
@@ -1221,6 +1227,31 @@ class BasinsGenericEvents() :
             return recombination_search_center(state.system.positions, state.system.cell)
         except Exception:
             return None
+
+    def _set_frontier_search_nevalf_max(self):
+        partn = getattr(self.config, "partn", None)
+        if partn is None or not hasattr(partn, "nevalf_max"):
+            return _NO_FRONTIER_NEVALF_OVERRIDE
+        original = getattr(partn, "nevalf_max")
+        cap = int(
+            getattr(
+                getattr(self.config, "basin", None),
+                "frontier_search_nevalf_max",
+                300,
+            )
+            or 300
+        )
+        if original is None:
+            setattr(partn, "nevalf_max", cap)
+        else:
+            setattr(partn, "nevalf_max", min(int(original), cap))
+        return original
+
+    def _restore_frontier_search_nevalf_max(self, original) -> None:
+        partn = getattr(self.config, "partn", None)
+        if partn is None or original is _NO_FRONTIER_NEVALF_OVERRIDE:
+            return
+        setattr(partn, "nevalf_max", original)
 
     def _searched_frontier_environments(
         self,

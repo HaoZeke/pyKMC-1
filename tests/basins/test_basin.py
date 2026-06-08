@@ -82,6 +82,60 @@ def test_frontier_state_searches_unknown_environments(monkeypatch):
     assert prefactor_events == [event_output]
     assert basin.known_environments == {known, unknown}
 
+
+def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
+    known = "known-env"
+    unknown = "unknown-env"
+    event_output = SimpleNamespace(central_atom_index=1)
+    seen_nevalf = []
+
+    class FakeEventSearch:
+        def __init__(self, config, system, manager, loggers):
+            self.config = config
+            self.results = [Ok(event_output)]
+
+        def execute(self, central_atom_research_list):
+            seen_nevalf.append(int(self.config.partn.nevalf_max))
+
+        def get_successes_results(self):
+            return [event_output]
+
+    class FakeReferenceTable:
+        def add_events(self, events):
+            return [Ok(pd.DataFrame({"idx_ref": [0]}))]
+
+    config = SimpleNamespace(
+        basin=SimpleNamespace(
+            frontier_event_searches=1,
+            frontier_search_nevalf_max=300,
+        ),
+        partn=SimpleNamespace(amsel_recomb_seed=False, nevalf_max=1200),
+    )
+    state = StateData(
+        system=System(
+            positions=np.zeros((2, 3)),
+            types=np.array(["Cu", "Cu"]),
+            cell=np.eye(3) * 10.0,
+            pbc=True,
+            index=np.arange(2),
+        ),
+        environment=SimpleNamespace(atomic_environment_list=[known, unknown]),
+        neighbors_list=None,
+        transient=True,
+    )
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=FakeReferenceTable(),
+        known_environments={known},
+        manager=SimpleNamespace(use_global=lambda: None),
+    )
+
+    monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
+
+    assert basin._try_search_unknown_state_environments(state) is True
+    assert seen_nevalf == [300]
+    assert config.partn.nevalf_max == 1200
+
 class TestBasin : 
 
     def test_connectivity_table_construction(self, test_logger, config_Cu, reference_table_Cu_fake, system_Cu, visited_environments_Cu) : 
