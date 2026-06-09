@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from types import SimpleNamespace
 
+import pytest
+
 from pykmc.result import Err, ErrorInfo, ErrorType
 from pykmc.event_table import (
     ActiveEventTable,
@@ -80,6 +82,56 @@ def test_reference_event_add_links_two_direction_events_recursively():
 
     assert table.table["idx_ref"].tolist() == [0, 1]
     assert table.table["idx_backward"].tolist() == [1, 0]
+
+
+def test_reference_event_table_raises_when_configured_kdb_open_fails(monkeypatch):
+    import pykmc.basins.amsel_kdb_catalog as kdb_catalog
+
+    class FailingKdb:
+        def __init__(self, *_args, **_kwargs):
+            raise RuntimeError("open failed")
+
+    monkeypatch.setattr(kdb_catalog, "AmselKdbCatalog", FailingKdb)
+    config = SimpleNamespace(
+        control=SimpleNamespace(reference_table=None, kdb_path="shared-kdb"),
+        rateconstant=SimpleNamespace(T=300.0),
+    )
+
+    with pytest.raises(RuntimeError, match="shared-kdb"):
+        ReferenceEventTable(config)
+
+
+def test_reference_event_add_raises_when_configured_kdb_store_fails():
+    class FailingKdb:
+        def store_row(self, _row):
+            raise RuntimeError("store failed")
+
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.kdb = FailingKdb()
+    table.table = pd.DataFrame(
+        {
+            "idx_ref": pd.Series(dtype="int64"),
+            "event_id": pd.Series(dtype="str"),
+            "id_final": pd.Series(dtype="str"),
+            "energy_barrier": pd.Series(dtype="float64"),
+            "k": pd.Series(dtype="float64"),
+            "idx_backward": pd.Series(dtype="int64"),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="store failed"):
+        table.add(
+            pd.Series(
+                {
+                    "idx_ref": -1,
+                    "event_id": "env-a",
+                    "id_final": "env-b",
+                    "energy_barrier": 0.10,
+                    "k": 2.0,
+                    "idx_backward": -1,
+                }
+            )
+        )
 
 
 def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch):
