@@ -648,6 +648,60 @@ def test_generate_cu_vac_sia_config_targets_requested_separation(tmp_path):
     ) in positions
 
 
+def test_generate_cu_random_vacancy_sia_config_is_seeded(tmp_path):
+    script = _load_script()
+    first = tmp_path / "first.xyz"
+    second = tmp_path / "second.xyz"
+    third = tmp_path / "third.xyz"
+
+    metadata_first = script.generate_cu_random_vacancy_sia_config(
+        first,
+        seed=11,
+        cells=3,
+        lattice_parameter_A=3.6,
+    )
+    metadata_second = script.generate_cu_random_vacancy_sia_config(
+        second,
+        seed=11,
+        cells=3,
+        lattice_parameter_A=3.6,
+    )
+    metadata_third = script.generate_cu_random_vacancy_sia_config(
+        third,
+        seed=12,
+        cells=3,
+        lattice_parameter_A=3.6,
+    )
+
+    assert first.read_text() == second.read_text()
+    assert metadata_first == metadata_second
+    assert metadata_first["vacancy_seed"] == 11
+    assert metadata_first["atom_count"] == 108
+    assert metadata_first["initial_config_mode"] == "random-vacancy"
+    assert metadata_first["vacancy_position_A"] != metadata_first["sia_center_A"]
+    assert metadata_first["vacancy_position_A"] != metadata_third["vacancy_position_A"]
+
+    positions = [
+        tuple(float(value) for value in line.split()[1:4])
+        for line in first.read_text().splitlines()[2:]
+    ]
+    vacancy = tuple(metadata_first["vacancy_position_A"])
+    center = tuple(metadata_first["sia_center_A"])
+    dumbbell_half = float(metadata_first["dumbbell_half_separation_A"])
+    assert vacancy not in positions
+    assert center not in positions
+    assert (
+        center[0] - dumbbell_half,
+        center[1],
+        center[2],
+    ) in positions
+    assert (
+        center[0] + dumbbell_half,
+        center[1],
+        center[2],
+    ) in positions
+
+
 def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     script = _load_script()
     out = tmp_path / "out"
@@ -906,6 +960,76 @@ def test_cli_dry_run_generates_cu_separation_config(tmp_path):
         manifest["cu_initial_config_metadata"]["nearest_neighbor_A"],
         3.61 / math.sqrt(2.0),
     )
+
+
+def test_cli_dry_run_generates_cu_random_vacancy_configs_per_trial(tmp_path):
+    script = _load_script()
+    out = tmp_path / "out"
+    template = tmp_path / "input.in"
+    template.write_text(
+        "[Control]\n"
+        "initial_config = ./old.xyz\n"
+        "n_steps = 1\n"
+        "[pARTn]\n"
+        "path_artnso = ./old.so\n"
+        "zseed = 0\n"
+        "[EventSearch]\n"
+        "nsearch = 20\n"
+        "[Lammps]\n"
+        "pair_coeff = * * ./Cu.eam Cu\n"
+        "[BASIN]\n"
+        "energy_thr = 0.5\n"
+    )
+    (tmp_path / "Cu.eam").write_text("potential")
+
+    code = script.main(
+        [
+            "--case",
+            "cu-vac-sia",
+            "--template-input",
+            str(template),
+            "--partn-path",
+            str(tmp_path / "libartn-lmp.so"),
+            "--priority",
+            "amsel",
+            "--trials",
+            "2",
+            "--seed",
+            "10",
+            "--max-steps",
+            "5",
+            "--cu-random-vacancy",
+            "--dry-run",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert code == 0
+    generated_0 = out / "amsel" / "trial-0" / "initial_config.xyz"
+    generated_1 = out / "amsel" / "trial-1" / "initial_config.xyz"
+    assert generated_0.exists()
+    assert generated_1.exists()
+    assert generated_0.read_text() != generated_1.read_text()
+
+    commands = json.loads((out / "commands.json").read_text())
+    assert commands[0]["cu_initial_config_metadata"]["vacancy_seed"] == 10
+    assert commands[1]["cu_initial_config_metadata"]["vacancy_seed"] == 11
+    assert commands[0]["cu_initial_config_metadata"]["initial_config_mode"] == (
+        "random-vacancy"
+    )
+    assert commands[0]["cu_initial_config_metadata"]["vacancy_position_A"] != (
+        commands[1]["cu_initial_config_metadata"]["vacancy_position_A"]
+    )
+
+    config = configparser.ConfigParser()
+    config.optionxform = str
+    config.read(out / "amsel" / "trial-1" / "input.in")
+    assert config["Control"]["initial_config"] == str(generated_1)
+
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["cu_initial_config_mode"] == "random-vacancy"
+    assert manifest["cu_initial_config_metadata"] is None
 
 
 def test_cli_rejects_amsel_priority_when_runtime_probe_fails(tmp_path, monkeypatch):
