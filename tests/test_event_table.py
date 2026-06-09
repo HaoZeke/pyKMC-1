@@ -256,7 +256,7 @@ def test_reference_event_add_persists_reconstructable_kdb_rows():
     assert [row["prefactor_inv_s"] for row in table.kdb.rows] == [1.1e13, 2.2e13]
 
 
-def test_reference_event_add_with_prefactors_skips_duplicate_prefactor_work():
+def test_reference_event_add_with_prefactors_skips_duplicate_prefactor_work(monkeypatch):
     table = ReferenceEventTable.__new__(ReferenceEventTable)
     table.kdb = None
     table.config = SimpleNamespace(
@@ -269,7 +269,7 @@ def test_reference_event_add_with_prefactors_skips_duplicate_prefactor_work():
         atomicenvironment=SimpleNamespace(rnei=0.1, rcut=0.5),
         ira=SimpleNamespace(kmax_factor=2.0, sym_thr=0.1),
         psr=SimpleNamespace(matching_score_thr=0.4),
-        rateconstant=SimpleNamespace(style="constant"),
+        rateconstant=SimpleNamespace(style="constant", T=300.0, k0=1.0e13),
     )
     saddle = np.array([[0.1, 0.0, 0.0]], dtype=float)
     table.table = pd.DataFrame(
@@ -301,19 +301,17 @@ def test_reference_event_add_with_prefactors_skips_duplicate_prefactor_work():
 
     import pykmc.event_table as event_table
 
-    event_table_graph = event_table.graph
-    event_table_symmetries = event_table.unique_symmetries
-    try:
-        event_table.graph = lambda *_args, **_kwargs: ["env-a"]
-        event_table.unique_symmetries = lambda *_args, **_kwargs: (
+    monkeypatch.setattr(event_table, "graph", lambda *_args, **_kwargs: ["env-a"])
+    monkeypatch.setattr(
+        event_table,
+        "unique_symmetries",
+        lambda *_args, **_kwargs: (
             [np.eye(3)],
             [np.array([0])],
-        )
+        ),
+    )
 
-        results = table.add_events_with_prefactors([event], fail_prefactor)
-    finally:
-        event_table.graph = event_table_graph
-        event_table.unique_symmetries = event_table_symmetries
+    results = table.add_events_with_prefactors([event], fail_prefactor)
 
     assert calls == []
     assert len(results) == 1
