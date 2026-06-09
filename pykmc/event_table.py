@@ -491,7 +491,7 @@ class ReferenceEventTable:
                     self.kdb.store_row(row)
             except Exception as error:
                 raise RuntimeError(
-                    "Could not persist reference event to AMSEL KDB"
+                    f"Could not persist reference event to AMSEL KDB: {error}"
                 ) from error
 
     def has_id_subset_table(self, ids: list[str | bytes]) -> pd.DataFrame:
