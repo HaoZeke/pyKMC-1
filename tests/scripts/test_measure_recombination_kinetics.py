@@ -805,9 +805,9 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert commands[0]["priority"] == "legacy"
     assert commands[0]["event_searches"] == 3
     assert commands[1]["priority"] == "amsel"
-    assert commands[1]["env"]["PYTHONPATH"].split(":")[0] == str(
-        tmp_path / "amsel-python" / "python"
-    )
+    pythonpath_entries = commands[1]["env"]["PYTHONPATH"].split(":")
+    assert pythonpath_entries[0] == str(tmp_path / "amsel-python" / "python")
+    assert pythonpath_entries[1] == str(Path(script.__file__).resolve().parents[1])
 
     config = configparser.ConfigParser()
     config.optionxform = str
