@@ -207,6 +207,40 @@ def test_nearest_recomb_topology_scores_target_shell_projection(monkeypatch):
     )
 
 
+def test_nearest_recomb_topology_uses_geometric_target_for_large_systems(
+    monkeypatch,
+):
+    positions = np.zeros((129, 3), dtype=float)
+    positions[1] = [2.0, 0.0, 0.0]
+    cell = np.eye(3) * 20.0
+    candidate = SimpleNamespace(
+        source_atom=1,
+        source_cluster=(1,),
+        target_cluster=(0,),
+        target_centroid=(5.0, 0.0, 0.0),
+        distance=3.0,
+        nn_spacing=1.0,
+    )
+
+    def fail_n_defects(positions, cell):
+        raise AssertionError("large-system topology lookup must not score products")
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_amsel_defect_annihilation_candidate",
+        lambda positions, cell, cutoff_mult=1.08: candidate,
+    )
+    monkeypatch.setattr(amsel_recomb, "n_defects", fail_n_defects)
+    amsel_recomb._TOPOLOGY_CACHE.clear()
+
+    assert amsel_recomb._nearest_recomb_topology(positions, cell) == (
+        1,
+        [1.0, 0.0, 0.0],
+        1.0,
+        1.0,
+    )
+
+
 def test_nearest_recomb_topology_reuses_position_cache(monkeypatch):
     positions = np.array(
         [
