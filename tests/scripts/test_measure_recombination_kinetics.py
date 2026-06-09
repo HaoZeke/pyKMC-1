@@ -4,6 +4,7 @@ import json
 import math
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -2246,6 +2247,61 @@ def test_execute_trials_records_timeout_as_unusable_kinetics(tmp_path, monkeypat
             "trial": 0,
         }
     ]
+
+
+def test_execute_trials_runs_independent_trials_with_worker_pool(tmp_path, monkeypatch):
+    script = _load_script()
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+    entered = threading.Barrier(2)
+    release = threading.Event()
+
+    def fake_run_trial_subprocess(command, *, cwd, timeout, env=None):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        entered.wait(timeout=1.0)
+        release.set()
+        try:
+            return subprocess.CompletedProcess(command, 0, stdout="ok\n")
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(script, "run_trial_subprocess", fake_run_trial_subprocess)
+    commands = [
+        {
+            "case": "cu-vac-sia",
+            "priority": "amsel",
+            "trial": index,
+            "seed": 4100 + index,
+            "temperature_K": 300.0,
+            "event_searches": 3,
+            "workdir": str(tmp_path / f"trial-{index}"),
+            "command": ["pykmc", str(index)],
+        }
+        for index in range(2)
+    ]
+    for command in commands:
+        Path(command["workdir"]).mkdir()
+
+    rows = script.execute_trials(
+        commands,
+        tmp_path / "events.jsonl",
+        trial_timeout_s=None,
+        trial_workers=2,
+    )
+
+    assert max_active == 2
+    assert release.is_set()
+    assert [row["trial"] for row in rows] == [0, 1]
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "events.jsonl").read_text().splitlines()
+    ]
+    assert [event["trial"] for event in events] == [0, 1]
 
 
 def test_execute_trials_rejects_timeout_vineyard_rate_model(tmp_path, monkeypatch):
