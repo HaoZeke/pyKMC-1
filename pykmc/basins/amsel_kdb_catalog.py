@@ -49,24 +49,25 @@ class AmselKdbCatalog:
         blob = base64.b64encode(pickle.dumps(d)).decode("ascii")
         barrier = float(d.get("energy_barrier", 0.0) or 0.0)
         rate = float(d.get("k", 0.0) or 0.0)
-        product_env = _key(d.get("id_final", b"")) if d.get("id_final") not in (None, "") else b""
-        try:
-            self.store.insert(
-                _key(d.get("event_id", b"")),
-                KdbProcess(
-                    saddle_con=b"",
-                    product_con=b"",
-                    barrier_ev=barrier,
-                    prefactor_inv_s=rate if rate > 0 else 1.0e13,
-                    discovery_temperature=self.T,
-                    context_signature=b"",
-                    usage_hint="RefineFirst",
-                    product_env_hash=product_env,
-                    metadata_json=blob,
-                ),
-            )
-        except Exception:
-            pass  # catalogue persistence is best-effort, never fatal
+        product_env = (
+            _key(d.get("id_final", b""))
+            if d.get("id_final") not in (None, "")
+            else b""
+        )
+        self.store.insert(
+            _key(d.get("event_id", b"")),
+            KdbProcess(
+                saddle_con=b"",
+                product_con=b"",
+                barrier_ev=barrier,
+                prefactor_inv_s=rate if rate > 0 else 1.0e13,
+                discovery_temperature=self.T,
+                context_signature=b"",
+                usage_hint="RefineFirst",
+                product_env_hash=product_env,
+                metadata_json=blob,
+            ),
+        )
 
     def lookup_rows(self, event_id: Any) -> list[pd.Series]:
         """Cached reference-event rows for an environment, or []."""

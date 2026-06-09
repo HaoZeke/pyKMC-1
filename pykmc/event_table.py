@@ -140,8 +140,10 @@ class ReferenceEventTable:
                 self.kdb = AmselKdbCatalog(
                     kdb_path, float(getattr(config.rateconstant, "T", 0.0) or 0.0)
                 )
-            except Exception:
-                self.kdb = None
+            except Exception as error:
+                raise RuntimeError(
+                    f"Could not open configured AMSEL KDB at {kdb_path}"
+                ) from error
 
     def add_events(
         self, events: list[EventSearchOutput]
@@ -487,8 +489,10 @@ class ReferenceEventTable:
             try:
                 for _, row in dfevent.iterrows():
                     self.kdb.store_row(row)
-            except Exception:
-                pass
+            except Exception as error:
+                raise RuntimeError(
+                    "Could not persist reference event to AMSEL KDB"
+                ) from error
 
     def has_id_subset_table(self, ids: list[str | bytes]) -> pd.DataFrame:
         """Return subset table with event having id in ids.
