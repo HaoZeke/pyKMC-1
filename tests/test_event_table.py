@@ -204,6 +204,60 @@ def test_reference_event_ingest_rows_recomputes_cached_rate_for_current_config(
     ]
 
 
+def test_reference_event_ingest_rows_skips_cached_duplicates(monkeypatch):
+    import pykmc.event_table as event_table
+
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.config = SimpleNamespace(
+        ira=SimpleNamespace(kmax_factor=2.0, sym_thr=0.1),
+        psr=SimpleNamespace(matching_score_thr=0.4),
+        rateconstant=SimpleNamespace(style="constant", T=300.0, k0=1.0e13),
+    )
+    saddle = np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=float)
+    table.table = pd.DataFrame(
+        [
+            {
+                "idx_ref": 0,
+                "idx_backward": 0,
+                "event_id": "env-a",
+                "id_final": "env-b",
+                "energy_barrier": 0.2,
+                "saddle_positions": saddle,
+                "k": 1.0,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        event_table,
+        "simple_ira",
+        lambda *_args, **_kwargs: Err(
+            ErrorInfo(
+                type=ErrorType.PSR_NO_MATCH_FOUND,
+                message="native matcher unavailable",
+            )
+        ),
+    )
+
+    table.ingest_rows(
+        [
+            pd.Series(
+                {
+                    "idx_ref": 99,
+                    "idx_backward": 100,
+                    "event_id": "env-a",
+                    "id_final": "env-b",
+                    "energy_barrier": 0.21,
+                    "saddle_positions": saddle.copy(),
+                    "k": 5.0,
+                }
+            )
+        ]
+    )
+
+    assert len(table.table) == 1
+    assert table.table.loc[0, "idx_ref"] == 0
+
+
 def test_reference_event_add_persists_reconstructable_kdb_rows():
     class CapturingKdb:
         def __init__(self):

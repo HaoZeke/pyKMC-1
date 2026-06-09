@@ -131,3 +131,56 @@ def test_amsel_kdb_catalog_compacts_large_keys_and_payloads(tmp_path, monkeypatc
     assert rows[0]["event_id"] == event_id
     assert rows[0]["id_final"] == product_id
     np.testing.assert_allclose(rows[0]["initial_positions"], positions)
+
+
+def test_amsel_kdb_catalog_deduplicates_stable_process_signature(
+    tmp_path,
+    monkeypatch,
+):
+    inserted = {}
+
+    class FakeKdbProcess:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeKdbStore:
+        def __init__(self, path):
+            self.path = path
+
+        def insert(self, env_hash, process):
+            inserted.setdefault(env_hash, []).append(process)
+
+        def lookup(self, env_hash):
+            return list(inserted.get(env_hash, []))
+
+    monkeypatch.setitem(
+        sys.modules,
+        "amsel",
+        types.SimpleNamespace(KdbStore=FakeKdbStore, KdbProcess=FakeKdbProcess),
+    )
+    catalog = AmselKdbCatalog(str(tmp_path / "amsel.kdb"), discovery_temperature=300.0)
+    saddle = np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]], dtype=float)
+    row = {
+        "idx_ref": 1,
+        "idx_backward": 2,
+        "event_id": "env-a",
+        "id_final": "env-b",
+        "id_saddle": "env-s",
+        "energy_barrier": 0.2,
+        "saddle_positions": saddle,
+        "types": np.array(["Cu", "Cu"]),
+        "k": 1.0,
+        "prefactor_inv_s": 6.5e12,
+    }
+    duplicate = dict(row)
+    duplicate["idx_ref"] = 77
+    duplicate["idx_backward"] = 78
+    duplicate["k"] = 9.0
+
+    catalog.store_row(pd.Series(row))
+    catalog.store_row(pd.Series(duplicate))
+
+    assert len(inserted[b"env-a"]) == 1
+    rows = catalog.lookup_rows("env-a")
+    assert len(rows) == 1
+    assert rows[0]["idx_ref"] == 1
