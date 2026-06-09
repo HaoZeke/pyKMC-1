@@ -13,7 +13,7 @@ events found once are reused everywhere (and the KDB's product_env_hash
 
 A pyKMC reference-event row (positions, symmetry matrices, barrier, rate)
 is serialized into a KdbProcess: the heavy numpy payload is base64-pickled
-into metadata_json; barrier_ev / prefactor_inv_s carry the kinetics;
+into metadata_json; barrier_ev / prefactor_inv_s carry the process model;
 product_env_hash = id_final so the env_hash -> product digraph (the
 superbasin coarse graph) is populated for free.
 """
@@ -32,6 +32,17 @@ def _key(event_id: Any) -> bytes:
     return str(event_id).encode("utf-8")
 
 
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return float(value)
+
+
 class AmselKdbCatalog:
     """Thin wrapper over amsel.KdbStore for pyKMC reference events."""
 
@@ -47,8 +58,12 @@ class AmselKdbCatalog:
 
         d = {k: row[k] for k in row.index}
         blob = base64.b64encode(pickle.dumps(d)).decode("ascii")
-        barrier = float(d.get("energy_barrier", 0.0) or 0.0)
-        rate = float(d.get("k", 0.0) or 0.0)
+        barrier = _optional_float(d.get("energy_barrier"))
+        prefactor = _optional_float(d.get("prefactor_inv_s"))
+        if barrier is None:
+            barrier = 0.0
+        if prefactor is None or prefactor <= 0.0:
+            prefactor = 1.0e13
         product_env = (
             _key(d.get("id_final", b""))
             if d.get("id_final") not in (None, "")
@@ -60,7 +75,7 @@ class AmselKdbCatalog:
                 saddle_con=b"",
                 product_con=b"",
                 barrier_ev=barrier,
-                prefactor_inv_s=rate if rate > 0 else 1.0e13,
+                prefactor_inv_s=prefactor,
                 discovery_temperature=self.T,
                 context_signature=b"",
                 usage_hint="RefineFirst",

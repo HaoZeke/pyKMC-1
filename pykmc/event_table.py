@@ -87,16 +87,34 @@ def _typed_match_inputs(row_a: pd.Series, nat_a: int, row_b: pd.Series, nat_b: i
     return types_a, types_b
 
 
+def _is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        return False
+    if isinstance(missing, (bool, np.bool_)):
+        return bool(missing)
+    return False
+
+
 def _optional_int(value: Any) -> int | None:
-    if value is None or pd.isna(value):
+    if _is_missing(value):
         return None
     return int(value)
 
 
 def _optional_float(value: Any) -> float | None:
-    if value is None or pd.isna(value):
+    if _is_missing(value):
         return None
     return float(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if _is_missing(value):
+        return None
+    return str(value)
 
 
 def _rate_override_kwargs(
@@ -107,14 +125,18 @@ def _rate_override_kwargs(
     barrier_omega_rad_per_s: float | None,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {}
-    if prefactor_inv_s is not None:
-        kwargs["prefactor_inv_s"] = float(prefactor_inv_s)
-    if prefactor_source is not None:
-        kwargs["prefactor_source"] = str(prefactor_source)
-    if saddle_freq_invcm is not None:
-        kwargs["saddle_freq_invcm"] = float(saddle_freq_invcm)
-    if barrier_omega_rad_per_s is not None:
-        kwargs["barrier_omega_rad_per_s"] = float(barrier_omega_rad_per_s)
+    prefactor = _optional_float(prefactor_inv_s)
+    source = _optional_str(prefactor_source)
+    saddle_freq = _optional_float(saddle_freq_invcm)
+    barrier_omega = _optional_float(barrier_omega_rad_per_s)
+    if prefactor is not None:
+        kwargs["prefactor_inv_s"] = prefactor
+    if source is not None:
+        kwargs["prefactor_source"] = source
+    if saddle_freq is not None:
+        kwargs["saddle_freq_invcm"] = saddle_freq
+    if barrier_omega is not None:
+        kwargs["barrier_omega_rad_per_s"] = barrier_omega
     return kwargs
 
 
@@ -483,6 +505,7 @@ class ReferenceEventTable:
             dfevent.loc[0, "idx_backward"] = ref+1
             dfevent.loc[1, "idx_ref"] = ref +1
             dfevent.loc[1, "idx_backward"] = ref
+        self._annotate_reverse_energy_barriers(dfevent)
 
         self.table = pd.concat([self.table, dfevent], ignore_index=True)
         if persist and self.kdb is not None:
@@ -493,6 +516,26 @@ class ReferenceEventTable:
                 raise RuntimeError(
                     f"Could not persist reference event to AMSEL KDB: {error}"
                 ) from error
+
+    def _annotate_reverse_energy_barriers(self, dfevent: pd.DataFrame) -> None:
+        """Attach reverse barriers so cached rows can reconstruct VTST rates."""
+        if "energy_barrier" not in dfevent.columns:
+            return
+        if len(dfevent) == 1:
+            reverse = _optional_float(dfevent.iloc[0].get("reverse_energy_barrier"))
+            if reverse is None:
+                reverse = _optional_float(dfevent.iloc[0].get("energy_barrier"))
+            if reverse is not None:
+                dfevent.loc[:, "reverse_energy_barrier"] = reverse
+            return
+        if len(dfevent) != 2:
+            return
+        forward = _optional_float(dfevent.iloc[0].get("energy_barrier"))
+        backward = _optional_float(dfevent.iloc[1].get("energy_barrier"))
+        if backward is not None:
+            dfevent.loc[0, "reverse_energy_barrier"] = backward
+        if forward is not None:
+            dfevent.loc[1, "reverse_energy_barrier"] = forward
 
     def has_id_subset_table(self, ids: list[str | bytes]) -> pd.DataFrame:
         """Return subset table with event having id in ids.
@@ -699,11 +742,28 @@ class ReferenceEventTable:
         for row in rows:
             ref = self.max_idx_ref()
             d = dict(row)
+            self._recompute_cached_row_rate(d)
             d["idx_ref"] = ref
             d["idx_backward"] = ref
             self.table = pd.concat(
                 [self.table, pd.DataFrame([d])], ignore_index=True
             )
+
+    def _recompute_cached_row_rate(self, row: dict[str, Any]) -> None:
+        """Rebuild a cached process rate from barriers and the active config."""
+        forward = _optional_float(row.get("energy_barrier"))
+        if forward is None:
+            return
+        backward = _optional_float(row.get("reverse_energy_barrier"))
+        if backward is None:
+            backward = forward
+        rate_kwargs = _rate_override_kwargs(
+            prefactor_inv_s=row.get("prefactor_inv_s"),
+            prefactor_source=row.get("prefactor_source"),
+            saddle_freq_invcm=row.get("saddle_freq_invcm"),
+            barrier_omega_rad_per_s=row.get("barrier_omega_rad_per_s"),
+        )
+        row["k"] = compute_rate(forward, backward, self.config, **rate_kwargs)
 
     def max_idx_ref(self) -> int :
         """ Return max value of idx_ref"""
@@ -729,7 +789,12 @@ class ReferenceEventTable:
                      "saddle_positions": pd.Series(dtype="object"),
                     "final_positions": pd.Series(dtype="object"),
                     "energy_barrier": pd.Series(dtype="float64"),
+                    "reverse_energy_barrier": pd.Series(dtype="float64"),
                     "k": pd.Series(dtype="float64"), 
+                    "prefactor_inv_s": pd.Series(dtype="float64"),
+                    "prefactor_source": pd.Series(dtype="str"),
+                    "saddle_freq_invcm": pd.Series(dtype="float64"),
+                    "barrier_omega_rad_per_s": pd.Series(dtype="float64"),
                     "id_saddle": pd.Series(dtype="str"),
                     "id_final": pd.Series(dtype="str"),
                     "move_atom_idx": pd.Series(dtype='int64'),
@@ -748,6 +813,19 @@ class ReferenceEventTable:
             self.table["dra"] = 0.0
         if "types" not in self.table.columns:
             self.table["types"] = None
+        if "reverse_energy_barrier" not in self.table.columns:
+            if "energy_barrier" in self.table.columns:
+                self.table["reverse_energy_barrier"] = self.table["energy_barrier"]
+            else:
+                self.table["reverse_energy_barrier"] = np.nan
+        for column in (
+            "prefactor_inv_s",
+            "prefactor_source",
+            "saddle_freq_invcm",
+            "barrier_omega_rad_per_s",
+        ):
+            if column not in self.table.columns:
+                self.table[column] = None
         self.table["idx_ref"] = self.table["idx_ref"].astype("int64")
         self.table["idx_backward"] = self.table["idx_backward"].astype("int64")
 
