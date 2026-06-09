@@ -1941,13 +1941,15 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
-def trial_env_for_amsel_path(amsel_python_path: Path | None) -> dict[str, str] | None:
-    if amsel_python_path is None:
-        return None
+def trial_env_for_amsel_path(amsel_python_path: Path | None) -> dict[str, str]:
+    entries = []
     existing = os.environ.get("PYTHONPATH")
-    pythonpath = str(amsel_python_path)
+    if amsel_python_path is not None:
+        entries.append(str(amsel_python_path))
+    entries.append(str(Path(__file__).resolve().parents[1]))
     if existing:
-        pythonpath = f"{pythonpath}{os.pathsep}{existing}"
+        entries.append(existing)
+    pythonpath = os.pathsep.join(entries)
     return {"PYTHONPATH": pythonpath}
 
 
