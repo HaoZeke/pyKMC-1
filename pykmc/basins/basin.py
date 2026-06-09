@@ -1327,7 +1327,10 @@ class BasinsGenericEvents() :
         except Exception:
             return None
         try:
-            return recombination_search_center(state.system.positions, state.system.cell)
+            cap = float(getattr(partn, "amsel_recomb_capture_mult", 1.6))
+            return recombination_search_center(
+                state.system.positions, state.system.cell, capture_mult=cap
+            )
         except Exception:
             return None
 

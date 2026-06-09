@@ -1483,7 +1483,10 @@ class KMC:
         except Exception:
             return None
         try:
-            return recombination_search_center(self.system.positions, self.system.cell)
+            cap = float(getattr(partn, "amsel_recomb_capture_mult", 1.6))
+            return recombination_search_center(
+                self.system.positions, self.system.cell, capture_mult=cap
+            )
         except Exception:
             return None
 

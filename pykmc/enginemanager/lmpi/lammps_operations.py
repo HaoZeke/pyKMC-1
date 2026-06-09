@@ -287,6 +287,9 @@ def partn_search(engine, config, central_atom_idx: int, positions = None, cell =
             _g = recomb_push(
                 positions, cell, central_atom_idx,
                 push_step_size=config.partn.push_step_size,
+                capture_mult=float(
+                    getattr(config.partn, "amsel_recomb_capture_mult", 1.6)
+                ),
                 topology=amsel_recomb_topology,
             )
             if _g is not None:

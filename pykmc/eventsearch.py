@@ -38,9 +38,16 @@ class EventSearch:
         except Exception:
             return None
         try:
-            return _nearest_recomb_topology(self.system.positions, self.system.cell)
+            topology = _nearest_recomb_topology(self.system.positions, self.system.cell)
         except Exception:
             return None
+        if topology is None:
+            return None
+        _source_atom, _v_centroid, distance, nn = topology
+        cap = float(getattr(partn, "amsel_recomb_capture_mult", 1.6))
+        if distance > cap * nn:
+            return None
+        return topology
 
     def execute(self, central_atom_research_list: list[int]) -> None:
         """Execute an event search for each central atom in the central_atom_research_list list.
