@@ -1344,7 +1344,7 @@ def test_kmc_reference_search_bounds_singleton_process_resampling():
     )
 
 
-def test_kmc_reference_search_uses_global_resampling_budget_for_many_environments():
+def test_kmc_reference_search_bounds_resampling_per_environment():
     kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
     environments = [f"env-{idx}" for idx in range(4)]
     kmc.atomic_environment = SimpleNamespace(atomic_environment_list=environments)
@@ -1401,12 +1401,13 @@ def test_kmc_reference_search_uses_global_resampling_budget_for_many_environment
         environments, nsearch=1
     )
 
-    expected_budget = len(environments) + coverage_resampling_attempt_limit(1)
-    assert total_searches == expected_budget
-    assert len(search_results) == expected_budget
-    assert len(valid_results) == expected_budget
+    attempt_limit = coverage_resampling_attempt_limit(1)
+    expected_searches = len(environments) * attempt_limit
+    assert total_searches == expected_searches
+    assert len(search_results) == expected_searches
+    assert len(valid_results) == expected_searches
     assert all(
-        evidence.attempts <= expected_budget
+        evidence.attempts == attempt_limit
         for evidence in kmc.environment_search_evidence.values()
     )
 
