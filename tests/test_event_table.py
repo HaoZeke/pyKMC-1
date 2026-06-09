@@ -315,7 +315,7 @@ def test_reference_event_add_with_prefactors_skips_duplicate_prefactor_work(monk
 
     assert calls == []
     assert len(results) == 1
-    assert results[0].is_err()
+    assert not results[0].is_ok()
     assert results[0].err_value().type is ErrorType.EVENT_NOT_NEW
     assert len(table.table) == 1
 

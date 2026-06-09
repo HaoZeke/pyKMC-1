@@ -216,7 +216,7 @@ class ReferenceEventTable:
         results_is_valid_events = []
         for ev in events:
             preflight = self.event_search_output_result(ev, include_prefactors=False)
-            if preflight.is_err():
+            if not preflight.is_ok():
                 results_is_valid_events.append(preflight)
                 continue
             prefactor_attacher([ev])
