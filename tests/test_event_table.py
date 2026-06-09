@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pykmc.result import Err, ErrorInfo, ErrorType
+from pykmc.result import Err, ErrorInfo, ErrorType, EventSearchOutput
 from pykmc.event_table import (
     ActiveEventTable,
     ReferenceEventTable,
@@ -254,6 +254,72 @@ def test_reference_event_add_persists_reconstructable_kdb_rows():
 
     assert [row["reverse_energy_barrier"] for row in table.kdb.rows] == [0.12, 0.10]
     assert [row["prefactor_inv_s"] for row in table.kdb.rows] == [1.1e13, 2.2e13]
+
+
+def test_reference_event_add_with_prefactors_skips_duplicate_prefactor_work():
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.kdb = None
+    table.config = SimpleNamespace(
+        eventsearch=SimpleNamespace(
+            emin_event=0.01,
+            emax_event=2.0,
+            backward_emin_event=0.01,
+            energy_asymmetry=10.0,
+        ),
+        atomicenvironment=SimpleNamespace(rnei=0.1, rcut=0.5),
+        ira=SimpleNamespace(kmax_factor=2.0, sym_thr=0.1),
+        psr=SimpleNamespace(matching_score_thr=0.4),
+        rateconstant=SimpleNamespace(style="constant"),
+    )
+    saddle = np.array([[0.1, 0.0, 0.0]], dtype=float)
+    table.table = pd.DataFrame(
+        [
+            {
+                "idx_ref": 0,
+                "event_id": "env-a",
+                "id_final": "env-b",
+                "energy_barrier": 0.2,
+                "saddle_positions": saddle,
+                "idx_backward": 0,
+            }
+        ]
+    )
+    event = EventSearchOutput(
+        central_atom_index=0,
+        min1_positions=np.array([[0.0, 0.0, 0.0]], dtype=float),
+        saddle_positions=saddle.copy(),
+        min2_positions=np.array([[0.2, 0.0, 0.0]], dtype=float),
+        dE_forward=0.2,
+        dE_backward=0.2,
+        move_atom_index=0,
+        cell=np.eye(3) * 10.0,
+    )
+    calls = []
+
+    def fail_prefactor(_events):
+        calls.append("prefactor")
+
+    import pykmc.event_table as event_table
+
+    event_table_graph = event_table.graph
+    event_table_symmetries = event_table.unique_symmetries
+    try:
+        event_table.graph = lambda *_args, **_kwargs: ["env-a"]
+        event_table.unique_symmetries = lambda *_args, **_kwargs: (
+            [np.eye(3)],
+            [np.array([0])],
+        )
+
+        results = table.add_events_with_prefactors([event], fail_prefactor)
+    finally:
+        event_table.graph = event_table_graph
+        event_table.unique_symmetries = event_table_symmetries
+
+    assert calls == []
+    assert len(results) == 1
+    assert results[0].is_err()
+    assert results[0].err_value().type is ErrorType.EVENT_NOT_NEW
+    assert len(table.table) == 1
 
 
 def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch):
