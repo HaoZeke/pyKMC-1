@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Callable
@@ -2019,144 +2020,153 @@ def execute_trials(
     events_path: Path,
     *,
     trial_timeout_s: float | None = None,
+    trial_workers: int = 1,
 ) -> list[dict[str, Any]]:
     rows = []
     events_path.parent.mkdir(parents=True, exist_ok=True)
+    workers = max(1, int(trial_workers))
+    if workers == 1:
+        results = [
+            execute_trial_command(command, trial_timeout_s=trial_timeout_s)
+            for command in commands
+        ]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(
+                    execute_trial_command,
+                    command,
+                    trial_timeout_s=trial_timeout_s,
+                )
+                for command in commands
+            ]
+            results = [future.result() for future in futures]
+
     with events_path.open("w") as event_handle:
-        for command in commands:
-            workdir = Path(command["workdir"])
-            try:
-                result = run_trial_subprocess(
-                    command["command"],
-                    cwd=workdir,
-                    timeout=trial_timeout_s,
-                    env=command.get("env"),
-                )
-            except subprocess.TimeoutExpired as error:
-                (workdir / "harness.log").write_text(_timeout_output(error))
-                event_handle.write(
-                    json.dumps(
-                        {
-                            "case": command["case"],
-                            "priority": command["priority"],
-                            "trial": command["trial"],
-                            "seed": command["seed"],
-                            "temperature_K": command.get("temperature_K"),
-                            "returncode": None,
-                            "timed_out": True,
-                            "timeout_s": trial_timeout_s,
-                        },
-                        sort_keys=True,
-                    )
-                    + "\n"
-                )
-                if (workdir / "pykmc.out").exists() and (
-                    workdir / "pykmc.log"
-                ).exists():
-                    row = trial_row_from_outputs(
-                        case=str(command["case"]),
-                        selector=str(command["priority"]),
-                        trial=int(command["trial"]),
-                        seed=int(command["seed"]),
-                        output_dir=workdir,
-                    )
-                    row.update(transport_command_fields(command))
-                    row["detector_reason"] = f"timeout-{trial_timeout_s}s"
-                    row["event_searches"] = command.get("event_searches")
-                    row["kinetic_claim_ok"] = False
-                    if row.get("rate_prefactor_source") == "vineyard-finite-difference":
-                        row["rate_model_ok"] = False
-                        row["rate_model_reason"] = "vineyard-prefactor-timeout"
-                    rows.append(row)
-                else:
-                    rows.append(
-                        apply_kinetic_guard(
-                            {
-                                "case": command["case"],
-                                "selector": command["priority"],
-                                "trial": int(command["trial"]),
-                                "seed": int(command["seed"]),
-                                "temperature_K": command.get("temperature_K"),
-                                "box_volume_A3": None,
-                                "recombined": False,
-                                "t_recombination_s": None,
-                                "censored_time_s": 0.0,
-                                "kmc_steps": 0,
-                                "cpu_time_s": None,
-                                "wall_time_s": None,
-                                "total_cpu_time_s": None,
-                                "total_wall_time_s": None,
-                                "detector_reason": f"timeout-{trial_timeout_s}s",
-                                "event_discovery_status": "unknown",
-                                "event_searches": command.get("event_searches"),
-                                "final_noncrystal_atoms": None,
-                                "min_noncrystal_atoms": None,
-                                "trajectory_recombination_frame": None,
-                                "kinetic_claim_ok": False,
-                                "output_dir": str(workdir),
-                                **transport_command_fields(command),
-                            },
-                            diagnostics=None,
-                            log_text="",
-                        )
-                    )
-                continue
-            (workdir / "harness.log").write_text(result.stdout)
-            event_handle.write(
-                json.dumps(
-                    {
-                        "case": command["case"],
-                        "priority": command["priority"],
-                        "trial": command["trial"],
-                        "seed": command["seed"],
-                        "temperature_K": command.get("temperature_K"),
-                        "returncode": result.returncode,
-                    },
-                    sort_keys=True,
-                )
-                + "\n"
-            )
-            if (workdir / "pykmc.out").exists() and (workdir / "pykmc.log").exists():
-                row = trial_row_from_outputs(
-                    case=str(command["case"]),
-                    selector=str(command["priority"]),
-                    trial=int(command["trial"]),
-                    seed=int(command["seed"]),
-                    output_dir=workdir,
-                )
-                row.update(transport_command_fields(command))
-                row["event_searches"] = command.get("event_searches")
-                rows.append(row)
-            else:
-                rows.append(
-                    apply_kinetic_guard(
-                        {
-                            "case": command["case"],
-                            "selector": command["priority"],
-                            "trial": int(command["trial"]),
-                            "seed": int(command["seed"]),
-                            "temperature_K": command.get("temperature_K"),
-                            "box_volume_A3": None,
-                            "recombined": False,
-                            "t_recombination_s": None,
-                            "censored_time_s": 0.0,
-                            "kmc_steps": 0,
-                            "cpu_time_s": None,
-                            "wall_time_s": None,
-                            "total_cpu_time_s": None,
-                            "total_wall_time_s": None,
-                            "detector_reason": f"returncode-{result.returncode}",
-                            "event_discovery_status": "unknown",
-                            "event_searches": command.get("event_searches"),
-                            "kinetic_claim_ok": False,
-                            "output_dir": str(workdir),
-                            **transport_command_fields(command),
-                        },
-                        diagnostics=None,
-                        log_text="",
-                    )
-                )
+        for row, event in results:
+            rows.append(row)
+            event_handle.write(json.dumps(event, sort_keys=True) + "\n")
     return rows
+
+
+def execute_trial_command(
+    command: dict[str, Any],
+    *,
+    trial_timeout_s: float | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    workdir = Path(command["workdir"])
+    try:
+        result = run_trial_subprocess(
+            command["command"],
+            cwd=workdir,
+            timeout=trial_timeout_s,
+            env=command.get("env"),
+        )
+    except subprocess.TimeoutExpired as error:
+        (workdir / "harness.log").write_text(_timeout_output(error))
+        event = {
+            "case": command["case"],
+            "priority": command["priority"],
+            "trial": command["trial"],
+            "seed": command["seed"],
+            "temperature_K": command.get("temperature_K"),
+            "returncode": None,
+            "timed_out": True,
+            "timeout_s": trial_timeout_s,
+        }
+        if (workdir / "pykmc.out").exists() and (workdir / "pykmc.log").exists():
+            row = trial_row_from_outputs(
+                case=str(command["case"]),
+                selector=str(command["priority"]),
+                trial=int(command["trial"]),
+                seed=int(command["seed"]),
+                output_dir=workdir,
+            )
+            row.update(transport_command_fields(command))
+            row["detector_reason"] = f"timeout-{trial_timeout_s}s"
+            row["event_searches"] = command.get("event_searches")
+            row["kinetic_claim_ok"] = False
+            if row.get("rate_prefactor_source") == "vineyard-finite-difference":
+                row["rate_model_ok"] = False
+                row["rate_model_reason"] = "vineyard-prefactor-timeout"
+            return row, event
+        return (
+            empty_trial_row(
+                command,
+                detector_reason=f"timeout-{trial_timeout_s}s",
+                event_discovery_status="unknown",
+                kinetic_claim_ok=False,
+            ),
+            event,
+        )
+    (workdir / "harness.log").write_text(result.stdout)
+    event = {
+        "case": command["case"],
+        "priority": command["priority"],
+        "trial": command["trial"],
+        "seed": command["seed"],
+        "temperature_K": command.get("temperature_K"),
+        "returncode": result.returncode,
+    }
+    if (workdir / "pykmc.out").exists() and (workdir / "pykmc.log").exists():
+        row = trial_row_from_outputs(
+            case=str(command["case"]),
+            selector=str(command["priority"]),
+            trial=int(command["trial"]),
+            seed=int(command["seed"]),
+            output_dir=workdir,
+        )
+        row.update(transport_command_fields(command))
+        row["event_searches"] = command.get("event_searches")
+        return row, event
+    return (
+        empty_trial_row(
+            command,
+            detector_reason=f"returncode-{result.returncode}",
+            event_discovery_status="unknown",
+            kinetic_claim_ok=False,
+        ),
+        event,
+    )
+
+
+def empty_trial_row(
+    command: dict[str, Any],
+    *,
+    detector_reason: str,
+    event_discovery_status: str,
+    kinetic_claim_ok: bool,
+) -> dict[str, Any]:
+    workdir = Path(command["workdir"])
+    return apply_kinetic_guard(
+        {
+            "case": command["case"],
+            "selector": command["priority"],
+            "trial": int(command["trial"]),
+            "seed": int(command["seed"]),
+            "temperature_K": command.get("temperature_K"),
+            "box_volume_A3": None,
+            "recombined": False,
+            "t_recombination_s": None,
+            "censored_time_s": 0.0,
+            "kmc_steps": 0,
+            "cpu_time_s": None,
+            "wall_time_s": None,
+            "total_cpu_time_s": None,
+            "total_wall_time_s": None,
+            "detector_reason": detector_reason,
+            "event_discovery_status": event_discovery_status,
+            "event_searches": command.get("event_searches"),
+            "final_noncrystal_atoms": None,
+            "min_noncrystal_atoms": None,
+            "trajectory_recombination_frame": None,
+            "kinetic_claim_ok": kinetic_claim_ok,
+            "output_dir": str(workdir),
+            **transport_command_fields(command),
+        },
+        diagnostics=None,
+        log_text="",
+    )
 
 
 def _timeout_output(error: subprocess.TimeoutExpired) -> str:
@@ -2270,6 +2280,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--work-budget")
+    parser.add_argument("--trial-workers", type=int, default=1)
     parser.add_argument("--mpi-ranks", type=int, default=8)
     parser.add_argument("--mpirun", default="mpirun")
     parser.add_argument("--python", default=sys.executable)
@@ -2433,6 +2444,7 @@ def main(argv: list[str] | None = None) -> int:
         "amsel_duplicate_family_penalty": args.amsel_duplicate_family_penalty,
         "amsel_min_guidance": args.amsel_min_guidance,
         "work_budget": args.work_budget,
+        "trial_workers": args.trial_workers,
         "mpi_ranks": args.mpi_ranks,
         "dry_run": bool(args.dry_run),
     }
@@ -2461,6 +2473,7 @@ def main(argv: list[str] | None = None) -> int:
         commands,
         events_path,
         trial_timeout_s=args.trial_timeout_s,
+        trial_workers=args.trial_workers,
     )
     write_csv(args.out / "trials.csv", trial_rows, TRIAL_FIELDS)
     write_csv(args.out / "survival.csv", survival_rows(trial_rows), SURVIVAL_FIELDS)
