@@ -284,18 +284,23 @@ def undercovered_environments_for_search(
             zero_observation_attempt_limit,
         ):
             continue
-        if (
-            evidence is not None
-            and process_observation_attempt_limit is not None
-            and evidence.process_counts
-            and int(evidence.attempts) >= int(process_observation_attempt_limit)
-        ):
+        if evidence is None:
             continue
-        if evidence is None or not _needs_more_process_search(
+        certificate = _process_search_certificate_with_rate_scale(
             evidence,
             known_rate_scale=known_rate_scale,
-        ):
+        )
+        if not bool(certificate["needs_more_search"]):
             continue
+        if process_observation_attempt_limit is not None and evidence.process_counts:
+            attempt_limit = process_observation_attempt_limit_for_evidence(
+                evidence,
+                certificate,
+                base_attempt_limit=process_observation_attempt_limit,
+                known_rate_scale=known_rate_scale,
+            )
+            if int(evidence.attempts) >= int(attempt_limit):
+                continue
         if evidence.process_counts:
             productive_searchable.append(environment)
         else:
@@ -364,6 +369,46 @@ def coverage_resampling_attempt_limit(searches_per_environment: int) -> int:
         4 * max(1, int(searches_per_environment)),
         rate_gap_attempts,
     )
+
+
+def process_observation_attempt_limit_for_evidence(
+    evidence: EnvironmentSearchEvidence,
+    certificate: dict[str, object],
+    *,
+    base_attempt_limit: int,
+    known_rate_scale: float | None,
+) -> int:
+    """Return the finite attempt cap needed by the observed singleton rate gap."""
+    base_limit = max(1, int(base_attempt_limit))
+    singleton_processes = int(certificate["singleton_processes"])
+    missing_rate_mass = float(certificate["missing_rate_mass"])
+    if singleton_processes <= 1 or not math.isfinite(missing_rate_mass):
+        return base_limit
+
+    local_rate_mass = float(sum(evidence.process_rates.values()))
+    rate_scale = _process_search_rate_scale(
+        known_rate_scale=known_rate_scale,
+        local_rate_mass=local_rate_mass,
+    )
+    if local_rate_mass <= 0.0 or rate_scale <= 0.0:
+        return base_limit
+
+    missing_rate_ratio_limit = (
+        (1.0 - PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR)
+        / PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR
+    )
+    missing_rate_limit = max(
+        PROCESS_SEARCH_MISSING_RATE_FLOOR,
+        missing_rate_ratio_limit * rate_scale,
+    )
+    if missing_rate_limit <= 0.0 or not math.isfinite(missing_rate_limit):
+        return base_limit
+
+    required_attempts = math.ceil(
+        float(singleton_processes)
+        * (1.0 + local_rate_mass / missing_rate_limit)
+    )
+    return max(base_limit, int(required_attempts))
 
 
 def merge_environment_search_evidence(
