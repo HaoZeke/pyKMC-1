@@ -1344,6 +1344,34 @@ def test_kmc_reference_search_bounds_singleton_process_resampling():
     )
 
 
+def test_undercovered_environments_keeps_multisingleton_rate_gap_active():
+    process_counts = Counter(
+        {
+            ("dominant",): 20,
+            ("singleton-a",): 1,
+            ("singleton-b",): 1,
+        }
+    )
+    process_rates = {
+        ("dominant",): 20.0,
+        ("singleton-a",): 1.0,
+        ("singleton-b",): 1.0,
+    }
+    evidence = EnvironmentSearchEvidence(
+        attempts=22,
+        process_counts=process_counts,
+        process_rates=process_rates,
+    )
+
+    assert undercovered_environments_for_search(
+        current_environments=["env-a"],
+        new_environments=[],
+        visited_environments={"env-a"},
+        environment_search_evidence={"env-a": evidence},
+        process_observation_attempt_limit=coverage_resampling_attempt_limit(1),
+    ) == ["env-a"]
+
+
 def test_kmc_reference_search_bounds_resampling_per_environment():
     kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
     environments = [f"env-{idx}" for idx in range(4)]
