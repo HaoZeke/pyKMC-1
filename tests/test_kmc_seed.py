@@ -1125,7 +1125,7 @@ def test_undercovered_environments_for_search_prioritizes_missing_rate_mass(
     def event_completeness(**kwargs):
         if ("high-rate-gap",) in kwargs["process_counts"]:
             return FakeCertificate(10.0)
-        return FakeCertificate(0.2)
+        return FakeCertificate(1.0)
 
     monkeypatch.setattr(
         kmc_module,
