@@ -1583,6 +1583,7 @@ def trial_commands(
     amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
     basin_search_registry_path: str | None = None,
+    amsel_kdb_path: str | None = None,
     mpi_ranks: int,
     mpirun: str,
     python: str,
@@ -1639,6 +1640,7 @@ def trial_commands(
                 amsel_min_guidance=amsel_min_guidance,
                 disable_coverage_resampling=disable_coverage_resampling,
                 basin_search_registry_path=basin_search_registry_path,
+                amsel_kdb_path=amsel_kdb_path,
             )
             commands.append(
                 {
@@ -1669,6 +1671,8 @@ def trial_commands(
                     "amsel_exploration_priority": amsel_exploration_priority,
                     "amsel_duplicate_family_penalty": amsel_duplicate_family_penalty,
                     "amsel_min_guidance": amsel_min_guidance,
+                    "basin_search_registry_path": basin_search_registry_path,
+                    "amsel_kdb_path": amsel_kdb_path,
                     "workdir": str(trial_dir),
                     "env": env,
                     "command": [
@@ -1718,6 +1722,7 @@ def render_trial_input(
     amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
     basin_search_registry_path: str | None = None,
+    amsel_kdb_path: str | None = None,
 ) -> str:
     config = configparser.ConfigParser()
     config.optionxform = str
@@ -1742,6 +1747,8 @@ def render_trial_input(
         config[control]["basin_search_registry_path"] = str(
             basin_search_registry_path
         )
+    if amsel_kdb_path is not None:
+        config[control]["kdb_path"] = str(amsel_kdb_path)
     if refine_thr is not None:
         config[control]["refine_thr"] = str(float(refine_thr))
     if reference_table is not None:
@@ -1833,6 +1840,7 @@ def write_trial_input(
     amsel_min_guidance: float = 0.0,
     disable_coverage_resampling: bool = False,
     basin_search_registry_path: str | None = None,
+    amsel_kdb_path: str | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -1862,6 +1870,7 @@ def write_trial_input(
             amsel_min_guidance=amsel_min_guidance,
             disable_coverage_resampling=disable_coverage_resampling,
             basin_search_registry_path=basin_search_registry_path,
+            amsel_kdb_path=amsel_kdb_path,
         )
     )
 
@@ -2279,6 +2288,16 @@ def main(argv: list[str] | None = None) -> int:
             "saddle-displacement mode signature."
         ),
     )
+    parser.add_argument(
+        "--amsel-kdb-path",
+        type=str,
+        default=None,
+        help=(
+            "Path to a shared AMSEL KDB process catalog. Child runs receive "
+            "[Control] kdb_path and reuse cached reference events by "
+            "environment hash."
+        ),
+    )
     parser.add_argument("--work-budget")
     parser.add_argument("--trial-workers", type=int, default=1)
     parser.add_argument("--mpi-ranks", type=int, default=8)
@@ -2391,6 +2410,7 @@ def main(argv: list[str] | None = None) -> int:
         amsel_min_guidance=args.amsel_min_guidance,
         disable_coverage_resampling=args.disable_coverage_resampling,
         basin_search_registry_path=args.basin_search_registry_path,
+        amsel_kdb_path=args.amsel_kdb_path,
         mpi_ranks=args.mpi_ranks,
         mpirun=args.mpirun,
         python=args.python,
@@ -2443,6 +2463,8 @@ def main(argv: list[str] | None = None) -> int:
         "amsel_exploration_priority": args.amsel_exploration_priority,
         "amsel_duplicate_family_penalty": args.amsel_duplicate_family_penalty,
         "amsel_min_guidance": args.amsel_min_guidance,
+        "basin_search_registry_path": args.basin_search_registry_path,
+        "amsel_kdb_path": args.amsel_kdb_path,
         "work_budget": args.work_budget,
         "trial_workers": args.trial_workers,
         "mpi_ranks": args.mpi_ranks,
