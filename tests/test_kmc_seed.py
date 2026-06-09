@@ -35,6 +35,26 @@ def test_kmc_seeds_python_and_numpy_rngs_from_control_config():
     assert np.random.random() == expected_numpy
 
 
+def test_kmc_run_closes_manager_when_initialized_run_fails(monkeypatch):
+    calls = []
+    kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=None)))
+    kmc.system = SimpleNamespace()
+    kmc.manager = SimpleNamespace(
+        initialize_sessions=lambda config, system: calls.append("initialize"),
+        close_all=lambda: calls.append("close"),
+    )
+
+    def fail_minimize():
+        raise RuntimeError("stop")
+
+    kmc.minimize_system = fail_minimize
+
+    with pytest.raises(RuntimeError, match="stop"):
+        kmc.run()
+
+    assert calls == ["initialize", "close"]
+
+
 def test_central_atoms_research_covers_distinct_atoms_before_resampling():
     kmc = KMC(SimpleNamespace(control=SimpleNamespace(random_seed=12345)))
     kmc.atomic_environment = SimpleNamespace(
