@@ -655,8 +655,11 @@ class BasinsGenericEvents() :
         self, state: int
     ) -> list[int]:
         signature = self._incoming_process_signature(int(state))
+        event_family = self._incoming_event_family(int(state))
         df = getattr(self.connectivity_table, "df", None)
-        if signature is None or not isinstance(df, pd.DataFrame):
+        if event_family is None and signature is None:
+            return []
+        if not isinstance(df, pd.DataFrame):
             return []
         absorbed: list[int] = []
         for candidate in list(getattr(self, "states_to_explore", []) or []):
@@ -666,7 +669,12 @@ class BasinsGenericEvents() :
             rows = df.loc[df["state_connexion"] == candidate]
             if rows.empty or not bool(rows["transient"].astype(bool).any()):
                 continue
-            if self._incoming_process_signature(candidate) != signature:
+            candidate_signature = self._incoming_process_signature(candidate)
+            candidate_event_family = self._incoming_event_family(candidate)
+            if (
+                candidate_signature != signature
+                and candidate_event_family != event_family
+            ):
                 continue
             self.connectivity_table.change_state_to_absorbing(candidate)
             absorbed.append(candidate)
