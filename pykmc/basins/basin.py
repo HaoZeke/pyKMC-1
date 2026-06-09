@@ -1260,11 +1260,17 @@ class BasinsGenericEvents() :
             return True
         if not hasattr(self, "frontier_search_attempted_environments"):
             self.frontier_search_attempted_environments = set()
+        atomic_environment_list = state.environment.atomic_environment_list
+        attempted_center_keys = self.frontier_search_attempted_environments
         search_environments = [
             env
             for env in unknown_environments
-            if self._frontier_environment_key(env)
-            not in self.frontier_search_attempted_environments
+            if any(
+                atom_env == env
+                and self._frontier_center_attempt_key(atomic_environment_list, atom)
+                not in attempted_center_keys
+                for atom, atom_env in enumerate(atomic_environment_list)
+            )
         ]
         suppressed = len(unknown_environments) - len(search_environments)
         if suppressed:
@@ -1275,18 +1281,20 @@ class BasinsGenericEvents() :
             )
         if not search_environments:
             return False
-        self.frontier_search_attempted_environments.update(
-            self._frontier_environment_key(env) for env in search_environments
-        )
 
         central_atoms = self._frontier_central_atoms_research(
             state,
             search_environments,
             nsearch,
             state_index=state_index,
+            attempted_center_keys=attempted_center_keys,
         )
         if not central_atoms:
             return False
+        attempted_center_keys.update(
+            self._frontier_center_attempt_key(atomic_environment_list, atom)
+            for atom in central_atoms
+        )
         self._log(
             "\t :=> AMSEL frontier search over {} unknown basin environments".format(
                 len(search_environments)
@@ -1331,20 +1339,36 @@ class BasinsGenericEvents() :
         unknown_environments,
         nsearch: int,
         state_index: int | None = None,
+        attempted_center_keys=None,
     ) -> list[int]:
         candidate_atoms: set[int] = set()
         atomic_environment_list = state.environment.atomic_environment_list
+        attempted_center_keys = attempted_center_keys or set()
         for env in unknown_environments:
             candidate_atoms.update(
                 int(i)
                 for i, atom_env in enumerate(atomic_environment_list)
                 if atom_env == env
+                and self._frontier_center_attempt_key(atomic_environment_list, int(i))
+                not in attempted_center_keys
             )
         recomb_center = self._frontier_recomb_search_center(state)
         incoming_center = self._frontier_incoming_center(state_index)
-        if recomb_center is not None:
+        if recomb_center is not None and (
+            self._frontier_center_attempt_key(
+                atomic_environment_list,
+                int(recomb_center),
+            )
+            not in attempted_center_keys
+        ):
             candidate_atoms.add(int(recomb_center))
-        if incoming_center is not None:
+        if incoming_center is not None and (
+            self._frontier_center_attempt_key(
+                atomic_environment_list,
+                int(incoming_center),
+            )
+            not in attempted_center_keys
+        ):
             candidate_atoms.add(int(incoming_center))
         if not candidate_atoms:
             return []
@@ -1357,6 +1381,12 @@ class BasinsGenericEvents() :
             ),
         )
         return ranked[: max(0, int(nsearch))]
+
+    def _frontier_center_attempt_key(self, atomic_environment_list, atom: int):
+        atom = int(atom)
+        if 0 <= atom < len(atomic_environment_list):
+            return (self._frontier_environment_key(atomic_environment_list[atom]), atom)
+        return ("", atom)
 
     def _frontier_incoming_center(self, state_index: int | None):
         if state_index is None or getattr(self, "connectivity_table", None) is None:
