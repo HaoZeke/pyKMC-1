@@ -15,6 +15,7 @@ import numpy as np
 
 
 _TOPOLOGY_CACHE_MAX = 16
+_PRODUCT_DEFECT_SCORE_MAX_ATOMS = 128
 _TOPOLOGY_CACHE: OrderedDict[
     tuple[tuple[int, ...], bytes, float, bytes],
     tuple[int, tuple[float, float, float], float, float] | None,
@@ -100,11 +101,11 @@ def _candidate_source_atoms(candidate) -> list[int]:
 
 def _candidate_targets_for_source(
     candidate, positions, cell, source: int
-) -> list[np.ndarray]:
+) -> list[tuple[int, np.ndarray]]:
     pos = np.asarray(positions, dtype=float)
     celld = _cell_diag(cell)
     nn = float(candidate.nn_spacing)
-    targets = [np.asarray(candidate.target_centroid, dtype=float)]
+    targets = [(1, np.asarray(candidate.target_centroid, dtype=float))]
     for target_atom in getattr(candidate, "target_cluster", ()) or ():
         shell = pos[int(target_atom)]
         direction = _minimum_image(pos[int(source)] - shell, celld)
@@ -112,8 +113,8 @@ def _candidate_targets_for_source(
         if norm <= 1.0e-12 or nn <= 0.0:
             continue
         projected = shell + direction * (nn / norm)
-        if not any(np.allclose(projected, target) for target in targets):
-            targets.append(projected)
+        if not any(np.allclose(projected, target) for _rank, target in targets):
+            targets.append((0, projected))
     return targets
 
 
@@ -121,21 +122,27 @@ def _ranked_candidate_source(candidate, positions, cell):
     pos = np.asarray(positions, dtype=float)
     celld = _cell_diag(cell)
     nn = float(candidate.nn_spacing)
+    score_products = pos.shape[0] <= _PRODUCT_DEFECT_SCORE_MAX_ATOMS
     ranked = []
     for source in _candidate_source_atoms(candidate):
-        for target in _candidate_targets_for_source(candidate, pos, cell, int(source)):
+        for target_rank, target in _candidate_targets_for_source(
+            candidate, pos, cell, int(source)
+        ):
             distance = _pbc_distance(pos[int(source)], target, celld)
-            product_defects = float("inf")
-            try:
-                product = build_product(pos, cell, int(source), target)
-                defects = n_defects(product, cell)
-                if defects >= 0:
-                    product_defects = float(defects)
-            except Exception:
+            product_defects = 0.0
+            if score_products:
                 product_defects = float("inf")
+                try:
+                    product = build_product(pos, cell, int(source), target)
+                    defects = n_defects(product, cell)
+                    if defects >= 0:
+                        product_defects = float(defects)
+                except Exception:
+                    product_defects = float("inf")
             ranked.append(
                 (
                     product_defects,
+                    int(target_rank),
                     distance / nn if nn > 0.0 else float("inf"),
                     int(source),
                     distance,
@@ -149,9 +156,15 @@ def _ranked_candidate_source(candidate, positions, cell):
             np.asarray(candidate.target_centroid, dtype=float),
             float(candidate.distance),
         )
-    _product_defects, _distance_over_nn, source, distance, _target_key, target = min(
-        ranked
-    )
+    (
+        _product_defects,
+        _target_rank,
+        _distance_over_nn,
+        source,
+        distance,
+        _target_key,
+        target,
+    ) = min(ranked)
     return source, target, distance
 
 
