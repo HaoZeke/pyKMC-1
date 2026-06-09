@@ -972,6 +972,23 @@ class BasinsGenericEvents() :
         else:
             remaining = max(0, int(max_refinements) - len(refined_rows))
             selected_rows = ordered_rows[:remaining]
+            committor_tol = float(
+                getattr(
+                    getattr(self.config, "basin", None),
+                    "frontier_committor_tol",
+                    0.0,
+                )
+                or 0.0
+            )
+            if scores and committor_tol > 0.0:
+                tolerance_rows = self._rows_until_absorbing_committor_tolerance(
+                    ordered_rows,
+                    scores,
+                )
+                selected_row_set = set(selected_rows).union(tolerance_rows)
+                selected_rows = [
+                    idx for idx in ordered_rows if idx in selected_row_set
+                ]
 
         selected_set = set(selected_rows).union(refined_rows)
         skipped_rows = [idx for idx in ordered_rows if idx not in selected_set]
