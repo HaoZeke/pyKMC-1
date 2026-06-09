@@ -340,6 +340,73 @@ def test_frontier_state_search_suppresses_duplicate_failed_environments(monkeypa
     assert executions == [[0]]
 
 
+def test_frontier_state_search_preserves_unsearched_budget_limited_environments(
+    monkeypatch,
+):
+    executions = []
+
+    class FakeEventSearch:
+        def __init__(self, config, system, manager, loggers):
+            self.config = config
+
+        def execute(self, central_atom_research_list):
+            executions.append(list(central_atom_research_list))
+
+        def get_successes_results(self):
+            return []
+
+    class FakeReferenceTable:
+        def add_events_with_prefactors(self, events, prefactor_attacher):
+            return []
+
+    config = SimpleNamespace(
+        basin=SimpleNamespace(
+            frontier_event_searches=1,
+            frontier_search_nevalf_max=80,
+        ),
+        partn=SimpleNamespace(
+            amsel_recomb_seed=False,
+            nevalf_max=1200,
+            evalf_max=2400,
+        ),
+    )
+
+    def make_state():
+        return StateData(
+            system=System(
+                positions=np.zeros((2, 3)),
+                types=np.array(["Cu", "Cu"]),
+                cell=np.eye(3) * 10.0,
+                pbc=True,
+                index=np.arange(2),
+            ),
+            environment=SimpleNamespace(
+                atomic_environment_list=["unknown-a", "unknown-b"]
+            ),
+            neighbors_list=None,
+            transient=True,
+        )
+
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=FakeReferenceTable(),
+        known_environments=set(),
+        manager=SimpleNamespace(use_local=lambda: None, use_global=lambda: None),
+    )
+
+    monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
+
+    assert (
+        basin._try_search_unknown_state_environments(make_state(), state_index=1)
+        is False
+    )
+    assert (
+        basin._try_search_unknown_state_environments(make_state(), state_index=2)
+        is False
+    )
+    assert executions == [[0], [1]]
+
+
 def test_frontier_state_search_budget_limits_total_search_centers(monkeypatch):
     executions = []
 
