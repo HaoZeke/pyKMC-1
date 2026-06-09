@@ -1005,6 +1005,83 @@ class TestBasin :
             "unresolved_rate": pytest.approx(5.0),
         }
 
+    def test_absorbing_refinement_tolerance_can_exceed_count_cap(
+        self, monkeypatch
+    ):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 1,
+                    "central_atom": 10,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 10.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 0,
+                    "state_connexion": 2,
+                    "event_connexion": 2,
+                    "central_atom": 20,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+                {
+                    "state": 0,
+                    "state_connexion": 3,
+                    "event_connexion": 3,
+                    "central_atom": 30,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 5.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
+            ]
+        )
+
+        class FakeSelector:
+            def diagnose_connectivity(self, connectivity_table, entry=0):
+                return {
+                    "ok": True,
+                    "ngt_outlets": [
+                        {"ok": True, "absorbing_state": 1, "committor": 0.60},
+                        {"ok": True, "absorbing_state": 2, "committor": 0.30},
+                        {"ok": True, "absorbing_state": 3, "committor": 0.10},
+                    ],
+                }
+
+        monkeypatch.setattr(basin_module, "AmselFPTASelector", FakeSelector)
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(
+                max_absorbing_refinements=1,
+                frontier_committor_tol=0.20,
+            )
+        )
+        basin.connectivity_table = table
+
+        rows = basin._absorbing_refinement_rows()
+
+        assert rows == [0, 1]
+        assert basin.absorbing_refinement_diagnostics == {
+            "total": 3,
+            "refined": 2,
+            "skipped": 1,
+            "unresolved_committor": pytest.approx(0.10),
+            "unresolved_rate": pytest.approx(5.0),
+        }
+
     def test_absorbing_refinement_uses_rate_fraction_fallback(self, monkeypatch):
         table = BasinStatesConnectivity()
         table.df = pd.DataFrame(
