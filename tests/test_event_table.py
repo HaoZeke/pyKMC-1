@@ -134,6 +134,128 @@ def test_reference_event_add_raises_when_configured_kdb_store_fails():
         )
 
 
+def test_reference_event_ingest_rows_recomputes_cached_rate_for_current_config(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_compute_rate(dE_forward, dE_backward, config, **kwargs):
+        calls.append((dE_forward, dE_backward, config.rateconstant.T, kwargs))
+        return config.rateconstant.T / 100.0
+
+    import pykmc.event_table as event_table
+
+    monkeypatch.setattr(event_table, "compute_rate", fake_compute_rate)
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.config = SimpleNamespace(
+        rateconstant=SimpleNamespace(style="amsel-vtst", T=700.0),
+    )
+    table.table = pd.DataFrame(
+        {
+            "idx_ref": pd.Series(dtype="int64"),
+            "event_id": pd.Series(dtype="str"),
+            "id_final": pd.Series(dtype="str"),
+            "energy_barrier": pd.Series(dtype="float64"),
+            "reverse_energy_barrier": pd.Series(dtype="float64"),
+            "k": pd.Series(dtype="float64"),
+            "prefactor_inv_s": pd.Series(dtype="float64"),
+            "prefactor_source": pd.Series(dtype="str"),
+            "saddle_freq_invcm": pd.Series(dtype="float64"),
+            "barrier_omega_rad_per_s": pd.Series(dtype="float64"),
+            "idx_backward": pd.Series(dtype="int64"),
+        }
+    )
+
+    table.ingest_rows(
+        [
+            pd.Series(
+                {
+                    "idx_ref": 99,
+                    "event_id": "env-a",
+                    "id_final": "env-b",
+                    "energy_barrier": 0.25,
+                    "reverse_energy_barrier": 0.35,
+                    "k": 1.0,
+                    "prefactor_inv_s": 6.0e12,
+                    "prefactor_source": "vineyard-finite-difference",
+                    "saddle_freq_invcm": 120.0,
+                    "barrier_omega_rad_per_s": 2.4e13,
+                    "idx_backward": 100,
+                }
+            )
+        ]
+    )
+
+    assert table.table.loc[0, "idx_ref"] == 0
+    assert table.table.loc[0, "idx_backward"] == 0
+    assert table.table.loc[0, "k"] == 7.0
+    assert calls == [
+        (
+            0.25,
+            0.35,
+            700.0,
+            {
+                "prefactor_inv_s": 6.0e12,
+                "prefactor_source": "vineyard-finite-difference",
+                "saddle_freq_invcm": 120.0,
+                "barrier_omega_rad_per_s": 2.4e13,
+            },
+        )
+    ]
+
+
+def test_reference_event_add_persists_reconstructable_kdb_rows():
+    class CapturingKdb:
+        def __init__(self):
+            self.rows = []
+
+        def store_row(self, row):
+            self.rows.append(row.copy())
+
+    table = ReferenceEventTable.__new__(ReferenceEventTable)
+    table.kdb = CapturingKdb()
+    table.table = pd.DataFrame(
+        {
+            "idx_ref": pd.Series(dtype="int64"),
+            "event_id": pd.Series(dtype="str"),
+            "id_final": pd.Series(dtype="str"),
+            "energy_barrier": pd.Series(dtype="float64"),
+            "reverse_energy_barrier": pd.Series(dtype="float64"),
+            "k": pd.Series(dtype="float64"),
+            "prefactor_inv_s": pd.Series(dtype="float64"),
+            "idx_backward": pd.Series(dtype="int64"),
+        }
+    )
+
+    table.add(
+        pd.DataFrame(
+            [
+                {
+                    "idx_ref": -1,
+                    "event_id": "env-a",
+                    "id_final": "env-b",
+                    "energy_barrier": 0.10,
+                    "k": 2.0,
+                    "prefactor_inv_s": 1.1e13,
+                    "idx_backward": -1,
+                },
+                {
+                    "idx_ref": -1,
+                    "event_id": "env-b",
+                    "id_final": "env-a",
+                    "energy_barrier": 0.12,
+                    "k": 3.0,
+                    "prefactor_inv_s": 2.2e13,
+                    "idx_backward": -1,
+                },
+            ]
+        )
+    )
+
+    assert [row["reverse_energy_barrier"] for row in table.kdb.rows] == [0.12, 0.10]
+    assert [row["prefactor_inv_s"] for row in table.kdb.rows] == [1.1e13, 2.2e13]
+
+
 def test_reference_event_series_uses_directional_vineyard_prefactors(monkeypatch):
     calls = []
 
