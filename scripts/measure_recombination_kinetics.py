@@ -1602,6 +1602,7 @@ def trial_commands(
             effective_frontier_event_searches = _frontier_event_searches_for_priority(
                 priority=str(item["priority"]),
                 basin_frontier_event_searches=basin_frontier_event_searches,
+                event_searches=event_searches,
             )
             trial_dir = out / str(item["priority"])
             if use_temperature_dirs:
@@ -1801,6 +1802,7 @@ def render_trial_input(
         frontier_searches = _frontier_event_searches_for_priority(
             priority=priority,
             basin_frontier_event_searches=basin_frontier_event_searches,
+            event_searches=event_searches,
         )
         config[basin]["frontier_event_searches"] = str(frontier_searches)
     absolutize_lammps_paths(config, template_dir=template_dir)
@@ -1887,12 +1889,15 @@ def _frontier_event_searches_for_priority(
     *,
     priority: str,
     basin_frontier_event_searches: int | None,
+    event_searches: int | None = None,
 ) -> int | None:
     if priority == "legacy":
         return None
-    if basin_frontier_event_searches is None:
+    if basin_frontier_event_searches is not None:
+        return int(basin_frontier_event_searches)
+    if event_searches is None:
         return 1
-    return int(basin_frontier_event_searches)
+    return max(1, int(event_searches))
 
 
 def _exploration_priority_for_priority(
