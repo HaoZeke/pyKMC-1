@@ -1310,9 +1310,7 @@ class BasinsGenericEvents() :
             self._restore_frontier_search_evalf_limits(original_evalf_limits)
             self._restore_frontier_search_manager_mode(restore_global_manager)
         events = event_search.get_successes_results()
-        valid_results = self.reference_table.add_events_with_prefactors(
-            events, self.prefactor_attacher
-        )
+        valid_results = self._add_frontier_events(events)
         searched = self._searched_frontier_environments(
             state.environment.atomic_environment_list,
             events,
@@ -1325,6 +1323,16 @@ class BasinsGenericEvents() :
             )
         )
         return not self.is_states_has_unknown_environments(state)
+
+    def _add_frontier_events(self, events):
+        add_with_prefactors = getattr(
+            self.reference_table,
+            "add_events_with_prefactors",
+            None,
+        )
+        if add_with_prefactors is not None:
+            return add_with_prefactors(events, self.prefactor_attacher)
+        return self.reference_table.add_events(events)
 
     def _frontier_environment_key(self, environment):
         try:
