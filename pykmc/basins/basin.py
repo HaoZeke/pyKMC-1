@@ -1442,14 +1442,14 @@ class BasinsGenericEvents() :
         partn = getattr(self.config, "partn", None)
         if partn is None:
             return _NO_FRONTIER_EVALF_OVERRIDE
-        cap = int(
-            getattr(
-                getattr(self.config, "basin", None),
-                "frontier_search_nevalf_max",
-                80,
-            )
-            or 80
+        configured_cap = getattr(
+            getattr(self.config, "basin", None),
+            "frontier_search_nevalf_max",
+            None,
         )
+        if configured_cap is None:
+            return _NO_FRONTIER_EVALF_OVERRIDE
+        cap = int(configured_cap)
         originals = {}
         for name in ("nevalf_max", "evalf_max"):
             if not hasattr(partn, name):

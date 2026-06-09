@@ -685,10 +685,10 @@ class BasinConfig(BaseModel):
         ge=0,
         description="Number of ranked pARTn event-search centers used for unresolved reconstructed basin frontier states.",
     )
-    frontier_search_nevalf_max: int = Field(
-        default=80,
+    frontier_search_nevalf_max: Optional[int] = Field(
+        default=None,
         gt=0,
-        description="pARTn force-evaluation cap used only for reconstructed basin frontier event searches.",
+        description="Optional pARTn force-evaluation cap used only for reconstructed basin frontier event searches.",
     )
     reconstruction_minimize: Optional[str] = Field(
         default=None,
