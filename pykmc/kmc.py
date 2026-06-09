@@ -1219,9 +1219,17 @@ class KMC:
         remaining_search_budget = None
         if not disable_coverage_resampling:
             initial_budget = searches_per_environment * max(1, len(search_environments))
-            remaining_search_budget = initial_budget + coverage_resampling_attempt_limit(
-                searches_per_environment
+            active_environment_count = len(
+                {
+                    environment
+                    for environment in self.atomic_environment.atomic_environment_list
+                    if environment != "crystal"
+                }
             )
+            repair_budget = coverage_resampling_attempt_limit(
+                searches_per_environment
+            ) * max(1, active_environment_count)
+            remaining_search_budget = initial_budget + repair_budget
         all_event_search_results: list[Result[EventSearchOutput, ErrorInfo]] = []
         all_valid_event_results: list[Result[pd.DataFrame, ErrorInfo]] = []
         first_round = True
