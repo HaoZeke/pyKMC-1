@@ -46,6 +46,11 @@ def test_frontier_state_searches_unknown_environments(monkeypatch):
             self.added_events = list(events)
             return [Ok(pd.DataFrame({"idx_ref": [0]}))]
 
+        def add_events_with_prefactors(self, events, prefactor_attacher):
+            if prefactor_attacher is not None:
+                prefactor_attacher(list(events))
+            return self.add_events(events)
+
     prefactor_events = []
     manager = SimpleNamespace(use_global=lambda: None)
     config = SimpleNamespace(
@@ -108,6 +113,11 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
     class FakeReferenceTable:
         def add_events(self, events):
             return [Ok(pd.DataFrame({"idx_ref": [0]}))]
+
+        def add_events_with_prefactors(self, events, prefactor_attacher):
+            if prefactor_attacher is not None:
+                prefactor_attacher(list(events))
+            return self.add_events(events)
 
     config = SimpleNamespace(
         basin=SimpleNamespace(
