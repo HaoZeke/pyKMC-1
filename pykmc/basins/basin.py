@@ -808,7 +808,7 @@ class BasinsGenericEvents() :
                         claim = registry.claim_refinement(
                             state=int(row["state"]),
                             wuid=int(idx),
-                            saddle_positions=saddle_positions[neighbors],
+                            saddle_positions=saddle_positions,
                             reactant_positions=reactant_for_claim,
                             displacement_type="absorbing-refinement",
                         )
