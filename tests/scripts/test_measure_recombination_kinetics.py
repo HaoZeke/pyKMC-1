@@ -1412,7 +1412,9 @@ def test_render_trial_input_promotes_amsel_priority_to_vtst_rates(tmp_path):
     assert config["RateConstant"]["compute_vineyard_prefactor"] == "True"
 
 
-def test_render_trial_input_defaults_to_single_frontier_search(tmp_path):
+def test_render_trial_input_defaults_frontier_searches_to_event_search_budget(
+    tmp_path,
+):
     script = _load_script()
 
     text = script.render_trial_input(
@@ -1438,7 +1440,7 @@ def test_render_trial_input_defaults_to_single_frontier_search(tmp_path):
     config.optionxform = str
     config.read_string(text)
     assert config["EventSearch"]["nsearch"] == "3"
-    assert config["BASIN"]["frontier_event_searches"] == "1"
+    assert config["BASIN"]["frontier_event_searches"] == "3"
 
 
 def test_render_trial_input_uses_committor_tolerance_without_default_absorbing_cap(
