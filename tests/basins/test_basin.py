@@ -166,6 +166,71 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
     )
 
 
+def test_frontier_state_search_inherits_partn_evals_without_configured_cap(
+    monkeypatch,
+):
+    known = "known-env"
+    unknown = "unknown-env"
+    event_output = SimpleNamespace(central_atom_index=1)
+    seen_limits = []
+
+    class FakeEventSearch:
+        def __init__(self, config, system, manager, loggers):
+            self.config = config
+
+        def execute(self, central_atom_research_list):
+            seen_limits.append(
+                (
+                    int(self.config.partn.nevalf_max),
+                    int(self.config.partn.evalf_max),
+                )
+            )
+
+        def get_successes_results(self):
+            return [event_output]
+
+    class FakeReferenceTable:
+        def add_events(self, events):
+            return [Ok(pd.DataFrame({"idx_ref": [0]}))]
+
+    config = SimpleNamespace(
+        basin=SimpleNamespace(
+            frontier_event_searches=1,
+            frontier_search_nevalf_max=None,
+        ),
+        partn=SimpleNamespace(
+            amsel_recomb_seed=False,
+            nevalf_max=1200,
+            evalf_max=2400,
+        ),
+    )
+    state = StateData(
+        system=System(
+            positions=np.zeros((2, 3)),
+            types=np.array(["Cu", "Cu"]),
+            cell=np.eye(3) * 10.0,
+            pbc=True,
+            index=np.arange(2),
+        ),
+        environment=SimpleNamespace(atomic_environment_list=[known, unknown]),
+        neighbors_list=None,
+        transient=True,
+    )
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=FakeReferenceTable(),
+        known_environments={known},
+        manager=SimpleNamespace(use_global=lambda: None),
+    )
+
+    monkeypatch.setattr(basin_module, "EventSearch", FakeEventSearch)
+
+    assert basin._try_search_unknown_state_environments(state) is True
+    assert seen_limits == [(1200, 2400)]
+    assert config.partn.nevalf_max == 1200
+    assert config.partn.evalf_max == 2400
+
+
 def test_frontier_recomb_search_center_uses_configured_capture_radius(monkeypatch):
     seen = {}
     config = SimpleNamespace(
