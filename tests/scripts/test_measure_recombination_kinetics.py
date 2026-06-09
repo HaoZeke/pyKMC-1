@@ -766,6 +766,8 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "amsel-adaptive",
             "--amsel-python-path",
             str(tmp_path / "amsel-python" / "python"),
+            "--trial-workers",
+            "3",
             "--work-budget",
             "closed-states:2",
             "--dry-run",
@@ -838,6 +840,7 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["partn_search_evals"] == 41
     assert manifest["amsel_python_path"] == str(tmp_path / "amsel-python" / "python")
+    assert manifest["trial_workers"] == 3
 
 
 def test_cli_dry_run_records_generic_transport_parameters(tmp_path):
