@@ -8,6 +8,7 @@ import csv
 import json
 import math
 import os
+import random
 import re
 import signal
 import subprocess
@@ -15,7 +16,7 @@ import sys
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     import amsel as _amsel
@@ -626,6 +627,97 @@ def generate_cu_vac_sia_config(
         "sia_center_A": _round_position(sia_center),
         "dumbbell_half_separation_A": round(float(dumbbell_half_A), 8),
     }
+
+
+def generate_cu_random_vacancy_sia_config(
+    output: Path,
+    *,
+    seed: int,
+    cells: int = CU_FCC_CELLS,
+    lattice_parameter_A: float = CU_FCC_LATTICE_PARAMETER_A,
+) -> dict[str, Any]:
+    if int(cells) < 3:
+        raise ValueError("cells must be at least 3 for a V-SIA pair")
+
+    cells = int(cells)
+    lattice_parameter_A = float(lattice_parameter_A)
+    cell_length_A = cells * lattice_parameter_A
+    nearest_neighbor_A = lattice_parameter_A / math.sqrt(2.0)
+    positions = _fcc_positions(cells, lattice_parameter_A)
+    mid = cells // 2
+    sia_center = (
+        mid * lattice_parameter_A,
+        (mid + 0.5) * lattice_parameter_A,
+        (mid + 0.5) * lattice_parameter_A,
+    )
+    dumbbell_half_A = lattice_parameter_A * CU_DUMBBELL_HALF_SEPARATION_FRACTION
+
+    def same_site(a: tuple[float, float, float], b: tuple[float, float, float]) -> bool:
+        return all(
+            math.isclose(x, y, rel_tol=0.0, abs_tol=1.0e-8)
+            for x, y in zip(a, b)
+        )
+
+    vacancy_candidates = [
+        position for position in positions if not same_site(position, sia_center)
+    ]
+    if not vacancy_candidates:
+        raise ValueError("could not choose a Cu vacancy site")
+    vacancy = random.Random(int(seed)).choice(vacancy_candidates)
+    delta = _minimum_image_delta(sia_center, vacancy, cell_length_A)
+    distance_A = math.sqrt(sum(component * component for component in delta))
+    actual_separation_nn = distance_A / nearest_neighbor_A
+
+    output_positions = [
+        position
+        for position in positions
+        if not same_site(position, vacancy) and not same_site(position, sia_center)
+    ]
+    output_positions.extend(
+        [
+            (
+                (sia_center[0] - dumbbell_half_A) % cell_length_A,
+                sia_center[1],
+                sia_center[2],
+            ),
+            (
+                (sia_center[0] + dumbbell_half_A) % cell_length_A,
+                sia_center[1],
+                sia_center[2],
+            ),
+        ]
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    lattice = f"{cell_length_A:g} 0.0 0.0 0.0 {cell_length_A:g} 0.0 0.0 0.0 {cell_length_A:g}"
+    lines = [
+        str(len(output_positions)),
+        f'Lattice="{lattice}" Properties=species:S:1:pos:R:3 pbc="T T T"',
+    ]
+    lines.extend(
+        "Cu      "
+        + "      ".join(_format_xyz_float(coord) for coord in position)
+        for position in output_positions
+    )
+    output.write_text("\n".join(lines) + "\n")
+    return {
+        "atom_count": len(output_positions),
+        "cells": cells,
+        "lattice_parameter_A": lattice_parameter_A,
+        "nearest_neighbor_A": nearest_neighbor_A,
+        "initial_config_mode": "random-vacancy",
+        "vacancy_seed": int(seed),
+        "actual_separation_nn": float(actual_separation_nn),
+        "vacancy_position_A": _round_position(vacancy),
+        "sia_center_A": _round_position(sia_center),
+        "dumbbell_half_separation_A": round(float(dumbbell_half_A), 8),
+    }
+
+
+def cu_lattice_parameter_for_temperature(temperature_K: float | None) -> float:
+    transport = cu_transport_at_temperature(temperature_K)
+    if transport is None:
+        return CU_FCC_LATTICE_PARAMETER_A
+    return float(transport["lattice_parameter_A"])
 
 
 def seed_schedule(
@@ -1494,6 +1586,10 @@ def trial_commands(
     mpirun: str,
     python: str,
     amsel_python_path: Path | None = None,
+    initial_config_factory: Callable[
+        [Path, dict[str, object], float], tuple[Path, dict[str, Any]]
+    ]
+    | None = None,
 ) -> list[dict[str, Any]]:
     commands = []
     template_text = template_input.read_text()
@@ -1509,11 +1605,17 @@ def trial_commands(
             if use_temperature_dirs:
                 trial_dir = trial_dir / temperature_label(temperature_K)
             trial_dir = trial_dir / f"trial-{item['trial']}"
+            trial_initial_config = initial_config
+            cu_initial_config_metadata = None
+            if initial_config_factory is not None:
+                trial_initial_config, cu_initial_config_metadata = (
+                    initial_config_factory(trial_dir, item, float(temperature_K))
+                )
             write_trial_input(
                 trial_dir / "input.in",
                 template_text=template_text,
                 template_dir=template_input.parent,
-                initial_config=initial_config,
+                initial_config=trial_initial_config,
                 reference_table=reference_table,
                 visited_environments=visited_environments,
                 max_steps=max_steps,
@@ -1554,6 +1656,8 @@ def trial_commands(
                     "event_searches": event_searches,
                     "partn_search_evals": partn_search_evals,
                     "trial_timeout_s": trial_timeout_s,
+                    "initial_config": str(trial_initial_config),
+                    "cu_initial_config_metadata": cu_initial_config_metadata,
                     "basin_energy_thr": basin_energy_thr,
                     "basin_max_expansions": basin_max_expansions,
                     "basin_max_closed_states": basin_max_closed_states,
@@ -2102,6 +2206,14 @@ def main(argv: list[str] | None = None) -> int:
             "is closest to this nearest-neighbor separation."
         ),
     )
+    parser.add_argument(
+        "--cu-random-vacancy",
+        action="store_true",
+        help=(
+            "For --case cu-vac-sia, generate a seeded random-vacancy "
+            "configuration for each trial."
+        ),
+    )
     parser.add_argument("--transport-lattice-parameter-A", type=float)
     parser.add_argument("--transport-diffusivity-A2-per-ps", type=float)
     parser.add_argument("--transport-alpha", type=float)
@@ -2180,10 +2292,17 @@ def main(argv: list[str] | None = None) -> int:
         )
     args.out.mkdir(parents=True, exist_ok=True)
     cu_initial_config_metadata = None
+    cu_initial_config_mode = None
+    initial_config_factory = None
     if args.cu_target_separation_nn is not None:
         if args.case != "cu-vac-sia":
             parser.error(
                 "--cu-target-separation-nn is only valid for --case cu-vac-sia"
+            )
+        if args.cu_random_vacancy:
+            parser.error(
+                "--cu-target-separation-nn cannot be combined with "
+                "--cu-random-vacancy"
             )
         if args.initial_config is not None:
             parser.error(
@@ -2198,7 +2317,32 @@ def main(argv: list[str] | None = None) -> int:
             generated_initial_config,
             target_separation_nn=args.cu_target_separation_nn,
         )
+        cu_initial_config_mode = "fixed-separation"
         initial_config = generated_initial_config
+    if args.cu_random_vacancy:
+        if args.case != "cu-vac-sia":
+            parser.error("--cu-random-vacancy is only valid for --case cu-vac-sia")
+        if args.initial_config is not None:
+            parser.error("--cu-random-vacancy cannot be combined with --initial-config")
+        cu_initial_config_mode = "random-vacancy"
+
+        def make_random_cu_initial_config(
+            trial_dir: Path,
+            item: dict[str, object],
+            temperature_K: float,
+        ) -> tuple[Path, dict[str, Any]]:
+            generated_initial_config = trial_dir / "initial_config.xyz"
+            metadata = generate_cu_random_vacancy_sia_config(
+                generated_initial_config,
+                seed=int(item["seed"]),
+                lattice_parameter_A=cu_lattice_parameter_for_temperature(
+                    temperature_K
+                ),
+            )
+            metadata["temperature_K"] = float(temperature_K)
+            return generated_initial_config, metadata
+
+        initial_config_factory = make_random_cu_initial_config
     temperatures = args.temperature or [
         template_temperature_K(template_input.read_text())
     ]
@@ -2240,6 +2384,7 @@ def main(argv: list[str] | None = None) -> int:
         mpirun=args.mpirun,
         python=args.python,
         amsel_python_path=args.amsel_python_path,
+        initial_config_factory=initial_config_factory,
     )
     if not args.dry_run and any(priority == "amsel" for priority in args.priority):
         try:
@@ -2264,6 +2409,7 @@ def main(argv: list[str] | None = None) -> int:
         "trials": args.trials,
         "seed": args.seed,
         "max_steps": args.max_steps,
+        "cu_initial_config_mode": cu_initial_config_mode,
         "cu_target_separation_nn": args.cu_target_separation_nn,
         "cu_initial_config_metadata": cu_initial_config_metadata,
         "transport_lattice_parameter_A": args.transport_lattice_parameter_A,
