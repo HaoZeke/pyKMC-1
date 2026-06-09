@@ -352,8 +352,12 @@ def coverage_repair_search_batch(
 
 def coverage_resampling_attempt_limit(searches_per_environment: int) -> int:
     """Return the finite retry budget for adaptive coverage resampling."""
+    missing_rate_ratio_limit = (
+        PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR
+        / (1.0 - PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR)
+    )
     rate_gap_attempts = (
-        int(math.ceil(1.0 / PROCESS_SEARCH_MISSING_RATE_REL_TOL)) + 1
+        int(math.ceil(missing_rate_ratio_limit)) + 1
     )
     return max(
         8,
@@ -555,7 +559,7 @@ def _evidence_signature(
 _PROCESS_SEARCH_CERTIFICATE_CACHE: dict[tuple, dict[str, object]] = {}
 _PROCESS_SEARCH_CERTIFICATE_CACHE_MAX = 4096
 PROCESS_SEARCH_MISSING_RATE_FLOOR = 1.0e-12
-PROCESS_SEARCH_MISSING_RATE_REL_TOL = 5.0e-3
+PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR = 0.95
 
 
 def _process_search_certificate_cache_clear() -> None:
@@ -668,9 +672,13 @@ def _needs_rate_material_process_search(
         return True
     if math.isinf(missing_rate_mass):
         return True
+    missing_rate_ratio_limit = (
+        (1.0 - PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR)
+        / PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR
+    )
     rate_floor = max(
         PROCESS_SEARCH_MISSING_RATE_FLOOR,
-        PROCESS_SEARCH_MISSING_RATE_REL_TOL * float(known_rate_mass),
+        missing_rate_ratio_limit * float(known_rate_mass),
     )
     return float(missing_rate_mass) > rate_floor
 

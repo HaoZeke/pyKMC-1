@@ -1095,9 +1095,15 @@ def test_undercovered_environments_for_search_skips_duplicate_saturated_environm
     ) == []
 
 
-def test_coverage_resampling_attempt_limit_covers_relative_rate_tolerance():
+def test_coverage_resampling_attempt_limit_covers_kinetic_coverage_floor():
     expected = (
-        int(math.ceil(1.0 / kmc_module.PROCESS_SEARCH_MISSING_RATE_REL_TOL)) + 1
+        int(
+            math.ceil(
+                kmc_module.PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR
+                / (1.0 - kmc_module.PROCESS_SEARCH_KINETIC_COVERAGE_FLOOR)
+            )
+        )
+        + 1
     )
 
     assert coverage_resampling_attempt_limit(1) == expected
