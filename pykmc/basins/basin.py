@@ -1236,9 +1236,9 @@ class BasinsGenericEvents() :
             self._restore_frontier_search_evalf_limits(original_evalf_limits)
             self._restore_frontier_search_manager_mode(restore_global_manager)
         events = event_search.get_successes_results()
-        if self.prefactor_attacher is not None:
-            self.prefactor_attacher(events)
-        valid_results = self.reference_table.add_events(events)
+        valid_results = self.reference_table.add_events_with_prefactors(
+            events, self.prefactor_attacher
+        )
         searched = self._searched_frontier_environments(
             state.environment.atomic_environment_list,
             events,

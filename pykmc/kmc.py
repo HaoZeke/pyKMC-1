@@ -1533,8 +1533,16 @@ class KMC:
             List of event dataframe that has been added to the reference event table.
 
         """
-        self._attach_vineyard_prefactors(events)
-        results_is_valid_events = self.reference_table.add_events(events)
+        rate_cfg = getattr(self.config, "rateconstant", None)
+        prefactor_attacher = (
+            self._attach_vineyard_prefactors
+            if getattr(rate_cfg, "style", "constant") == "amsel-vtst"
+            and bool(getattr(rate_cfg, "compute_vineyard_prefactor", False))
+            else None
+        )
+        results_is_valid_events = self.reference_table.add_events_with_prefactors(
+            events, prefactor_attacher
+        )
         self.loggers.info(
             "log",
             "\t :=> Adding {} events to the reference table".format(

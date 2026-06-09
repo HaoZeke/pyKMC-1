@@ -1,6 +1,7 @@
 """Module implementing Classes to manage reference events and active events."""
 
 import pandas as pd
+from collections.abc import Callable
 from typing import Any
 from .rate_constant import compute_rate_Eyring, compute_rate
 from .config import Config
@@ -186,25 +187,7 @@ class ReferenceEventTable:
         results_is_valid_events = []
         # Check if the event is valid based on is_valid_new_event conditions
         for ev in events:
-            res = self.is_valid_new_event(
-                    min1_positions=ev.min1_positions,
-                    saddle_positions=ev.saddle_positions,
-                    min2_positions=ev.min2_positions,
-                    move_atom_idx=ev.move_atom_index,
-                    dE_forward=ev.dE_forward,
-                    dE_backward=ev.dE_backward,
-                    cell=ev.cell,
-                    types=getattr(ev, "types", None),
-                    prefactor_inv_s=getattr(ev, "prefactor_inv_s", None),
-                    product_prefactor_inv_s=getattr(
-                        ev, "product_prefactor_inv_s", None
-                    ),
-                    prefactor_source=getattr(ev, "prefactor_source", None),
-                    saddle_freq_invcm=getattr(ev, "saddle_freq_invcm", None),
-                    barrier_omega_rad_per_s=getattr(
-                        ev, "barrier_omega_rad_per_s", None
-                    ),
-                )
+            res = self.event_search_output_result(ev)
             results_is_valid_events.append(res)
             if res.is_ok() : 
                 self.add(res.ok_value()) 
@@ -220,6 +203,59 @@ class ReferenceEventTable:
         #    self.add(df)
 
         return results_is_valid_events
+
+    def add_events_with_prefactors(
+        self,
+        events: list[EventSearchOutput],
+        prefactor_attacher: Callable[[list[EventSearchOutput]], None] | None,
+    ) -> list[Result[pd.DataFrame, ErrorInfo]]:
+        """Validate candidate events before attaching expensive prefactors."""
+        if prefactor_attacher is None:
+            return self.add_events(events)
+
+        results_is_valid_events = []
+        for ev in events:
+            preflight = self.event_search_output_result(ev, include_prefactors=False)
+            if preflight.is_err():
+                results_is_valid_events.append(preflight)
+                continue
+            prefactor_attacher([ev])
+            results_is_valid_events.extend(self.add_events([ev]))
+        return results_is_valid_events
+
+    def event_search_output_result(
+        self,
+        ev: EventSearchOutput,
+        *,
+        include_prefactors: bool = True,
+    ) -> Result[pd.DataFrame, ErrorInfo]:
+        """Validate one event-search result against the reference table."""
+        prefactor_inv_s = getattr(ev, "prefactor_inv_s", None)
+        product_prefactor_inv_s = getattr(ev, "product_prefactor_inv_s", None)
+        prefactor_source = getattr(ev, "prefactor_source", None)
+        saddle_freq_invcm = getattr(ev, "saddle_freq_invcm", None)
+        barrier_omega_rad_per_s = getattr(ev, "barrier_omega_rad_per_s", None)
+        if not include_prefactors:
+            prefactor_inv_s = None
+            product_prefactor_inv_s = None
+            prefactor_source = None
+            saddle_freq_invcm = None
+            barrier_omega_rad_per_s = None
+        return self.is_valid_new_event(
+            min1_positions=ev.min1_positions,
+            saddle_positions=ev.saddle_positions,
+            min2_positions=ev.min2_positions,
+            move_atom_idx=ev.move_atom_index,
+            dE_forward=ev.dE_forward,
+            dE_backward=ev.dE_backward,
+            cell=ev.cell,
+            types=getattr(ev, "types", None),
+            prefactor_inv_s=prefactor_inv_s,
+            product_prefactor_inv_s=product_prefactor_inv_s,
+            prefactor_source=prefactor_source,
+            saddle_freq_invcm=saddle_freq_invcm,
+            barrier_omega_rad_per_s=barrier_omega_rad_per_s,
+        )
 
     def is_valid_new_event(
         self,
