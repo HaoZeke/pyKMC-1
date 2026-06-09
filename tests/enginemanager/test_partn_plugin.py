@@ -15,6 +15,7 @@ class FakeLammps:
         self.commands = []
         self.registering_paths = set(registering_paths or [])
         self.artn_registered = False
+        self.scatter_payload = None
 
     def has_style(self, category, name):
         return category == "fix" and name == "artn" and self.artn_registered
@@ -24,6 +25,9 @@ class FakeLammps:
         for path in self.registering_paths:
             if command == f"plugin load {path}":
                 self.artn_registered = True
+
+    def scatter_atoms(self, name, style, count, data):
+        self.scatter_payload = (name, style, count, data)
 
 
 class FakeEngine:
