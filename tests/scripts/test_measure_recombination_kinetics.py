@@ -762,10 +762,14 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
             "1",
             "--basin-frontier-committor-tol",
             "0.01",
+            "--basin-search-registry-path",
+            str(tmp_path / "shared-basin-search.jsonl"),
             "--amsel-selector",
             "amsel-adaptive",
             "--amsel-python-path",
             str(tmp_path / "amsel-python" / "python"),
+            "--amsel-kdb-path",
+            str(tmp_path / "shared-amsel-kdb"),
             "--trial-workers",
             "3",
             "--work-budget",
@@ -829,6 +833,10 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     assert config["BASIN"]["max_closed_states"] == "2"
     assert config["BASIN"]["max_absorbing_refinements"] == "1"
     assert config["BASIN"]["frontier_committor_tol"] == "0.01"
+    assert config["Control"]["basin_search_registry_path"] == str(
+        tmp_path / "shared-basin-search.jsonl"
+    )
+    assert config["Control"]["kdb_path"] == str(tmp_path / "shared-amsel-kdb")
 
     legacy = configparser.ConfigParser()
     legacy.optionxform = str
@@ -840,6 +848,10 @@ def test_cli_dry_run_writes_manifest_and_commands(tmp_path):
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["partn_search_evals"] == 41
     assert manifest["amsel_python_path"] == str(tmp_path / "amsel-python" / "python")
+    assert manifest["basin_search_registry_path"] == str(
+        tmp_path / "shared-basin-search.jsonl"
+    )
+    assert manifest["amsel_kdb_path"] == str(tmp_path / "shared-amsel-kdb")
     assert manifest["trial_workers"] == 3
 
 
