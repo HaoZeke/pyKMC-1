@@ -771,7 +771,7 @@ class TestBasin :
         assert basin.explorer.explored == [0]
         assert basin.states_to_explore == [1]
 
-    def test_unresolved_frontier_process_closes_duplicate_queued_states(self):
+    def test_unresolved_frontier_process_closes_duplicate_event_family(self):
         table = BasinStatesConnectivity()
         table.df = pd.DataFrame(
             [
@@ -823,22 +823,38 @@ class TestBasin :
                     "dE_backward": 0.0,
                     "k_backward": 0.0,
                 },
+                {
+                    "state": 0,
+                    "state_connexion": 5,
+                    "event_connexion": 8,
+                    "central_atom": 4,
+                    "sym": 0,
+                    "transient": True,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                },
             ]
         )
         basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
         basin.connectivity_table = table
         basin.states = {0: object()}
-        basin.states_to_explore = [1, 2, 3, 4]
+        basin.states_to_explore = [1, 2, 3, 4, 5]
         basin.explored_states = [0]
 
         absorbed = basin._absorb_duplicate_unresolved_frontier_processes(1)
 
-        assert absorbed == [2, 3]
-        assert basin.states_to_explore == [1, 4]
-        assert basin.explored_states == [0, 2, 3]
-        assert not bool(table.df.loc[table.df["state_connexion"] == 2].iloc[0]["transient"])
-        assert not bool(table.df.loc[table.df["state_connexion"] == 3].iloc[0]["transient"])
-        assert bool(table.df.loc[table.df["state_connexion"] == 4].iloc[0]["transient"])
+        assert absorbed == [2, 3, 4]
+        assert basin.states_to_explore == [1, 5]
+        assert basin.explored_states == [0, 2, 3, 4]
+        for state_connexion in (2, 3, 4):
+            assert not bool(
+                table.df.loc[
+                    table.df["state_connexion"] == state_connexion
+                ].iloc[0]["transient"]
+            )
+        assert bool(table.df.loc[table.df["state_connexion"] == 5].iloc[0]["transient"])
 
     def test_absorbing_refinement_budget_uses_amsel_outlet_committor(
         self, monkeypatch
