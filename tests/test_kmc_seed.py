@@ -1859,6 +1859,56 @@ def test_process_coverage_trace_reports_rate_scale_search_decision(monkeypatch):
     assert "needs_more_search=False" in line
 
 
+def test_kinetic_coverage_floor_allows_bounded_rate_gap_progress(monkeypatch):
+    class FakeCertificate:
+        attempts = 35
+        observations = 27
+        unique_processes = 9
+        singleton_processes = 6
+        unseen_process_probability = 0.1714286
+        missing_rate_mass_estimate = 3.0
+        needs_more_search = True
+
+    monkeypatch.setattr(
+        kmc_module,
+        "_amsel",
+        SimpleNamespace(event_completeness=lambda **kwargs: FakeCertificate()),
+    )
+    kmc_module._process_search_certificate_cache_clear()
+    evidence = {
+        "bounded-gap-env": EnvironmentSearchEvidence(
+            attempts=35,
+            process_counts=Counter(
+                {
+                    ("process-a",): 9,
+                    ("process-b",): 6,
+                    ("process-c",): 4,
+                    ("process-d",): 2,
+                    ("process-e",): 1,
+                    ("process-f",): 1,
+                    ("process-g",): 1,
+                    ("process-h",): 1,
+                    ("process-i",): 1,
+                }
+            ),
+            process_rates={
+                ("process-a",): 100.0,
+            },
+        )
+    }
+
+    assert undercovered_environments_for_search(
+        current_environments=["bounded-gap-env"],
+        new_environments=[],
+        visited_environments={"bounded-gap-env"},
+        environment_search_evidence=evidence,
+    ) == []
+
+    line = environment_search_evidence_trace_lines(evidence)[0]
+    assert "kinetic_coverage_lower=9.708738e-01" in line
+    assert "needs_more_search=False" in line
+
+
 def test_rate_gap_terms_delegate_partition_to_amsel(monkeypatch):
     calls = []
 
