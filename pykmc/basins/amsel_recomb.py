@@ -98,34 +98,61 @@ def _candidate_source_atoms(candidate) -> list[int]:
     return sources
 
 
+def _candidate_targets_for_source(
+    candidate, positions, cell, source: int
+) -> list[np.ndarray]:
+    pos = np.asarray(positions, dtype=float)
+    celld = _cell_diag(cell)
+    nn = float(candidate.nn_spacing)
+    targets = [np.asarray(candidate.target_centroid, dtype=float)]
+    for target_atom in getattr(candidate, "target_cluster", ()) or ():
+        shell = pos[int(target_atom)]
+        direction = _minimum_image(pos[int(source)] - shell, celld)
+        norm = float(np.sqrt((direction * direction).sum()))
+        if norm <= 1.0e-12 or nn <= 0.0:
+            continue
+        projected = shell + direction * (nn / norm)
+        if not any(np.allclose(projected, target) for target in targets):
+            targets.append(projected)
+    return targets
+
+
 def _ranked_candidate_source(candidate, positions, cell):
     pos = np.asarray(positions, dtype=float)
     celld = _cell_diag(cell)
-    target = np.asarray(candidate.target_centroid, dtype=float)
     nn = float(candidate.nn_spacing)
     ranked = []
     for source in _candidate_source_atoms(candidate):
-        distance = _pbc_distance(pos[int(source)], target, celld)
-        product_defects = float("inf")
-        try:
-            product = build_product(pos, cell, int(source), target)
-            defects = n_defects(product, cell)
-            if defects >= 0:
-                product_defects = float(defects)
-        except Exception:
+        for target in _candidate_targets_for_source(candidate, pos, cell, int(source)):
+            distance = _pbc_distance(pos[int(source)], target, celld)
             product_defects = float("inf")
-        ranked.append(
-            (
-                product_defects,
-                distance / nn if nn > 0.0 else float("inf"),
-                int(source),
-                distance,
+            try:
+                product = build_product(pos, cell, int(source), target)
+                defects = n_defects(product, cell)
+                if defects >= 0:
+                    product_defects = float(defects)
+            except Exception:
+                product_defects = float("inf")
+            ranked.append(
+                (
+                    product_defects,
+                    distance / nn if nn > 0.0 else float("inf"),
+                    int(source),
+                    distance,
+                    tuple(float(coord) for coord in np.asarray(target, dtype=float)),
+                    np.asarray(target, dtype=float),
+                )
             )
-        )
     if not ranked:
-        return int(candidate.source_atom), float(candidate.distance)
-    _product_defects, _distance_over_nn, source, distance = min(ranked)
-    return source, distance
+        return (
+            int(candidate.source_atom),
+            np.asarray(candidate.target_centroid, dtype=float),
+            float(candidate.distance),
+        )
+    _product_defects, _distance_over_nn, source, distance, _target_key, target = min(
+        ranked
+    )
+    return source, target, distance
 
 
 def _coordination(pos: np.ndarray, cell: np.ndarray, cutoff: float) -> np.ndarray:
@@ -149,10 +176,12 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
         positions, cell, cutoff_mult=cutoff_mult
     )
     if candidate is not None:
-        source_atom, distance = _ranked_candidate_source(candidate, positions, cell)
+        source_atom, target_centroid, distance = _ranked_candidate_source(
+            candidate, positions, cell
+        )
         topology = (
             int(source_atom),
-            list(candidate.target_centroid),
+            np.asarray(target_centroid, dtype=float).tolist(),
             float(distance),
             float(candidate.nn_spacing),
         )
