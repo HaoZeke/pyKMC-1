@@ -76,15 +76,65 @@ def _cell_diag(cell) -> np.ndarray:
     return np.diag(cell) if cell.ndim == 2 else cell
 
 
+def _minimum_image(delta: np.ndarray, cell: np.ndarray) -> np.ndarray:
+    out = np.asarray(delta, dtype=float).copy()
+    for ax in range(3):
+        if cell[ax] > 0:
+            out[..., ax] -= cell[ax] * np.round(out[..., ax] / cell[ax])
+    return out
+
+
+def _pbc_distance(a, b, cell: np.ndarray) -> float:
+    delta = _minimum_image(np.asarray(a, dtype=float) - np.asarray(b, dtype=float), cell)
+    return float(np.sqrt((delta * delta).sum()))
+
+
+def _candidate_source_atoms(candidate) -> list[int]:
+    sources = [int(candidate.source_atom)]
+    for source in getattr(candidate, "source_cluster", ()) or ():
+        source = int(source)
+        if source not in sources:
+            sources.append(source)
+    return sources
+
+
+def _ranked_candidate_source(candidate, positions, cell):
+    pos = np.asarray(positions, dtype=float)
+    celld = _cell_diag(cell)
+    target = np.asarray(candidate.target_centroid, dtype=float)
+    nn = float(candidate.nn_spacing)
+    ranked = []
+    for source in _candidate_source_atoms(candidate):
+        distance = _pbc_distance(pos[int(source)], target, celld)
+        product_defects = float("inf")
+        try:
+            product = build_product(pos, cell, int(source), target)
+            defects = n_defects(product, cell)
+            if defects >= 0:
+                product_defects = float(defects)
+        except Exception:
+            product_defects = float("inf")
+        ranked.append(
+            (
+                product_defects,
+                distance / nn if nn > 0.0 else float("inf"),
+                int(source),
+                distance,
+            )
+        )
+    if not ranked:
+        return int(candidate.source_atom), float(candidate.distance)
+    _product_defects, _distance_over_nn, source, distance = min(ranked)
+    return source, distance
+
+
 def _coordination(pos: np.ndarray, cell: np.ndarray, cutoff: float) -> np.ndarray:
     n = pos.shape[0]
     c2 = cutoff * cutoff
     cn = np.zeros(n, dtype=int)
     for i in range(n):
         d = pos - pos[i]
-        for ax in range(3):
-            if cell[ax] > 0:
-                d[:, ax] -= cell[ax] * np.round(d[:, ax] / cell[ax])
+        d = _minimum_image(d, cell)
         cn[i] = int(((d * d).sum(axis=1) < c2).sum()) - 1
     return cn
 
@@ -99,10 +149,11 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
         positions, cell, cutoff_mult=cutoff_mult
     )
     if candidate is not None:
+        source_atom, distance = _ranked_candidate_source(candidate, positions, cell)
         topology = (
-            int(candidate.source_atom),
+            int(source_atom),
             list(candidate.target_centroid),
-            float(candidate.distance),
+            float(distance),
             float(candidate.nn_spacing),
         )
         _remember_topology(key, topology)
