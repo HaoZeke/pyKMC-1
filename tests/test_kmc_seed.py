@@ -63,7 +63,7 @@ def test_central_atoms_research_uses_amsel_recombination_center(monkeypatch):
     )
     monkeypatch.setattr(
         "pykmc.basins.amsel_recomb.recombination_search_center",
-        lambda positions, cell: 1,
+        lambda positions, cell, capture_mult=None: 1,
         raising=False,
     )
     random.seed(0)
@@ -92,7 +92,7 @@ def test_central_atoms_research_prioritizes_amsel_center_without_dropping_enviro
     )
     monkeypatch.setattr(
         "pykmc.basins.amsel_recomb.recombination_search_center",
-        lambda positions, cell: 1,
+        lambda positions, cell, capture_mult=None: 1,
         raising=False,
     )
     random.seed(0)
@@ -122,7 +122,7 @@ def test_central_atoms_research_replaces_same_environment_candidate_with_amsel_c
     )
     monkeypatch.setattr(
         "pykmc.basins.amsel_recomb.recombination_search_center",
-        lambda positions, cell: 2,
+        lambda positions, cell, capture_mult=None: 2,
         raising=False,
     )
     random.seed(1)
@@ -156,7 +156,7 @@ def test_central_atoms_research_skips_amsel_center_outside_requested_environment
     )
     monkeypatch.setattr(
         "pykmc.basins.amsel_recomb.recombination_search_center",
-        lambda positions, cell: 3,
+        lambda positions, cell, capture_mult=None: 3,
         raising=False,
     )
     random.seed(0)
@@ -353,7 +353,7 @@ def test_suppressed_amsel_capture_skips_recombination_center(monkeypatch):
     )
     monkeypatch.setattr(
         "pykmc.basins.amsel_recomb.recombination_search_center",
-        lambda positions, cell: 3,
+        lambda positions, cell, capture_mult=None: 3,
         raising=False,
     )
 
