@@ -1202,6 +1202,156 @@ class TestBasin :
         assert manager.refined_centers == [10, 20, 30]
         assert basin.absorbing_refinement_diagnostics["unresolved_committor"] == 0.0
 
+    def test_absorbing_refinement_registry_claim_uses_local_saddle_coordinates(
+        self, monkeypatch
+    ):
+        table = BasinStatesConnectivity()
+        table.df = pd.DataFrame(
+            [
+                {
+                    "state": 0,
+                    "state_connexion": 1,
+                    "event_connexion": 1,
+                    "central_atom": 4,
+                    "sym": 0,
+                    "transient": False,
+                    "dE_forward": 0.0,
+                    "k_forward": 1.0,
+                    "dE_backward": 0.0,
+                    "k_backward": 0.0,
+                }
+            ]
+        )
+        local_saddle = np.array([[4.5, 0.0, 0.0], [5.5, 0.0, 0.0]])
+        full_saddle = np.zeros((6, 3))
+        full_saddle[[4, 5]] = local_saddle
+
+        class FakeSelector:
+            def diagnose_connectivity(self, connectivity_table, entry=0):
+                return {
+                    "ok": True,
+                    "ngt_outlets": [
+                        {"ok": True, "absorbing_state": 1, "committor": 1.0}
+                    ],
+                }
+
+        class FakeFuture:
+            def __init__(self, value):
+                self.value = value
+
+            def result(self):
+                return self.value
+
+        class FakeManager:
+            def get_total_energy(self, **_kwargs):
+                return FakeFuture(0.0)
+
+            def partn_refine(self, *_args):
+                return FakeFuture(
+                    Ok(
+                        SimpleNamespace(
+                            E_saddle=0.25,
+                            saddle_positions=full_saddle.copy(),
+                        )
+                    )
+                )
+
+        class FakeNeighbors:
+            def get_neighbors(self, *_args):
+                return np.array([4, 5])
+
+        class FakeState:
+            def __init__(self):
+                self.system = System(
+                    positions=np.array(
+                        [
+                            [0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0],
+                            [2.0, 0.0, 0.0],
+                            [3.0, 0.0, 0.0],
+                            [4.0, 0.0, 0.0],
+                            [5.0, 0.0, 0.0],
+                        ]
+                    ),
+                    types=np.array(["Cu"] * 6),
+                    cell=np.eye(3) * 10.0,
+                    pbc=True,
+                    index=np.arange(6),
+                )
+                self.neighbors_list = FakeNeighbors()
+
+            def ensure_full_state(self, _config):
+                return None
+
+            def release_heavy_objects(self):
+                return None
+
+        class FakeRegistration:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def match(self):
+                return Ok(
+                    SimpleNamespace(
+                        rotation_matrix=np.eye(3),
+                        translation_matrix=np.zeros(3),
+                        permutation_matrix=np.arange(2),
+                    )
+                )
+
+        class FakeRegistry:
+            available = True
+
+            def __init__(self):
+                self.claims = []
+                self.completed = []
+
+            def claim_refinement(self, **kwargs):
+                self.claims.append(kwargs)
+                return SimpleNamespace(accepted=True)
+
+            def mark_completed(self, wuid, *, result="ok"):
+                self.completed.append((int(wuid), result))
+
+        monkeypatch.setattr(basin_module, "AmselFPTASelector", FakeSelector)
+        monkeypatch.setattr(basin_module, "PointSetRegistration", FakeRegistration)
+        monkeypatch.setattr(basin_module, "check_match", lambda result, _thr: result)
+        monkeypatch.setattr(
+            basin_module,
+            "compute_rate_Eyring",
+            lambda dE, _config: float(dE),
+        )
+
+        registry = FakeRegistry()
+        basin = BasinsGenericEvents.__new__(BasinsGenericEvents)
+        basin.config = SimpleNamespace(
+            basin=SimpleNamespace(max_absorbing_refinements=1),
+            control=SimpleNamespace(active_volume=True),
+            psr=SimpleNamespace(matching_score_thr=0.4),
+        )
+        basin.connectivity_table = table
+        basin.reference_table = SimpleNamespace(
+            table=pd.DataFrame(
+                [{"idx_ref": 1, "saddle_positions": local_saddle.copy()}]
+            )
+        )
+        basin.manager = FakeManager()
+        basin.states = {0: FakeState()}
+        basin.absorbing_saddle_positions = {}
+        basin.basin_search_registry = registry
+
+        result = basin.refine_absorbing(system=object())
+
+        assert result.is_ok(), result.err_value() if not result.is_ok() else None
+        assert len(registry.claims) == 1
+        np.testing.assert_allclose(
+            registry.claims[0]["saddle_positions"], local_saddle
+        )
+        np.testing.assert_allclose(
+            registry.claims[0]["reactant_positions"],
+            basin.states[0].system.positions[[4, 5]],
+        )
+
     def test_frontier_budget_records_unresolved_committor(self, monkeypatch):
         table = BasinStatesConnectivity()
         table.df = pd.DataFrame(
