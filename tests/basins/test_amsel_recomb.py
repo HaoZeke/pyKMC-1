@@ -161,6 +161,52 @@ def test_nearest_recomb_topology_scores_source_cluster_by_product_defects(
     )
 
 
+def test_nearest_recomb_topology_scores_target_shell_projection(monkeypatch):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.eye(3) * 10.0
+    candidate = SimpleNamespace(
+        source_atom=1,
+        source_cluster=(1,),
+        target_cluster=(0,),
+        target_centroid=(5.0, 0.0, 0.0),
+        distance=3.0,
+        nn_spacing=1.0,
+    )
+
+    def fake_product(positions, cell, source_atom, target_centroid):
+        product = np.asarray(positions, dtype=float).copy()
+        product[int(source_atom)] = np.asarray(target_centroid, dtype=float)
+        return product
+
+    def fake_n_defects(positions, cell):
+        source = np.asarray(positions, dtype=float)[1]
+        if np.allclose(source, [1.0, 0.0, 0.0]):
+            return 2
+        return 6
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_amsel_defect_annihilation_candidate",
+        lambda positions, cell, cutoff_mult=1.08: candidate,
+    )
+    monkeypatch.setattr(amsel_recomb, "build_product", fake_product)
+    monkeypatch.setattr(amsel_recomb, "n_defects", fake_n_defects)
+    amsel_recomb._TOPOLOGY_CACHE.clear()
+
+    assert amsel_recomb._nearest_recomb_topology(positions, cell) == (
+        1,
+        [1.0, 0.0, 0.0],
+        1.0,
+        1.0,
+    )
+
+
 def test_nearest_recomb_topology_reuses_position_cache(monkeypatch):
     positions = np.array(
         [
