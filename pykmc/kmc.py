@@ -817,6 +817,13 @@ class KMC:
 
     def run(self) -> None:
         """Run the simulation."""
+        self._manager_closed = False
+        try:
+            self._run_impl()
+        finally:
+            self._close_manager(log_end=False)
+
+    def _run_impl(self) -> None:
         self._seed_rngs()
         # Initialize the simulation, KMC attributes and minimize the system
         #self._initialize()
@@ -2052,6 +2059,15 @@ class KMC:
 
     def _close(self) -> None:
         """Close the simulation."""
-        self.loggers.info("log", ":=> End of simulation")
-        self.manager.close_all()
+        self._close_manager(log_end=True)
         sys.exit()
+
+    def _close_manager(self, *, log_end: bool) -> None:
+        if getattr(self, "_manager_closed", False):
+            return
+        self._manager_closed = True
+        if log_end and getattr(self, "loggers", None) is not None:
+            self.loggers.info("log", ":=> End of simulation")
+        manager = getattr(self, "manager", None)
+        if manager is not None:
+            manager.close_all()
