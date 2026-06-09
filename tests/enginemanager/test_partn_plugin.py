@@ -221,3 +221,88 @@ def test_partn_search_configures_artn_evaluation_limit(monkeypatch):
     assert ("converge_property", "norm") in created_artn[0].settings
     assert ("nevalf_max", 37) in created_artn[0].settings
     assert "minimize 1e-6 1e-8 10000 38" in engine.lmp.commands
+
+
+def test_partn_search_passes_configured_capture_radius_to_amsel_seed(monkeypatch):
+    created_artn = []
+    seen = {}
+
+    class FakeArtn:
+        def __init__(self, engine):
+            self.engine = engine
+            self.settings = []
+
+        def reset_input(self):
+            self.settings.append(("reset_input", None))
+
+        def set(self, name, value):
+            self.settings.append((name, value))
+
+    class FakePypartn:
+        @staticmethod
+        def artn(engine):
+            artn = FakeArtn(engine)
+            created_artn.append(artn)
+            return artn
+
+    def fake_recomb_push(
+        positions,
+        cell,
+        central_atom_idx,
+        *,
+        push_step_size,
+        topology,
+        capture_mult=None,
+    ):
+        seen["capture_mult"] = capture_mult
+        return None
+
+    engine = FakeEngine(FakeLammps())
+    config = SimpleNamespace(
+        control=SimpleNamespace(active_volume=False),
+        eventsearch=SimpleNamespace(delr_thr=0.5),
+        atomicenvironment=SimpleNamespace(rcut=6.5),
+        partn=SimpleNamespace(
+            path_artnso="/unused/libartn-lmp.so",
+            dmax=6.0,
+            verbosity=2,
+            delr_thr=0.1,
+            zseed=1000,
+            push_mode="rad",
+            push_dist_thr=1.0,
+            push_step_size=0.4,
+            ninit=2,
+            lanczos_min_size=10,
+            lanczos_max_size=20,
+            lanczos_disp=0.0005,
+            lanczos_eval_conv_thr=0.001,
+            eigval_thr=-0.01,
+            eigen_step_size=0.2,
+            nsmooth=3,
+            neigen=1,
+            alpha_mix_cr=0.2,
+            nnewchance=0,
+            nperp=3,
+            nperp_limitation=None,
+            forc_thr=0.001,
+            convergence_property="norm",
+            nevalf_max=37,
+            push_over=1.0,
+            evalf_max=9999,
+            amsel_recomb_seed=True,
+            amsel_recomb_capture_mult=1.25,
+        ),
+    )
+    monkeypatch.setattr(
+        lammps_operations, "load_partn_plugin", lambda *_args: config.partn.path_artnso
+    )
+    monkeypatch.setattr(
+        lammps_operations, "import_pypartn", lambda *, plugin_path: FakePypartn
+    )
+    monkeypatch.setattr("pykmc.basins.amsel_recomb.recomb_push", fake_recomb_push)
+
+    lammps_operations.partn_search(
+        engine, config, central_atom_idx=4, positions=np.zeros((2, 3)), cell=np.eye(3)
+    )
+
+    assert seen["capture_mult"] == 1.25

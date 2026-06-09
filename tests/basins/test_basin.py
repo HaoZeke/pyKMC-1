@@ -156,6 +156,43 @@ def test_frontier_state_search_caps_and_restores_partn_evals(monkeypatch):
     )
 
 
+def test_frontier_recomb_search_center_uses_configured_capture_radius(monkeypatch):
+    seen = {}
+    config = SimpleNamespace(
+        partn=SimpleNamespace(
+            amsel_recomb_seed=True,
+            amsel_recomb_capture_mult=1.25,
+        )
+    )
+    basin = BasinsGenericEvents(
+        config=config,
+        reference_table=None,
+        known_environments=set(),
+        manager=None,
+    )
+    state = StateData(
+        system=System(
+            positions=np.zeros((2, 3)),
+            types=np.array(["Cu", "Cu"]),
+            cell=np.eye(3) * 10.0,
+            pbc=True,
+            index=np.arange(2),
+        ),
+        environment=None,
+        neighbors_list=None,
+        transient=True,
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.recombination_search_center",
+        lambda positions, cell, capture_mult=None: seen.setdefault(
+            "capture_mult", capture_mult
+        ),
+        raising=False,
+    )
+
+    assert basin._frontier_recomb_search_center(state) == 1.25
+
+
 def test_frontier_state_search_uses_local_pool_and_restores_global(monkeypatch):
     known = "known-env"
     unknown = "unknown-env"
