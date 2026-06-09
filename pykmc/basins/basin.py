@@ -457,6 +457,9 @@ class BasinsGenericEvents() :
                         self.states[to_explore],
                         state_index=int(to_explore),
                     ):
+                        self._absorb_duplicate_unresolved_frontier_processes(
+                            int(to_explore)
+                        )
                         #We consider that this state is an absorbing one because we need to search new events (in main KMC loop) 
                         #Need to update the connectivity table 
                         self.connectivity_table.change_state_to_absorbing(to_explore) 
@@ -647,6 +650,44 @@ class BasinsGenericEvents() :
         if process is None:
             return ""
         return str(process)
+
+    def _absorb_duplicate_unresolved_frontier_processes(
+        self, state: int
+    ) -> list[int]:
+        signature = self._incoming_process_signature(int(state))
+        df = getattr(self.connectivity_table, "df", None)
+        if signature is None or not isinstance(df, pd.DataFrame):
+            return []
+        absorbed: list[int] = []
+        for candidate in list(getattr(self, "states_to_explore", []) or []):
+            candidate = int(candidate)
+            if candidate == int(state) or candidate in self.states:
+                continue
+            rows = df.loc[df["state_connexion"] == candidate]
+            if rows.empty or not bool(rows["transient"].astype(bool).any()):
+                continue
+            if self._incoming_process_signature(candidate) != signature:
+                continue
+            self.connectivity_table.change_state_to_absorbing(candidate)
+            absorbed.append(candidate)
+        if not absorbed:
+            return []
+        absorbed_set = set(absorbed)
+        self.states_to_explore = [
+            queued
+            for queued in self.states_to_explore
+            if int(queued) not in absorbed_set
+        ]
+        explored = {int(state) for state in self.explored_states}
+        self.explored_states.extend(
+            candidate for candidate in absorbed if candidate not in explored
+        )
+        self._log(
+            "\t :=> AMSEL frontier closed {} duplicate unresolved process states".format(
+                len(absorbed)
+            )
+        )
+        return absorbed
 
     def _record_exploration_decision(self, state: int) -> None:
         if not hasattr(self, "exploration_decisions"):
@@ -1406,8 +1447,9 @@ class BasinsGenericEvents() :
         return searched
 
     def _log(self, message: str) -> None:
-        if self.loggers is not None:
-            self.loggers.info("log", message)
+        loggers = getattr(self, "loggers", None)
+        if loggers is not None:
+            loggers.info("log", message)
 
     def _add_state(self, state_index, system=None, transient=True, applicable_events=None, visited=False, full=False ) :
         """Add a new state in the `self.states` dictionnary."""
