@@ -779,6 +779,8 @@ class ReferenceEventTable:
             ref = self.max_idx_ref()
             d = dict(row)
             self._recompute_cached_row_rate(d)
+            if self.matching_event(pd.Series(d)) is not None:
+                continue
             d["idx_ref"] = ref
             d["idx_backward"] = ref
             self.table = pd.concat(
