@@ -275,6 +275,94 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
     return _public_topology(_TOPOLOGY_CACHE[key])
 
 
+def defect_frontier_atom_order(
+    positions,
+    cell,
+    atoms,
+    cutoff_mult: float = 1.08,
+) -> list[int]:
+    """Order candidate atoms by proximity to generic coordination defects."""
+    ordered_atoms = []
+    seen_atoms = set()
+    for atom in atoms:
+        atom = int(atom)
+        if atom not in seen_atoms:
+            ordered_atoms.append(atom)
+            seen_atoms.add(atom)
+    if len(ordered_atoms) <= 1:
+        return ordered_atoms
+    try:
+        from amsel import defect_clusters, estimate_nn_spacing
+    except ImportError:
+        return ordered_atoms
+    pos = np.asarray(positions, dtype=float)
+    celld = _cell_diag(cell)
+    if pos.ndim != 2 or pos.shape[0] == 0:
+        return ordered_atoms
+    try:
+        nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0)
+    except Exception:
+        return ordered_atoms
+    if nn is None or nn <= 0.0:
+        return ordered_atoms
+    try:
+        cn = _coordination(pos, celld, cutoff_mult * float(nn))
+    except Exception:
+        return ordered_atoms
+    if cn.size != pos.shape[0]:
+        return ordered_atoms
+    bulk_cn = int(Counter(int(c) for c in cn).most_common(1)[0][0])
+    defect_idx = [int(i) for i in np.where(cn != bulk_cn)[0]]
+    if not defect_idx:
+        return ordered_atoms
+
+    centers = []
+    try:
+        codes = [1] * pos.shape[0]
+        for idx in defect_idx:
+            codes[idx] = 8
+        clusters = defect_clusters(
+            pos.tolist(),
+            celld.tolist(),
+            defect_idx,
+            cutoff_mult * float(nn),
+            codes,
+            1,
+        )
+    except Exception:
+        clusters = []
+    for cluster in clusters:
+        members = [defect_idx[int(local)] for local in cluster]
+        if not members:
+            continue
+        cpos = pos[np.asarray(members, dtype=int)]
+        ref = cpos[0]
+        d = _minimum_image(cpos - ref, celld)
+        centers.append(ref + d.mean(axis=0))
+    if not centers:
+        centers = [pos[int(idx)] for idx in defect_idx]
+
+    def score(atom: int):
+        atom = int(atom)
+        if atom < 0 or atom >= pos.shape[0]:
+            return (float("inf"), float("inf"), 0, atom)
+        direct_distance = min(
+            _pbc_distance(pos[atom], pos[int(idx)], celld) for idx in defect_idx
+        )
+        center_distance = min(
+            _pbc_distance(pos[atom], center, celld) for center in centers
+        )
+        coordination_delta = abs(int(cn[atom]) - bulk_cn)
+        return (
+            direct_distance / float(nn),
+            center_distance / float(nn),
+            -coordination_delta,
+            atom,
+        )
+
+    return sorted(ordered_atoms, key=score)
+
+
 def detect_recomb(
     positions, cell, cutoff_mult: float = 1.08, capture_mult: float = 1.6
 ):

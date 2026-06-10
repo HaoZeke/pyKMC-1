@@ -1407,6 +1407,41 @@ class KMC:
                 first_round = False
         return all_event_search_results, all_valid_event_results
 
+    def _amsel_defect_frontier_enabled(self) -> bool:
+        partn = getattr(self.config, "partn", None)
+        if bool(getattr(partn, "amsel_recomb_seed", False)):
+            return True
+        basin = getattr(self.config, "basin", None)
+        priority = getattr(basin, "exploration_priority", "")
+        return str(priority).startswith("amsel")
+
+    def _amsel_defect_frontier_atom_order(self, atoms: list[int]) -> list[int]:
+        if not self._amsel_defect_frontier_enabled() or len(atoms) <= 1:
+            return atoms
+        system = getattr(self, "system", None)
+        positions = getattr(system, "positions", None)
+        cell = getattr(system, "cell", None)
+        if positions is None or cell is None:
+            return atoms
+        try:
+            from .basins.amsel_recomb import defect_frontier_atom_order
+        except Exception:
+            return atoms
+        try:
+            ordered = defect_frontier_atom_order(positions, cell, atoms)
+        except Exception:
+            return atoms
+        atom_set = {int(atom) for atom in atoms}
+        result = []
+        seen = set()
+        for atom in ordered:
+            atom = int(atom)
+            if atom in atom_set and atom not in seen:
+                result.append(atom)
+                seen.add(atom)
+        result.extend(int(atom) for atom in atoms if int(atom) not in seen)
+        return result
+
     def central_atoms_research(
         self, new_environments: list[str | bytes], nsearch: int
     ) -> list[int]:
@@ -1441,10 +1476,21 @@ class KMC:
                 for i, e in enumerate(self.atomic_environment.atomic_environment_list)
                 if e == env
             ]
+            tmp1 = self._amsel_defect_frontier_atom_order(tmp1)
             n_unique = min(int(nsearch), len(tmp1))
-            tmp2 = random.sample(tmp1, n_unique)
+            if self._amsel_defect_frontier_enabled():
+                tmp2 = tmp1[:n_unique]
+            else:
+                tmp2 = random.sample(tmp1, n_unique)
             if int(nsearch) > n_unique:
-                tmp2 += [random.choice(tmp1) for _i in range(int(nsearch) - n_unique)]
+                if self._amsel_defect_frontier_enabled():
+                    tmp2 += [
+                        tmp1[i % len(tmp1)] for i in range(int(nsearch) - n_unique)
+                    ]
+                else:
+                    tmp2 += [
+                        random.choice(tmp1) for _i in range(int(nsearch) - n_unique)
+                    ]
             central_atom_research_list += tmp2
         recomb_center = self._amsel_recomb_search_center()
         if recomb_center is not None:
