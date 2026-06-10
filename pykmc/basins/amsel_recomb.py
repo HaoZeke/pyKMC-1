@@ -123,6 +123,12 @@ def _ranked_candidate_source(candidate, positions, cell):
     celld = _cell_diag(cell)
     nn = float(candidate.nn_spacing)
     score_products = pos.shape[0] <= _PRODUCT_DEFECT_SCORE_MAX_ATOMS
+    if not score_products:
+        return (
+            int(candidate.source_atom),
+            np.asarray(candidate.target_centroid, dtype=float),
+            float(candidate.distance),
+        )
     ranked = []
     for source in _candidate_source_atoms(candidate):
         for target_rank, target in _candidate_targets_for_source(
