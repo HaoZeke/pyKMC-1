@@ -291,13 +291,47 @@ def defect_frontier_atom_order(
             seen_atoms.add(atom)
     if len(ordered_atoms) <= 1:
         return ordered_atoms
-    try:
-        from amsel import defect_clusters, estimate_nn_spacing
-    except ImportError:
-        return ordered_atoms
     pos = np.asarray(positions, dtype=float)
     celld = _cell_diag(cell)
     if pos.ndim != 2 or pos.shape[0] == 0:
+        return ordered_atoms
+    candidate = _amsel_defect_annihilation_candidate(
+        pos, celld, cutoff_mult=cutoff_mult
+    )
+    if candidate is not None:
+        source_atoms = {
+            int(source)
+            for source in _candidate_source_atoms(candidate)
+            if 0 <= int(source) < pos.shape[0]
+        }
+        frontier_points = []
+        frontier_points.extend(pos[int(source)] for source in source_atoms)
+        for target_atom in getattr(candidate, "target_cluster", ()) or ():
+            target_atom = int(target_atom)
+            if 0 <= target_atom < pos.shape[0]:
+                frontier_points.append(pos[target_atom])
+        frontier_points.append(np.asarray(candidate.target_centroid, dtype=float))
+        if frontier_points:
+            nn = float(getattr(candidate, "nn_spacing", 1.0) or 1.0)
+            if nn <= 0.0:
+                nn = 1.0
+
+            def candidate_score(atom: int):
+                atom = int(atom)
+                if atom < 0 or atom >= pos.shape[0]:
+                    return (1, float("inf"), atom)
+                source_rank = 0 if atom in source_atoms else 1
+                distance = min(
+                    _pbc_distance(pos[atom], point, celld) for point in frontier_points
+                )
+                return (source_rank, distance / nn, atom)
+
+            return sorted(ordered_atoms, key=candidate_score)
+    if pos.shape[0] > _PRODUCT_DEFECT_SCORE_MAX_ATOMS:
+        return ordered_atoms
+    try:
+        from amsel import defect_clusters, estimate_nn_spacing
+    except ImportError:
         return ordered_atoms
     try:
         nn = estimate_nn_spacing(pos.tolist(), celld.tolist(), [], 6.0)
