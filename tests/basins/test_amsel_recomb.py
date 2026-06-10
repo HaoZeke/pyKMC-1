@@ -38,6 +38,38 @@ def test_recomb_push_requires_capture_radius(monkeypatch):
     assert push is None
 
 
+def test_recomb_push_requires_defect_reducing_product(monkeypatch):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.2, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.eye(3) * 20.0
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_nearest_recomb_topology",
+        lambda positions, cell, cutoff_mult=1.08: (1, [0.0, 0.0, 0.0], 0.2, 2.0),
+    )
+
+    def fake_product(positions, cell, source_atom, target_centroid):
+        return np.asarray(positions, dtype=float).copy()
+
+    monkeypatch.setattr(amsel_recomb, "build_product", fake_product)
+    monkeypatch.setattr(amsel_recomb, "n_defects", lambda positions, cell: 4)
+
+    push = amsel_recomb.recomb_push(
+        positions,
+        cell,
+        central_atom_idx=1,
+        capture_mult=1.5,
+    )
+
+    assert push is None
+
+
 def test_recombination_search_center_requires_capture_radius(monkeypatch):
     positions = np.array(
         [
@@ -81,6 +113,31 @@ def test_recombination_search_center_defaults_to_local_candidate(monkeypatch):
     )
 
     assert amsel_recomb.recombination_search_center(positions, cell) == 1
+
+
+def test_recombination_search_center_requires_defect_reduction(monkeypatch):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.2, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.eye(3) * 20.0
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_nearest_recomb_topology",
+        lambda positions, cell, cutoff_mult=1.08: (1, [0.0, 0.0, 0.0], 0.2, 2.0),
+    )
+
+    def fake_product(positions, cell, source_atom, target_centroid):
+        return np.asarray(positions, dtype=float).copy()
+
+    monkeypatch.setattr(amsel_recomb, "build_product", fake_product)
+    monkeypatch.setattr(amsel_recomb, "n_defects", lambda positions, cell: 4)
+
+    assert amsel_recomb.recombination_search_center(positions, cell) is None
 
 
 def test_nearest_recomb_topology_uses_generic_amsel_candidate(monkeypatch):

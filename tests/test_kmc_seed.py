@@ -497,6 +497,59 @@ def test_event_search_skips_amsel_topology_hint_outside_capture_radius(monkeypat
     assert captured["amsel_recomb_topology"] is None
 
 
+def test_event_search_skips_amsel_topology_hint_without_defect_reduction(monkeypatch):
+    class FinishedFuture:
+        def result(self):
+            return Err(ErrorInfo(type=ErrorType.EVENT_NOT_FOUND, message="stop"))
+
+    captured = {}
+
+    class FakeManager:
+        def partn_search(self, **kwargs):
+            captured.update(kwargs)
+            return [FinishedFuture()]
+
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb._nearest_recomb_topology",
+        lambda positions, cell: (1, [0.0, 0.0, 0.0], 0.2, 2.0),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.build_product",
+        lambda positions, cell, source_atom, target_centroid: np.asarray(
+            positions,
+            dtype=float,
+        ).copy(),
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.n_defects",
+        lambda positions, cell: 4,
+    )
+
+    event_search = EventSearch(
+        config=SimpleNamespace(
+            control=SimpleNamespace(active_volume=False),
+            partn=SimpleNamespace(
+                amsel_recomb_seed=True,
+                amsel_recomb_capture_mult=1.5,
+            ),
+        ),
+        system=SimpleNamespace(
+            positions=np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]]),
+            cell=np.eye(3) * 20.0,
+            types=["Cu", "Cu"],
+        ),
+        manager=FakeManager(),
+        loggers=SimpleNamespace(
+            info=lambda *_args: None,
+            progress_bar=lambda *_args: None,
+        ),
+    )
+
+    event_search.execute([1])
+    assert captured["amsel_recomb_topology"] is None
+
+
 def test_kmc_attaches_vineyard_prefactors_to_event_search_outputs(monkeypatch):
     kmc = KMC.__new__(KMC)
     kmc.config = SimpleNamespace(
