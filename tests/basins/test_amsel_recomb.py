@@ -1,3 +1,4 @@
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -335,6 +336,35 @@ def test_nearest_recomb_topology_keeps_amsel_target_when_unscored_projection_is_
         3.0,
         1.0,
     )
+
+
+def test_defect_frontier_atom_order_prioritizes_atoms_near_generic_defects(
+    monkeypatch,
+):
+    positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [8.0, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    cell = np.diag([20.0, 20.0, 20.0])
+    fake_amsel = SimpleNamespace(
+        estimate_nn_spacing=lambda *_args, **_kwargs: 1.0,
+        defect_clusters=lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setitem(sys.modules, "amsel", fake_amsel)
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_coordination",
+        lambda *_args, **_kwargs: np.array([12, 12, 10, 12]),
+    )
+
+    assert amsel_recomb.defect_frontier_atom_order(
+        positions, cell, atoms=[0, 1, 2, 3]
+    ) == [2, 1, 0, 3]
 
 
 def test_nearest_recomb_topology_reuses_position_cache(monkeypatch):

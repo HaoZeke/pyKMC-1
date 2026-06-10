@@ -187,6 +187,36 @@ def test_central_atoms_research_skips_amsel_center_outside_requested_environment
     assert any(atom in central_atoms for atom in [0])
 
 
+def test_central_atoms_research_uses_amsel_defect_frontier_order(monkeypatch):
+    kmc = KMC(
+        SimpleNamespace(
+            control=SimpleNamespace(random_seed=12345),
+            partn=SimpleNamespace(amsel_recomb_seed=True),
+        )
+    )
+    kmc.atomic_environment = SimpleNamespace(
+        atomic_environment_list=["env-a", "env-a", "env-a", "crystal"]
+    )
+    kmc.system = SimpleNamespace(
+        positions=np.zeros((4, 3), dtype=float),
+        cell=np.eye(3),
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.recombination_search_center",
+        lambda positions, cell, capture_mult=None: None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.defect_frontier_atom_order",
+        lambda positions, cell, atoms: [2, 0, 1],
+        raising=False,
+    )
+
+    central_atoms = kmc.central_atoms_research(["env-a"], nsearch=2)
+
+    assert central_atoms == [2, 0]
+
+
 def test_amsel_recomb_search_center_uses_configured_capture_radius(monkeypatch):
     seen = {}
     kmc = KMC(
