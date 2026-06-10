@@ -432,6 +432,11 @@ def test_event_search_passes_amsel_topology_hint(monkeypatch):
         lambda positions, cell: topology,
         raising=False,
     )
+    monkeypatch.setattr(
+        "pykmc.basins.amsel_recomb.topology_reduces_defects",
+        lambda positions, cell, topology: True,
+        raising=False,
+    )
 
     event_search = EventSearch(
         config=SimpleNamespace(

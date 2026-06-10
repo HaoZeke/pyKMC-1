@@ -111,6 +111,11 @@ def test_recombination_search_center_defaults_to_local_candidate(monkeypatch):
         "_nearest_recomb_topology",
         lambda positions, cell, cutoff_mult=1.08: (1, [0.0, 0.0, 0.0], 4.0, 2.0),
     )
+    monkeypatch.setattr(
+        amsel_recomb,
+        "topology_reduces_defects",
+        lambda positions, cell, topology: True,
+    )
 
     assert amsel_recomb.recombination_search_center(positions, cell) == 1
 
