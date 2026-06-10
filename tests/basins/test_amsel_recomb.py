@@ -367,6 +367,40 @@ def test_defect_frontier_atom_order_prioritizes_atoms_near_generic_defects(
     ) == [2, 1, 0, 3]
 
 
+def test_defect_frontier_atom_order_uses_amsel_candidate_for_large_systems(
+    monkeypatch,
+):
+    positions = np.zeros((129, 3), dtype=float)
+    positions[1] = [5.0, 0.0, 0.0]
+    positions[2] = [2.0, 0.0, 0.0]
+    positions[3] = [2.1, 0.0, 0.0]
+    positions[4] = [8.0, 0.0, 0.0]
+    cell = np.eye(3) * 20.0
+    candidate = SimpleNamespace(
+        source_atom=2,
+        source_cluster=(2, 3),
+        target_cluster=(1,),
+        target_centroid=(5.0, 0.0, 0.0),
+        distance=3.0,
+        nn_spacing=1.0,
+    )
+
+    monkeypatch.setattr(
+        amsel_recomb,
+        "_amsel_defect_annihilation_candidate",
+        lambda positions, cell, cutoff_mult=1.08: candidate,
+    )
+
+    def fail_coordination(*_args, **_kwargs):
+        raise AssertionError("large systems must not use Python coordination")
+
+    monkeypatch.setattr(amsel_recomb, "_coordination", fail_coordination)
+
+    assert amsel_recomb.defect_frontier_atom_order(
+        positions, cell, atoms=[4, 1, 2, 3]
+    ) == [2, 3, 1, 4]
+
+
 def test_nearest_recomb_topology_reuses_position_cache(monkeypatch):
     positions = np.array(
         [
