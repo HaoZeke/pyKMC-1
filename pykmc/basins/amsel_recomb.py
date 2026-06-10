@@ -290,7 +290,25 @@ def detect_recomb(
     source_atom, v_centroid, distance, nn = topology
     if distance > capture_mult * nn:
         return None
+    if not topology_reduces_defects(positions, cell, topology):
+        return None
     return int(source_atom), v_centroid
+
+
+def topology_reduces_defects(positions, cell, topology) -> bool:
+    """Return whether the topology product lowers the generic defect signal."""
+    if topology is None:
+        return False
+    source_atom, target_centroid, _distance, _nn = topology
+    try:
+        current_defects = n_defects(positions, cell)
+        product = build_product(positions, cell, int(source_atom), target_centroid)
+        product_defects = n_defects(product, cell)
+    except Exception:
+        return False
+    if current_defects < 0 or product_defects < 0:
+        return False
+    return int(product_defects) < int(current_defects)
 
 
 def recombination_search_center(
@@ -305,6 +323,8 @@ def recombination_search_center(
         return None
     source_atom, _v_centroid, distance, nn = topology
     if capture_mult is not None and distance > capture_mult * nn:
+        return None
+    if not topology_reduces_defects(positions, cell, topology):
         return None
     return int(source_atom)
 
@@ -350,6 +370,8 @@ def recomb_push(
         return None
     source_atom, v_centroid, distance, nn = det
     if capture_mult is not None and distance > capture_mult * nn:
+        return None
+    if not topology_reduces_defects(positions, cell, det):
         return None
     # Only seed when the search is centred on the selected source atom.
     if int(central_atom_idx) != int(source_atom):

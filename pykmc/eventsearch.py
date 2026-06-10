@@ -34,7 +34,10 @@ class EventSearch:
         if not bool(getattr(partn, "amsel_recomb_seed", False)):
             return None
         try:
-            from .basins.amsel_recomb import _nearest_recomb_topology
+            from .basins.amsel_recomb import (
+                _nearest_recomb_topology,
+                topology_reduces_defects,
+            )
         except Exception:
             return None
         try:
@@ -46,6 +49,12 @@ class EventSearch:
         _source_atom, _v_centroid, distance, nn = topology
         cap = float(getattr(partn, "amsel_recomb_capture_mult", 1.6))
         if distance > cap * nn:
+            return None
+        if not topology_reduces_defects(
+            self.system.positions,
+            self.system.cell,
+            topology,
+        ):
             return None
         return topology
 
