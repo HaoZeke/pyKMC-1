@@ -20,6 +20,10 @@ _TOPOLOGY_CACHE: OrderedDict[
     tuple[tuple[int, ...], bytes, float, bytes],
     tuple[int, tuple[float, float, float], float, float] | None,
 ] = OrderedDict()
+_FRONTIER_HINT_CACHE: OrderedDict[
+    tuple[tuple[int, ...], bytes, float, bytes],
+    tuple[tuple[int, ...], tuple[tuple[float, float, float], ...]] | None,
+] = OrderedDict()
 
 
 def _topology_cache_key(positions, cell, cutoff_mult: float):
@@ -54,7 +58,23 @@ def _remember_topology(key, topology):
     _TOPOLOGY_CACHE[key] = _cacheable_topology(topology)
     _TOPOLOGY_CACHE.move_to_end(key)
     while len(_TOPOLOGY_CACHE) > _TOPOLOGY_CACHE_MAX:
-        _TOPOLOGY_CACHE.popitem(last=False)
+        evicted, _value = _TOPOLOGY_CACHE.popitem(last=False)
+        _FRONTIER_HINT_CACHE.pop(evicted, None)
+
+
+def _remember_frontier_hint(key, source_atoms, frontier_points):
+    clean_sources = tuple(
+        dict.fromkeys(int(source) for source in source_atoms if int(source) >= 0)
+    )
+    clean_points = tuple(
+        tuple(float(coord) for coord in np.asarray(point, dtype=float))
+        for point in frontier_points
+    )
+    if not clean_sources and not clean_points:
+        _FRONTIER_HINT_CACHE[key] = None
+    else:
+        _FRONTIER_HINT_CACHE[key] = (clean_sources, clean_points)
+    _FRONTIER_HINT_CACHE.move_to_end(key)
 
 
 def _amsel_defect_annihilation_candidate(positions, cell, cutoff_mult: float = 1.08):
@@ -198,6 +218,20 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
         source_atom, target_centroid, distance = _ranked_candidate_source(
             candidate, positions, cell
         )
+        pos = np.asarray(positions, dtype=float)
+        source_atoms = _candidate_source_atoms(candidate)
+        frontier_points = []
+        frontier_points.extend(
+            pos[int(source)]
+            for source in source_atoms
+            if 0 <= int(source) < pos.shape[0]
+        )
+        for target_atom in getattr(candidate, "target_cluster", ()) or ():
+            target_atom = int(target_atom)
+            if 0 <= target_atom < pos.shape[0]:
+                frontier_points.append(pos[target_atom])
+        frontier_points.append(np.asarray(target_centroid, dtype=float))
+        _remember_frontier_hint(key, source_atoms, frontier_points)
         topology = (
             int(source_atom),
             np.asarray(target_centroid, dtype=float).tolist(),
@@ -271,6 +305,7 @@ def _nearest_recomb_topology(positions, cell, cutoff_mult: float = 1.08):
     dist = np.sqrt((dd * dd).sum(axis=1))
     j = int(np.argmin(dist))
     topology = int(over_arr[j]), v_centroid.tolist(), float(dist[j]), float(nn)
+    _remember_frontier_hint(key, [int(over_arr[j])], [v_centroid])
     _remember_topology(key, topology)
     return _public_topology(_TOPOLOGY_CACHE[key])
 
@@ -295,24 +330,19 @@ def defect_frontier_atom_order(
     celld = _cell_diag(cell)
     if pos.ndim != 2 or pos.shape[0] == 0:
         return ordered_atoms
-    candidate = _amsel_defect_annihilation_candidate(
-        pos, celld, cutoff_mult=cutoff_mult
-    )
-    if candidate is not None:
-        source_atoms = {
-            int(source)
-            for source in _candidate_source_atoms(candidate)
-            if 0 <= int(source) < pos.shape[0]
-        }
-        frontier_points = []
-        frontier_points.extend(pos[int(source)] for source in source_atoms)
-        for target_atom in getattr(candidate, "target_cluster", ()) or ():
-            target_atom = int(target_atom)
-            if 0 <= target_atom < pos.shape[0]:
-                frontier_points.append(pos[target_atom])
-        frontier_points.append(np.asarray(candidate.target_centroid, dtype=float))
+    key = _topology_cache_key(pos, celld, cutoff_mult)
+    if key not in _FRONTIER_HINT_CACHE:
+        _nearest_recomb_topology(pos, celld, cutoff_mult=cutoff_mult)
+    hint = _FRONTIER_HINT_CACHE.get(key)
+    if hint is not None:
+        source_atoms_raw, frontier_points_raw = hint
+        source_atoms = {int(source) for source in source_atoms_raw}
+        frontier_points = [
+            np.asarray(point, dtype=float) for point in frontier_points_raw
+        ]
         if frontier_points:
-            nn = float(getattr(candidate, "nn_spacing", 1.0) or 1.0)
+            topology = _TOPOLOGY_CACHE.get(key)
+            nn = 1.0 if topology is None else float(topology[3])
             if nn <= 0.0:
                 nn = 1.0
 

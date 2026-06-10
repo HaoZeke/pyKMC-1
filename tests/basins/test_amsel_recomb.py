@@ -395,6 +395,8 @@ def test_defect_frontier_atom_order_uses_amsel_candidate_for_large_systems(
         raise AssertionError("large systems must not use Python coordination")
 
     monkeypatch.setattr(amsel_recomb, "_coordination", fail_coordination)
+    amsel_recomb._TOPOLOGY_CACHE.clear()
+    amsel_recomb._FRONTIER_HINT_CACHE.clear()
 
     assert amsel_recomb.defect_frontier_atom_order(
         positions, cell, atoms=[4, 1, 2, 3]
